@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_mbtiles/flutter_map_mbtiles.dart';
 import 'package:file_picker/file_picker.dart';
@@ -765,10 +766,104 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             _menuTile(sheetContext, Icons.download_for_offline_outlined, 'Загрузка карт', () { Navigator.pop(sheetContext); _openSettings(); }),
             _menuTile(sheetContext, Icons.support_agent_outlined, 'Поддержка', () { Navigator.pop(sheetContext); setState(() => _message = 'Раздел поддержки пока не подключён.'); }),
             _menuTile(sheetContext, Icons.map_outlined, 'Изменить карту и слои', () { Navigator.pop(sheetContext); _openSettings(); }),
-            _menuTile(sheetContext, Icons.bookmark_border, 'Закладки', () { Navigator.pop(sheetContext); setState(() => _message = 'Раздел закладок будет подключён отдельно.'); }),
+            _menuTile(sheetContext, Icons.bookmark_border, 'Закладки', () { Navigator.pop(sheetContext); _openBookmarks(); }),
             _menuTile(sheetContext, Icons.local_gas_station_outlined, 'Заправки', () { Navigator.pop(sheetContext); _searchController.text = 'АЗС'; _searchAddress(); }),
             _menuTile(sheetContext, Icons.local_parking_outlined, 'Парковки', () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
             _menuTile(sheetContext, Icons.settings_outlined, 'Настройки', () { Navigator.pop(sheetContext); _openSettings(); }),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPointMenu(LatLng point) async {
+    final coordinates = '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}';
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8))),
+            const SizedBox(height: 16),
+            Row(children: [
+              const Expanded(child: Text('Точка на карте', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800))),
+              IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
+            ]),
+            Align(alignment: Alignment.centerLeft, child: Text('Координаты: $coordinates', style: const TextStyle(color: Color(0xFF687786), fontSize: 15))),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.copy_outlined),
+              title: const Text('Скопировать координаты'),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: coordinates));
+                Navigator.pop(sheetContext);
+                setState(() => _message = 'Координаты скопированы: $coordinates');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined),
+              title: const Text('Сюда'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _selectDestination(point);
+                _mapController.move(point, 16);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.bookmark_border),
+              title: const Text('Сохранить в закладки'),
+              onTap: () async {
+                final prefs = await SharedPreferences.getInstance();
+                final saved = prefs.getStringList('map_bookmarks') ?? <String>[];
+                final entry = jsonEncode({'lat': point.latitude, 'lon': point.longitude, 'label': 'Точка $coordinates'});
+                if (!saved.contains(entry)) saved.add(entry);
+                await prefs.setStringList('map_bookmarks', saved);
+                if (!sheetContext.mounted) return;
+                Navigator.pop(sheetContext);
+                setState(() => _message = 'Точка сохранена в закладки.');
+              },
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openBookmarks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('map_bookmarks') ?? <String>[];
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Align(alignment: Alignment.centerLeft, child: Text('Закладки', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+            if (saved.isEmpty)
+              const Padding(padding: EdgeInsets.all(22), child: Text('Пока нет сохранённых точек. Удерживайте место на карте и выберите «Сохранить в закладки».'))
+            else
+              ...saved.map((raw) {
+                final item = jsonDecode(raw) as Map<String, dynamic>;
+                final lat = (item['lat'] as num).toDouble();
+                final lon = (item['lon'] as num).toDouble();
+                return ListTile(
+                  leading: const Icon(Icons.bookmark),
+                  title: Text(item['label']?.toString() ?? 'Сохранённая точка'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    final point = LatLng(lat, lon);
+                    _selectDestination(point);
+                    _mapController.move(point, 16);
+                  },
+                );
+              }),
           ]),
         ),
       ),
@@ -856,7 +951,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             options: MapOptions(
               initialCenter: _shymkent,
               initialZoom: 13,
-              onLongPress: (_, point) => _selectDestination(point),
+              onLongPress: (_, point) => _openPointMenu(point),
             ),
             children: [
               if (_offlineTileProvider == null)
