@@ -86,6 +86,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _isLocating = false;
   bool _isSearching = false;
   bool _isBuildingRoute = false;
+  bool _carPaymentOnly = false;
   double? _gpsAccuracyMeters;
   double? _gpsHeadingDegrees;
   int _offRouteSamples = 0;
@@ -1285,6 +1286,87 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     return '$km км · около $minutes мин';
   }
  
+  Future<void> _openStationNetworks() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text('Сети АЗС', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+              subtitle: Text('Выберите сеть для поиска на карте'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.local_gas_station, color: Color(0xFF35A94A)),
+              title: const Text('Qazaq Oil'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _searchController.text = 'Qazaq Oil';
+                _searchAddress();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.map_outlined),
+              title: const Text('Все места и сети'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _searchController.clear();
+                _searchFocusNode.requestFocus();
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _roundMapButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+    Color iconColor = const Color(0xFF45484C),
+  }) {
+    return Material(
+      color: Colors.white,
+      elevation: 4,
+      shape: const CircleBorder(),
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: Icon(icon, color: iconColor, size: 28),
+      ),
+    );
+  }
+
+  Widget _mapBottomItem(IconData icon, String label, VoidCallback onTap, {bool selected = false}) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          height: 66,
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFF1F3F5) : Colors.transparent,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 29, color: const Color(0xFF4B4E52)),
+              const SizedBox(height: 3),
+              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF4B4E52))),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final markers = <Marker>[
@@ -1416,13 +1498,139 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           ),
           Positioned(
-            top: 142,
+            top: 112,
             right: 14,
-            child: _MapActionButton(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _roundMapButton(
+                  icon: Icons.local_parking,
+                  tooltip: 'Парковки',
+                  onPressed: () {
+                    _searchController.text = 'парковка';
+                    _searchAddress();
+                  },
+                ),
+                const SizedBox(height: 10),
+                _roundMapButton(
+                  icon: Icons.add,
+                  tooltip: 'Приблизить',
+                  onPressed: () {
+                    final camera = _mapController.camera;
+                    _mapController.move(camera.center, (camera.zoom + 1).clamp(3.0, 19.0));
+                  },
+                ),
+                const SizedBox(height: 10),
+                _roundMapButton(
+                  icon: Icons.remove,
+                  tooltip: 'Отдалить',
+                  onPressed: () {
+                    final camera = _mapController.camera;
+                    _mapController.move(camera.center, (camera.zoom - 1).clamp(3.0, 19.0));
+                  },
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            left: 14,
+            bottom: 112,
+            child: _roundMapButton(
               icon: Icons.my_location,
               tooltip: 'Моё местоположение',
+              iconColor: const Color(0xFF2468A0),
               onPressed: _isLocating ? null : _locateMe,
-              loading: _isLocating,
+            ),
+          ),
+          Positioned(
+            left: 18,
+            right: 18,
+            bottom: 94,
+            child: SafeArea(
+              top: false,
+              child: Row(
+                children: [
+                  _roundMapButton(
+                    icon: Icons.tune,
+                    tooltip: 'Фильтры карты',
+                    onPressed: _openStationNetworks,
+                  ),
+                  const SizedBox(width: 8),
+                  Material(
+                    color: Colors.white,
+                    elevation: 4,
+                    borderRadius: BorderRadius.circular(18),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: _openStationNetworks,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                        child: Row(children: [
+                          Text('Сети', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF4B4E52))),
+                          SizedBox(width: 7),
+                          Icon(Icons.keyboard_arrow_down, color: Color(0xFF4B4E52)),
+                        ]),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Material(
+                      color: Colors.white,
+                      elevation: 4,
+                      borderRadius: BorderRadius.circular(18),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(18),
+                        onTap: () => setState(() => _carPaymentOnly = !_carPaymentOnly),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (_carPaymentOnly) const Icon(Icons.check_circle, size: 17, color: Color(0xFF2468A0)),
+                              if (_carPaymentOnly) const SizedBox(width: 5),
+                              Flexible(child: Text(
+                                'Оплата из машины',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF4B4E52)),
+                              )),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 18,
+            right: 18,
+            bottom: 12,
+            child: SafeArea(
+              top: false,
+              child: Material(
+                color: Colors.white,
+                elevation: 7,
+                borderRadius: BorderRadius.circular(24),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                  child: Row(children: [
+                    _mapBottomItem(Icons.search, 'Поиск', () {
+                      _searchFocusNode.requestFocus();
+                    }),
+                    _mapBottomItem(Icons.alt_route, 'Маршрут', _openRouteMenu),
+                    _mapBottomItem(Icons.local_gas_station, 'АЗС', () {
+                      _searchController.text = 'АЗС';
+                      _searchAddress();
+                    }, selected: true),
+                    _mapBottomItem(Icons.bookmark_border, 'Закладки', _openBookmarks),
+                    _mapBottomItem(Icons.settings, 'Настройки', _openSettings),
+                  ]),
+                ),
+              ),
             ),
           ),
         ],
