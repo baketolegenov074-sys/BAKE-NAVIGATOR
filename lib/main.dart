@@ -1233,7 +1233,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
             ]),
             const SizedBox(height: 10),
-            _menuTile(sheetContext, Icons.download_for_offline_outlined, 'Загрузка карт', () { Navigator.pop(sheetContext); _openSettings(); }),
+            _menuTile(sheetContext, Icons.download_for_offline_outlined, 'Загрузка карт', () { Navigator.pop(sheetContext); _openOfflineAndVehicleSettings(); }),
             _menuTile(sheetContext, Icons.support_agent_outlined, 'Поддержка', () { Navigator.pop(sheetContext); _showUnavailableFeature('Поддержка', 'Канал обращений BAKE ещё не подключён.'); }),
             _menuTile(sheetContext, Icons.map_outlined, 'Изменить карту и слои', () { Navigator.pop(sheetContext); _openMapLayers(); }),
             _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Разместить объект', () { Navigator.pop(sheetContext); _showUnavailableFeature('Разместить объект', 'Форма добавления объекта появится после подключения проверки и отправки объектов на сервер.'); }),
@@ -1691,38 +1691,40 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
  
   Future<void> _openStationNetworks() async {
+    const networks = <String>[
+      'Газпромнефть Казахстан',
+      'Sinooil',
+      'Qazaq Oil',
+      'Gasenergy',
+      'Helios',
+      'TS',
+      'Royal Petrol',
+      'Compass',
+      'Другие АЗС',
+    ];
     await showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
       backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(
-              title: Text('Сети АЗС', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-              subtitle: Text('Выберите сеть для поиска на карте'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.local_gas_station, color: Color(0xFF35A94A)),
-              title: const Text('Qazaq Oil'),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              const Expanded(child: Text('Сети АЗС', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+              TextButton(onPressed: () { Navigator.pop(sheetContext); _searchController.text = 'АЗС'; _searchAddress(); }, child: const Text('Все АЗС')),
+            ]),
+            ...networks.map((network) => ListTile(
+              dense: true,
+              leading: const Icon(Icons.local_gas_station_outlined, color: Color(0xFF2468A0)),
+              title: Text(network),
               onTap: () {
                 Navigator.pop(sheetContext);
-                _searchController.text = 'Qazaq Oil';
+                _searchController.text = network == 'Другие АЗС' ? 'АЗС' : network;
                 _searchAddress();
               },
-            ),
-            ListTile(
-              leading: const Icon(Icons.map_outlined),
-              title: const Text('Все места и сети'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _searchController.clear();
-                _searchFocusNode.requestFocus();
-              },
-            ),
-            const SizedBox(height: 12),
-          ],
+            )),
+          ]),
         ),
       ),
     );
@@ -1957,10 +1959,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   child: Row(children: [
                     _mapBottomItem(Icons.search, 'Поиск', _openSearchPanel),
                     _mapBottomItem(Icons.alt_route, 'Маршрут', _openRouteMenu),
-                    _mapBottomItem(Icons.local_gas_station, 'АЗС', () {
-                      _searchController.text = 'АЗС';
-                      _searchAddress();
-                    }, selected: true),
+                    _mapBottomItem(Icons.local_gas_station, 'АЗС', _openStationNetworks),
                     _mapBottomItem(Icons.bookmark_border, 'Закладки', _openBookmarks),
                     _mapBottomItem(Icons.settings, 'Настройки', _openSettings),
                   ]),
