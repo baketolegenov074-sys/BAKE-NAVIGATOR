@@ -41,9 +41,23 @@ jobs:
           path = Path("android/app/src/main/AndroidManifest.xml")
           manifest = path.read_text()
           permissions = (
+              '    <uses-feature android:name="android.hardware.camera" android:required="false" />\n'
+              '    <uses-feature android:name="android.hardware.telephony" android:required="false" />\n'
               '    <uses-permission android:name="android.permission.INTERNET" />\n'
               '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
               '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n'
+              '    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n'
+              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
+              '    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />\n'
+              '    <uses-permission android:name="android.permission.CAMERA" />\n'
+              '    <uses-permission android:name="android.permission.READ_CONTACTS" />\n'
+              '    <uses-permission android:name="android.permission.READ_PHONE_STATE" />\n'
+              '    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />\n'
+              '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n'
+              '    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n'
+              '    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />\n'
+              '    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />\n'
+              '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n'
           )
           manifest = manifest.replace("    <application", permissions + "    <application", 1)
           manifest = manifest.replace('android:label="bake_navigator"', 'android:label="BAKE Navigator"')
