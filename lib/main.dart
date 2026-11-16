@@ -201,29 +201,76 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Future<void> _openSettings() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Align(alignment: Alignment.centerLeft, child: Text('Настройки BAKE', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+            ListTile(leading: const Icon(Icons.volume_up_outlined), title: const Text('Звуковое сопровождение'), onTap: () { Navigator.pop(sheetContext); _openSoundSettings(); }),
+            ListTile(leading: const Icon(Icons.alt_route), title: const Text('Параметры маршрута'), onTap: () { Navigator.pop(sheetContext); _openRoutePreferences(); }),
+            ListTile(leading: const Icon(Icons.layers_outlined), title: const Text('Внешний вид и слои карты'), onTap: () { Navigator.pop(sheetContext); _openMapLayers(); }),
+            ListTile(leading: const Icon(Icons.download_for_offline_outlined), title: const Text('Офлайн-карты и автомобиль'), onTap: () { Navigator.pop(sheetContext); _openOfflineAndVehicleSettings(); }),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openOfflineAndVehicleSettings() async {
     final selectedPath = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => const NavigatorSettingsScreen()),
     );
     if (!mounted || selectedPath == null) return;
     if (selectedPath == '__use_online_map__') {
       _offlineTileProvider?.dispose();
-      setState(() {
-        _offlineTileProvider = null;
-        _message = 'Включена онлайн-карта.';
-      });
+      setState(() { _offlineTileProvider = null; _message = 'Включена онлайн-карта.'; });
       return;
     }
     try {
       final provider = MbTilesTileProvider.fromPath(path: selectedPath);
       _offlineTileProvider?.dispose();
-      setState(() {
-        _offlineTileProvider = provider;
-        _message = 'Офлайн-карта подключена. Для построения маршрута пока нужен интернет.';
-      });
+      setState(() { _offlineTileProvider = provider; _message = 'Офлайн-карта подключена. Для построения маршрута пока нужен интернет.'; });
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = 'Не удалось открыть офлайн-карту: $error');
     }
+  }
+
+  Future<void> _openSoundSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    var volume = prefs.getDouble('voice_volume') ?? 1.0;
+    var rate = prefs.getDouble('voice_rate') ?? 0.48;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, refresh) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Align(alignment: Alignment.centerLeft, child: Text('Звуковое сопровождение', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+              const SizedBox(height: 10),
+              Row(children: [
+                const Icon(Icons.volume_down),
+                Expanded(child: Slider(value: volume, min: 0, max: 1, divisions: 10, label: '${(volume * 100).round()}%', onChanged: (value) async { volume = value; refresh(() {}); await prefs.setDouble('voice_volume', value); await _tts.setVolume(value); })),
+                const Icon(Icons.volume_up),
+              ]),
+              Align(alignment: Alignment.centerLeft, child: Text('Громкость голосовых подсказок · ${(volume * 100).round()}%')),
+              const SizedBox(height: 8),
+              Align(alignment: Alignment.centerLeft, child: Text('Скорость речи · ${rate.toStringAsFixed(2)}')),
+              Slider(value: rate, min: 0.25, max: 0.75, divisions: 10, label: rate.toStringAsFixed(2), onChanged: (value) async { rate = value; refresh(() {}); await prefs.setDouble('voice_rate', value); await _tts.setSpeechRate(value); }),
+              const Text('Настраиваются голосовые подсказки навигации. Отдельные звуковые сигналы пока не подключены.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+              Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(sheetContext), child: const Text('Готово'))),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _locateMe() async {
