@@ -743,6 +743,70 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
 
+  Future<void> _openProfileMenu() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8))),
+            const SizedBox(height: 18),
+            Row(children: [
+              const CircleAvatar(radius: 27, backgroundColor: Color(0xFFEAF2FA), child: Icon(Icons.person_outline, size: 31, color: Color(0xFF2468A0))),
+              const SizedBox(width: 14),
+              const Expanded(child: Text('Профиль BAKE', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+              IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
+            ]),
+            const SizedBox(height: 10),
+            _menuTile(sheetContext, Icons.download_for_offline_outlined, 'Загрузка карт', () { Navigator.pop(sheetContext); _openSettings(); }),
+            _menuTile(sheetContext, Icons.support_agent_outlined, 'Поддержка', () { Navigator.pop(sheetContext); setState(() => _message = 'Раздел поддержки пока не подключён.'); }),
+            _menuTile(sheetContext, Icons.map_outlined, 'Изменить карту и слои', () { Navigator.pop(sheetContext); _openSettings(); }),
+            _menuTile(sheetContext, Icons.bookmark_border, 'Закладки', () { Navigator.pop(sheetContext); setState(() => _message = 'Раздел закладок будет подключён отдельно.'); }),
+            _menuTile(sheetContext, Icons.local_gas_station_outlined, 'Заправки', () { Navigator.pop(sheetContext); _searchController.text = 'АЗС'; _searchAddress(); }),
+            _menuTile(sheetContext, Icons.local_parking_outlined, 'Парковки', () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
+            _menuTile(sheetContext, Icons.settings_outlined, 'Настройки', () { Navigator.pop(sheetContext); _openSettings(); }),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRouteMenu() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8))),
+            const SizedBox(height: 12),
+            const Align(alignment: Alignment.centerLeft, child: Text('Маршрут', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+            _menuTile(sheetContext, Icons.edit_road_outlined, 'Изменить маршрут', () { Navigator.pop(sheetContext); setState(() => _message = 'Выберите новую точку на карте или воспользуйтесь поиском.'); }),
+            _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Добавить точку', () { Navigator.pop(sheetContext); setState(() => _message = 'Удерживайте карту в месте промежуточной остановки.'); }),
+            _menuTile(sheetContext, Icons.tune, 'Параметры маршрута', () { Navigator.pop(sheetContext); _openSettings(); }),
+            _menuTile(sheetContext, Icons.share_outlined, 'Поделиться маршрутом', () { Navigator.pop(sheetContext); setState(() => _message = 'Поделиться маршрутом можно после его построения.'); }),
+            _menuTile(sheetContext, Icons.flag_outlined, 'Сообщить об ошибке', () { Navigator.pop(sheetContext); setState(() => _message = 'Отправка ошибок маршрута пока не подключена.'); }),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _menuTile(BuildContext sheetContext, IconData icon, String title, VoidCallback onTap) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, color: const Color(0xFF555B63), size: 25),
+      title: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+      onTap: onTap,
+    );
+  }
+
   String _gpsQualityLabel(double accuracyMeters) {
     if (accuracyMeters <= 10) return 'отличный сигнал';
     if (accuracyMeters <= 20) return 'хороший сигнал';
@@ -825,67 +889,52 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             child: SafeArea(
               bottom: false,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(18),
-                            boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 12, offset: Offset(0, 3))],
-                          ),
-                          child: const Text(
-                            'BAKE NAVIGATOR',
-                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, letterSpacing: 0.2),
-                          ),
-                        ),
-                        const Spacer(),
-                        _MapActionButton(
-                          icon: Icons.settings_outlined,
-                          tooltip: 'Настройки',
-                          onPressed: _openSettings,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Material(
-                      color: Colors.white,
-                      elevation: 5,
-                      borderRadius: BorderRadius.circular(18),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 4, 6, 4),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.search, color: Color(0xFF2468A0), size: 25),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: TextField(
-                                controller: _searchController,
-                                textInputAction: TextInputAction.search,
-                                onSubmitted: (_) => _searchAddress(),
-                                decoration: const InputDecoration(
-                                  hintText: 'Куда едем? Адрес или место',
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                ),
-                              ),
-                            ),
-                            IconButton.filled(
-                              tooltip: 'Найти',
-                              onPressed: _isSearching ? null : _searchAddress,
-                              icon: _isSearching
-                                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                  : const Icon(Icons.arrow_forward),
-                            ),
-                          ],
-                        ),
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Row(children: [
+                  Material(
+                    color: Colors.white,
+                    elevation: 4,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _openProfileMenu,
+                      child: const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Icon(Icons.person_outline, size: 25, color: Color(0xFF30343A)),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Material(
+                      color: Colors.white,
+                      elevation: 5,
+                      borderRadius: BorderRadius.circular(22),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 3, 5, 3),
+                        child: Row(children: [
+                          const Icon(Icons.search, color: Color(0xFF2468A0), size: 24),
+                          const SizedBox(width: 8),
+                          Expanded(child: TextField(
+                            controller: _searchController,
+                            textInputAction: TextInputAction.search,
+                            onSubmitted: (_) => _searchAddress(),
+                            decoration: const InputDecoration(hintText: 'Поиск мест и адресов', border: InputBorder.none, isDense: true),
+                          )),
+                          IconButton(
+                            tooltip: 'Найти',
+                            onPressed: _isSearching ? null : _searchAddress,
+                            icon: _isSearching
+                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                                : const Icon(Icons.arrow_forward, color: Color(0xFF2468A0)),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _MapActionButton(icon: Icons.more_horiz, tooltip: 'Меню маршрута', onPressed: _openRouteMenu),
+                ]),
               ),
             ),
           ),
