@@ -81,6 +81,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _isSearching = false;
   bool _isBuildingRoute = false;
   double? _gpsAccuracyMeters;
+  double? _gpsHeadingDegrees;
   int _offRouteSamples = 0;
   DateTime? _lastAutomaticReroute;
   String _message = 'Нажмите «Моё местоположение» или удерживайте точку на карте';
@@ -90,6 +91,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     super.initState();
     _configureVoice();
     _loadSavedOfflineMap();
+    // Ask for location after the first frame so the permission dialog has a valid context.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_locateMe());
+    });
   }
 
   Future<void> _configureVoice() async {
@@ -180,8 +185,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       }
 
       final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+        locationSettings: LocationSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+          timeLimit: const Duration(seconds: 20),
         ),
       );
 
@@ -189,6 +195,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (!mounted) return;
       setState(() {
         _currentLocation = point;
+        _gpsAccuracyMeters = position.accuracy;
+        if (position.speed >= 0.8 && position.heading.isFinite) {
+          _gpsHeadingDegrees = position.heading;
+        }
         _message = 'GPS определён. Положение будет обновляться в реальном времени.';
       });
       _mapController.move(point, 15);
@@ -234,6 +244,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         setState(() {
           _currentLocation = LatLng(position.latitude, position.longitude);
           _gpsAccuracyMeters = position.accuracy;
+          // Ignore unstable compass headings while stopped or moving very slowly.
+          if (position.speed >= 0.8 && position.heading.isFinite) {
+            _gpsHeadingDegrees = position.heading;
+          }
         });
         _updateNavigationProgress(_currentLocation!);
         _checkForOffRoute(position);
@@ -637,6 +651,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
 
+  String _gpsQualityLabel(double accuracyMeters) {
+    if (accuracyMeters <= 10) return 'отличный сигнал';
+    if (accuracyMeters <= 20) return 'хороший сигнал';
+    if (accuracyMeters <= 50) return 'слабый сигнал';
+    return 'неточный сигнал';
+  }
+
   String _routeSummary() {
     if (_routeDistanceMeters == null || _routeDurationSeconds == null) {
       return 'Маршрут ещё не построен';
@@ -654,10 +675,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           point: _currentLocation!,
           width: 44,
           height: 44,
-          child: const Icon(
-            Icons.my_location,
-            color: Color(0xFF1769AA),
-            size: 34,
+          child: Transform.rotate(
+            angle: (_gpsHeadingDegrees ?? 0) * math.pi / 180,
+            child: const Icon(
+              Icons.navigation,
+              color: Color(0xFF1769AA),
+              size: 36,
+            ),
           ),
         ),
       if (_destination != null)
@@ -799,7 +823,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       if (_gpsAccuracyMeters != null) ...[
                         const SizedBox(height: 4),
                         Text(
-                          'Точность GPS: ±${_gpsAccuracyMeters!.round()} м',
+                          'Точность GPS: ±${_gpsAccuracyMeters!.round()} м · ${_gpsQualityLabel(_gpsAccuracyMeters!)}',
                           style: const TextStyle(fontSize: 11, color: Colors.black54),
                         ),
                       ],
