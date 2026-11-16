@@ -192,7 +192,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _message = 'GPS определён. Положение будет обновляться в реальном времени.';
       });
       _mapController.move(point, 15);
-      _startLiveLocationUpdates();
+      await _startLiveLocationUpdates();
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
@@ -202,13 +202,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
 
-  void _startLiveLocationUpdates() {
-    _positionSubscription?.cancel();
-    _positionSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
+  Future<void> _startLiveLocationUpdates({bool backgroundNavigation = false}) async {
+    await _positionSubscription?.cancel();
+    if (!mounted) return;
+
+    final LocationSettings locationSettings;
+    if (backgroundNavigation && defaultTargetPlatform == TargetPlatform.android) {
+      locationSettings = AndroidSettings(
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 5,
-      ),
+        intervalDuration: const Duration(seconds: 3),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'BAKE Navigator — навигация активна',
+          notificationText: 'GPS и голосовые подсказки продолжают работать в фоне.',
+          notificationChannelName: 'Фоновая навигация',
+          setOngoing: true,
+        ),
+      );
+    } else {
+      locationSettings = const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 5,
+      );
+    }
+
+    _positionSubscription = Geolocator.getPositionStream(
+      locationSettings: locationSettings,
     ).listen(
       (position) {
         if (!mounted) return;
@@ -318,6 +337,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   void _selectDestination(LatLng point) {
+    final wasNavigating = _navigationActive;
     setState(() {
       _destination = point;
       _routePoints = [];
@@ -328,6 +348,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = 'Точка назначения выбрана. Нажмите «Построить маршрут».';
     });
+    if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
 
 
@@ -386,8 +407,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     setState(() {
       _navigationActive = true;
       _instructionIndex = _instructions.length > 1 ? 1 : 0;
-      _message = 'Навигация началась. Следуйте голосовым подсказкам.';
+      _message = 'Навигация началась. GPS продолжит работать при свёрнутом приложении.';
     });
+    await _startLiveLocationUpdates(backgroundNavigation: true);
     await _speakCurrentInstruction();
   }
 
@@ -422,6 +444,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           _message = 'Вы прибыли в пункт назначения.';
         });
         _tts.speak('Вы прибыли в пункт назначения.');
+        unawaited(_startLiveLocationUpdates());
         return;
       }
       setState(() => _instructionIndex++);
@@ -429,12 +452,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
-  void _stopNavigation() {
+  Future<void> _stopNavigation() async {
     setState(() {
       _navigationActive = false;
       _message = 'Навигация остановлена.';
     });
-    _tts.stop();
+    await _tts.stop();
+    await _startLiveLocationUpdates();
   }
 
 
@@ -586,6 +610,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   void _clearDestination() {
+    final wasNavigating = _navigationActive;
     setState(() {
       _destination = null;
       _routePoints = [];
@@ -596,6 +621,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = 'Маршрут очищен. Удерживайте карту, чтобы выбрать новую точку.';
     });
+    if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
 
   String _routeSummary() {
