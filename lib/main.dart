@@ -1025,6 +1025,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             child: const Icon(Icons.navigation, color: Color(0xFF1769AA), size: 36),
           ),
         ),
+      ..._routeStops.asMap().entries.map((entry) => Marker(
+        point: entry.value,
+        width: 38,
+        height: 38,
+        child: CircleAvatar(
+          backgroundColor: const Color(0xFF2468A0),
+          child: Text('${entry.key + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+        ),
+      )),
       if (_destination != null)
         Marker(
           point: _destination!,
@@ -1457,7 +1466,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                         label: '${(_voiceVolume * 100).round()}%',
                         onChanged: (value) {
                           setState(() => _voiceVolume = value);
-                          _saveNavigationPreferences();
+                          unawaited(_saveNavigationPreferences());
                         },
                       ),
                       Text('Скорость речи · ${_voiceRate.toStringAsFixed(2)}'),
