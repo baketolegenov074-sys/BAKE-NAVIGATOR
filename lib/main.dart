@@ -1245,6 +1245,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             _menuTile(sheetContext, Icons.history, 'Бронирования и история заказов', () { Navigator.pop(sheetContext); _openBookingsPage(); }),
             _menuTile(sheetContext, Icons.rate_review_outlined, 'Лента отзывов и исправлений', () { Navigator.pop(sheetContext); _openFeedbackPage(); }),
             _menuTile(sheetContext, Icons.workspace_premium_outlined, 'BAKE Plus', () { Navigator.pop(sheetContext); _openBakePlusPage(); }),
+            _menuTile(sheetContext, Icons.music_note_outlined, 'Музыка', () { Navigator.pop(sheetContext); _openMusicPage(); }),
           ]),
         ),
       ),
@@ -1353,6 +1354,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     icon: Icons.rate_review_outlined,
     description: 'Раздел для просмотра сообщений об ошибках карты и предложенных исправлений.',
     status: 'Лента пока недоступна: серверный источник отзывов и модерация ещё не подключены.',
+  );
+
+  Future<void> _openMusicPage() => _openFeaturePage(
+    title: 'Музыка BAKE',
+    icon: Icons.music_note_outlined,
+    description: 'Отдельная музыкальная панель должна показывать только реально доступное управление воспроизведением на телефоне или подключённом музыкальном сервисе. В ней будут текущий трек и доступные системные действия, если Android предоставит их.',
+    status: 'Музыкальный провайдер и управление медиасессией пока не подключены. BAKE не показывает вымышленные треки, исполнителей и обложки.',
   );
 
   Future<void> _openBakePlusPage() => _openFeaturePage(
