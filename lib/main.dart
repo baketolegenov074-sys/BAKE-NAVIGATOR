@@ -313,11 +313,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
       // First search strictly around the driver to prevent distant-city matches.
       var results = await requestSearch(bounded: true);
-      // If the local box has no match, broaden to Kazakhstan but keep nearest first.
-      if (results.isEmpty) results = await requestSearch(bounded: false);
       if (!mounted) return;
       if (results.isEmpty) {
-        setState(() => _message = 'В Казахстане такой объект не найден. Проверьте название или выберите точку на карте.');
+        setState(() => _message = 'Рядом с вами объект не найден. Уточните название или выберите точку на карте — далёкие города не будем подставлять вместо местного адреса.');
         return;
       }
 
@@ -647,6 +645,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       }
 
       final route = (data['routes'] as List).first as Map<String, dynamic>;
+      final routeDistance = (route['distance'] as num).toDouble();
+      final directDistance = Geolocator.distanceBetween(
+        start.latitude, start.longitude, end.latitude, end.longitude,
+      );
+      // Reject implausibly long results instead of showing a route across the country.
+      if (routeDistance > math.max(5000.0, directDistance * 8.0)) {
+        throw Exception('Сервис вернул слишком длинный маршрут. Проверьте выбранную точку на карте.');
+      }
       final geometry = route['geometry'] as Map<String, dynamic>;
       final coordinates = geometry['coordinates'] as List<dynamic>;
       final instructions = _readInstructions(route);
@@ -665,7 +671,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _navigationActive = resumeNavigation;
         _instructionIndex = resumeNavigation && instructions.length > 1 ? 1 : 0;
         _offRouteSamples = 0;
-        _routeDistanceMeters = (route['distance'] as num).toDouble();
+        _routeDistanceMeters = routeDistance;
         _routeDurationSeconds = (route['duration'] as num).toDouble();
         _message = automaticReroute
             ? 'Маршрут перестроен. Продолжаем навигацию.'
