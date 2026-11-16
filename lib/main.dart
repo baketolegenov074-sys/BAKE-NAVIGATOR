@@ -58,6 +58,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   final MapController _mapController = MapController();
   final FlutterTts _tts = FlutterTts();
+  final TextEditingController _searchController = TextEditingController();
 
   LatLng? _currentLocation;
   LatLng? _destination;
@@ -69,6 +70,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   double? _routeDurationSeconds;
   StreamSubscription<Position>? _positionSubscription;
   bool _isLocating = false;
+  bool _isSearching = false;
   bool _isBuildingRoute = false;
   String _message = 'Нажмите «Моё местоположение» или удерживайте точку на карте';
 
@@ -91,6 +93,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   @override
   void dispose() {
     _positionSubscription?.cancel();
+    _searchController.dispose();
     _tts.stop();
     super.dispose();
   }
@@ -165,6 +168,95 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         });
       },
     );
+  }
+
+
+  Future<void> _searchAddress() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty || _isSearching) return;
+    setState(() {
+      _isSearching = true;
+      _message = 'Ищем адрес…';
+    });
+    try {
+      final uri = Uri.https(
+        'nominatim.openstreetmap.org',
+        '/search',
+        {
+          'q': query,
+          'format': 'jsonv2',
+          'limit': '6',
+          'countrycodes': 'kz',
+          'accept-language': 'ru',
+          'addressdetails': '1',
+        },
+      );
+      // Manual search only: respect the public Nominatim usage policy.
+      final response = await http.get(
+        uri,
+        headers: const {'User-Agent': 'BAKE-Navigator/0.1'},
+      ).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) {
+        throw Exception('Поиск адресов временно недоступен.');
+      }
+      final results = jsonDecode(response.body) as List<dynamic>;
+      if (!mounted) return;
+      if (results.isEmpty) {
+        setState(() => _message = 'Адрес не найден. Уточните название улицы или дома.');
+        return;
+      }
+      final selected = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Найденные адреса'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: results.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, index) {
+                final item = results[index] as Map<String, dynamic>;
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.location_on_outlined),
+                  title: Text(
+                    item['display_name']?.toString() ?? 'Адрес',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => Navigator.of(dialogContext).pop(item),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Отмена'),
+            ),
+          ],
+        ),
+      );
+      if (selected == null || !mounted) return;
+      final lat = double.tryParse(selected['lat']?.toString() ?? '');
+      final lon = double.tryParse(selected['lon']?.toString() ?? '');
+      if (lat == null || lon == null) {
+        setState(() => _message = 'Не удалось определить координаты адреса.');
+        return;
+      }
+      final point = LatLng(lat, lon);
+      _selectDestination(point);
+      _mapController.move(point, 16);
+      setState(() {
+        _message = 'Адрес выбран. Нажмите «Построить маршрут».';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isSearching = false);
+    }
   }
 
   void _selectDestination(LatLng point) {
@@ -494,6 +586,37 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              textInputAction: TextInputAction.search,
+                              onSubmitted: (_) => _searchAddress(),
+                              decoration: const InputDecoration(
+                                hintText: 'Найти улицу или адрес в Казахстане',
+                                prefixIcon: Icon(Icons.search),
+                                isDense: true,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.all(Radius.circular(14)),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton.filled(
+                            onPressed: _isSearching ? null : _searchAddress,
+                            icon: _isSearching
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.search),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
                       Text(
                         _message,
                         style: const TextStyle(fontSize: 13, color: Colors.black87),
