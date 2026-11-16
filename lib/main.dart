@@ -930,6 +930,115 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
 
+  Future<void> _openSearchPanel() async {
+    final prefs = await SharedPreferences.getInstance();
+    final history = prefs.getStringList('search_history') ?? <String>[];
+    if (!mounted) return;
+    const categories = <Map<String, Object>>[
+      {'name': 'АЗС', 'query': 'АЗС', 'icon': Icons.local_gas_station},
+      {'name': 'Где поесть', 'query': 'кафе ресторан', 'icon': Icons.restaurant},
+      {'name': 'Продукты', 'query': 'продуктовый магазин', 'icon': Icons.shopping_basket},
+      {'name': 'Аптеки', 'query': 'аптека', 'icon': Icons.local_pharmacy},
+      {'name': 'Банкоматы', 'query': 'банкомат', 'icon': Icons.atm},
+      {'name': 'Отели', 'query': 'отель', 'icon': Icons.hotel},
+      {'name': 'Автомойки', 'query': 'автомойка', 'icon': Icons.local_car_wash},
+      {'name': 'Автосервисы', 'query': 'автосервис', 'icon': Icons.car_repair},
+      {'name': 'Больницы', 'query': 'больница', 'icon': Icons.local_hospital},
+      {'name': 'Кинотеатры', 'query': 'кинотеатр', 'icon': Icons.movie},
+      {'name': 'Бары и пабы', 'query': 'бар паб', 'icon': Icons.local_bar},
+      {'name': 'Магазины', 'query': 'магазин', 'icon': Icons.store},
+    ];
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (sheetContext) => DefaultTabController(
+        length: 2,
+        child: SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(sheetContext).size.height * 0.72,
+            child: Column(children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
+                child: Row(children: [
+                  const Expanded(child: Text('Поиск и выбор места', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+                  IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
+                ]),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  controller: _searchController,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) { Navigator.pop(sheetContext); _searchAddress(); },
+                  decoration: InputDecoration(
+                    hintText: 'Поиск и выбор места',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: IconButton(
+                      tooltip: 'Найти',
+                      onPressed: () { Navigator.pop(sheetContext); _searchAddress(); },
+                      icon: const Icon(Icons.arrow_forward),
+                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                ),
+              ),
+              const TabBar(tabs: [Tab(text: 'Категории'), Tab(text: 'История')]),
+              Expanded(
+                child: TabBarView(children: [
+                  GridView.count(
+                    padding: const EdgeInsets.all(14),
+                    crossAxisCount: 4,
+                    childAspectRatio: 0.82,
+                    children: categories.map((category) {
+                      final name = category['name']! as String;
+                      final query = category['query']! as String;
+                      final icon = category['icon']! as IconData;
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () {
+                          Navigator.pop(sheetContext);
+                          if (name == 'АЗС') {
+                            _openStationNetworks();
+                          } else {
+                            _searchController.text = query;
+                            _searchAddress();
+                          }
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.all(5),
+                          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                            CircleAvatar(radius: 25, backgroundColor: const Color(0xFFF1F3F5), child: Icon(icon, color: const Color(0xFF2468A0))),
+                            const SizedBox(height: 6),
+                            Text(name, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                          ]),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  history.isEmpty
+                      ? const Center(child: Text('История поиска пока пуста.'))
+                      : ListView(
+                          children: history.map((query) => ListTile(
+                            leading: const Icon(Icons.history),
+                            title: Text(query),
+                            onTap: () {
+                              Navigator.pop(sheetContext);
+                              _searchController.text = query;
+                              _searchAddress();
+                            },
+                          )).toList(),
+                        ),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openProfileMenu() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -1551,9 +1660,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
                   child: Row(children: [
-                    _mapBottomItem(Icons.search, 'Поиск', () {
-                      _searchFocusNode.requestFocus();
-                    }),
+                    _mapBottomItem(Icons.search, 'Поиск', _openSearchPanel),
                     _mapBottomItem(Icons.alt_route, 'Маршрут', _openRouteMenu),
                     _mapBottomItem(Icons.local_gas_station, 'АЗС', () {
                       _searchController.text = 'АЗС';
