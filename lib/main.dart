@@ -98,10 +98,65 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     super.initState();
     _configureVoice();
     _loadSavedOfflineMap();
+    _loadSavedRoutePoints();
     // Ask for location after the first frame so the permission dialog has a valid context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_locateMe());
     });
+  }
+
+  static const String _savedRouteOriginKey = 'saved_route_origin_v1';
+  static const String _savedRouteDestinationKey = 'saved_route_destination_v1';
+
+  String _encodePoint(LatLng point) =>
+      jsonEncode({'lat': point.latitude, 'lon': point.longitude});
+
+  LatLng? _decodePoint(String? value) {
+    if (value == null) return null;
+    try {
+      final decoded = jsonDecode(value) as Map<String, dynamic>;
+      final lat = (decoded['lat'] as num).toDouble();
+      final lon = (decoded['lon'] as num).toDouble();
+      if (lat < 40 || lat > 56 || lon < 46 || lon > 88) return null;
+      return LatLng(lat, lon);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _loadSavedRoutePoints() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final origin = _decodePoint(prefs.getString(_savedRouteOriginKey));
+      final destination = _decodePoint(prefs.getString(_savedRouteDestinationKey));
+      if (!mounted) return;
+      if (origin == null && destination == null) return;
+      setState(() {
+        _routeOrigin = origin;
+        _destination = destination;
+        _message = 'Предыдущие точки маршрута восстановлены. При необходимости проверьте их.';
+      });
+    } catch (_) {
+      // Route planning remains usable if local preferences are unavailable.
+    }
+  }
+
+  Future<void> _saveRoutePoint(String key, LatLng point) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(key, _encodePoint(point));
+    } catch (_) {
+      if (mounted) setState(() => _message = 'Не удалось сохранить точку маршрута на телефоне.');
+    }
+  }
+
+  Future<void> _removeSavedRoutePoint(String key) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(key);
+    } catch (_) {
+      if (mounted) setState(() => _message = 'Не удалось удалить сохранённую точку маршрута.');
+    }
   }
 
   Future<void> _configureVoice() async {
@@ -465,6 +520,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = 'Начальная точка выбрана на карте. Выберите пункт назначения.';
     });
+    unawaited(_saveRoutePoint(_savedRouteOriginKey, point));
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
 
@@ -477,6 +533,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = 'Начальная точка снова определяется по GPS.';
     });
+    unawaited(_removeSavedRoutePoint(_savedRouteOriginKey));
   }
 
   void _selectDestination(LatLng point) {
@@ -491,6 +548,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = 'Точка назначения выбрана. Нажмите «Построить маршрут».';
     });
+    unawaited(_saveRoutePoint(_savedRouteDestinationKey, point));
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
 
@@ -866,6 +924,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = 'Маршрут очищен. Удерживайте карту, чтобы выбрать новую точку.';
     });
+    unawaited(_removeSavedRoutePoint(_savedRouteOriginKey));
+    unawaited(_removeSavedRoutePoint(_savedRouteDestinationKey));
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
 
