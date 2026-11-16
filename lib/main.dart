@@ -13,7 +13,6 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -1119,16 +1118,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.security_outlined, color: Color(0xFF2468A0)),
-                    title: const Text('Разрешения телефона'),
-                    subtitle: const Text('Откроются системные настройки Android. Разрешения включаются только по необходимости.'),
-                    trailing: const Icon(Icons.open_in_new),
-                    onTap: openAppSettings,
-                  ),
-                ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 4),
                 const Text('Автомобиль', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
                 const Text('Эти сведения сохраняются только на этом телефоне.'),
