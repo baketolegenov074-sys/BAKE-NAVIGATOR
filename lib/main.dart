@@ -132,7 +132,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final selectedPath = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => const NavigatorSettingsScreen()),
     );
-    if (selectedPath == null || !mounted) return;
+    if (!mounted || selectedPath == null) return;
+    if (selectedPath == '__use_online_map__') {
+      _offlineTileProvider?.dispose();
+      setState(() {
+        _offlineTileProvider = null;
+        _message = 'Включена онлайн-карта.';
+      });
+      return;
+    }
     try {
       final provider = MbTilesTileProvider.fromPath(path: selectedPath);
       _offlineTileProvider?.dispose();
@@ -1003,8 +1011,12 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
       final source = File(sourcePath);
       final directory = await getApplicationSupportDirectory();
       final destination = File('${directory.path}/bake_offline_map.mbtiles');
-      if (await destination.exists()) await destination.delete();
-      await source.copy(destination.path);
+      if (source.absolute.path != destination.absolute.path) {
+        if (await destination.exists()) await destination.delete();
+        await source.copy(destination.path);
+      }
+      final validationProvider = MbTilesTileProvider.fromPath(path: destination.path);
+      validationProvider.dispose();
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('offline_map_path', destination.path);
       if (!mounted) return;
@@ -1018,6 +1030,19 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     } finally {
       if (mounted) setState(() => _importingOfflineMap = false);
     }
+  }
+
+  Future<void> _removeOfflineMap() async {
+    final prefs = await SharedPreferences.getInstance();
+    final oldPath = prefs.getString('offline_map_path');
+    if (oldPath != null) {
+      final oldFile = File(oldPath);
+      if (await oldFile.exists()) await oldFile.delete();
+    }
+    await prefs.remove('offline_map_path');
+    if (!mounted) return;
+    setState(() => _offlineMapPath = null);
+    Navigator.of(context).pop('__use_online_map__');
   }
 
   Future<void> _saveVehicle() async {
@@ -1145,6 +1170,12 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                                 : 'Импортировать MBTiles-карту'),
                           ),
                         ),
+                        if (_offlineMapPath != null)
+                          TextButton.icon(
+                            onPressed: _removeOfflineMap,
+                            icon: const Icon(Icons.cloud_outlined),
+                            label: const Text('Отключить офлайн-карту'),
+                          ),
                         const SizedBox(height: 4),
                         const Text(
                           'Файл карты нужно заранее получить из источника, разрешающего офлайн-использование. Обычные публичные тайлы OpenStreetMap массово скачивать нельзя.',
