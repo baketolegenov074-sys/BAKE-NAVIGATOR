@@ -1872,29 +1872,80 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       'Compass',
       'Другие АЗС',
     ];
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Row(children: [
-              const Expanded(child: Text('Сети АЗС', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
-              TextButton(onPressed: () { Navigator.pop(sheetContext); _searchController.text = 'АЗС'; _searchAddress(); }, child: const Text('Все АЗС')),
-            ]),
-            ...networks.map((network) => ListTile(
-              dense: true,
-              leading: const Icon(Icons.local_gas_station_outlined, color: Color(0xFF2468A0)),
-              title: Text(network),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _searchController.text = network == 'Другие АЗС' ? 'АЗС' : network;
-                _searchAddress();
-              },
-            )),
-          ]),
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('selected_station_networks');
+    final initial = saved == null ? networks.toSet() : saved.toSet();
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => StatefulBuilder(
+          builder: (pageContext, refresh) => Scaffold(
+            backgroundColor: const Color(0xFFF5F7FA),
+            appBar: AppBar(
+              title: const Text('Сети АЗС'),
+              backgroundColor: const Color(0xFFF5F7FA),
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    await prefs.setStringList('selected_station_networks', initial.toList());
+                    if (!mounted) return;
+                    Navigator.pop(pageContext);
+                    final query = initial.isEmpty || initial.length == networks.length
+                        ? 'АЗС'
+                        : initial.where((name) => name != 'Другие АЗС').join(' OR ');
+                    _searchController.text = query.isEmpty ? 'АЗС' : query;
+                    _searchAddress();
+                  },
+                  child: const Text('Готово'),
+                ),
+              ],
+            ),
+            body: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+              children: [
+                const Text(
+                  'Выбери сети, которые нужно учитывать при поиске заправок.',
+                  style: TextStyle(color: Color(0xFF65717D), fontSize: 14),
+                ),
+                const SizedBox(height: 12),
+                ...networks.map((network) => Card(
+                  margin: const EdgeInsets.only(bottom: 7),
+                  color: Colors.white,
+                  child: CheckboxListTile(
+                    value: initial.contains(network),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    secondary: const Icon(Icons.local_gas_station_outlined, color: Color(0xFF2468A0)),
+                    title: Text(network),
+                    onChanged: (checked) => refresh(() {
+                      if (checked == true) {
+                        initial.add(network);
+                      } else {
+                        initial.remove(network);
+                      }
+                    }),
+                  ),
+                )),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => refresh(() {
+                    if (initial.length == networks.length) {
+                      initial.clear();
+                    } else {
+                      initial
+                        ..clear()
+                        ..addAll(networks);
+                    }
+                  }),
+                  child: Text(initial.length == networks.length ? 'Снять все отметки' : 'Выбрать все сети'),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Примечание: поиск использует названия сетей в OpenStreetMap. Если бренд не указан в данных карты, заправка может не попасть в отфильтрованный список.',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF7B8792)),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
