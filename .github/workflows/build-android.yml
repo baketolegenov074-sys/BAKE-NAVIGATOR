@@ -43,12 +43,12 @@ jobs:
           path = Path("android/app/src/main/AndroidManifest.xml")
           manifest = path.read_text()
           permissions = (
-              '    <uses-permission android:name="android.permission.INTERNET" />\\n'
-              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\\n'
-              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\\n'
-              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\\n'
-              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\\n'
-              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\\n'
+              '    <uses-permission android:name="android.permission.INTERNET" />\n'
+              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
+              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n'
+              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n'
+              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n'
+              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
           )
           if 'android.permission.ACCESS_FINE_LOCATION' not in manifest:
               manifest = manifest.replace("    <application", permissions + "    <application", 1)
