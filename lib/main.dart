@@ -288,7 +288,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     });
     try {
       // Prefer the live GPS position; use Shymkent only before GPS is available.
-      final anchor = _routeOrigin ?? _currentLocation ?? _shymkent;
+      final anchor = selectAsOrigin
+          ? (_currentLocation ?? _routeOrigin ?? _shymkent)
+          : (_routeOrigin ?? _currentLocation ?? _shymkent);
       final west = (anchor.longitude - 0.45).toStringAsFixed(6);
       final north = (anchor.latitude + 0.45).toStringAsFixed(6);
       final east = (anchor.longitude + 0.45).toStringAsFixed(6);
