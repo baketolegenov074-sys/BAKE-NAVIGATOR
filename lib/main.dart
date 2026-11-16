@@ -1344,30 +1344,26 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Widget _mapBottomItem(IconData icon, String label, VoidCallback onTap, {bool selected = false}) {
     return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Container(
-          height: 66,
-          decoration: BoxDecoration(
-            color: selected ? const Color(0xFFF1F3F5) : Colors.transparent,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 29, color: const Color(0xFF4B4E52)),
-              const SizedBox(height: 3),
-              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF4B4E52))),
-            ],
+      child: Tooltip(
+        message: label,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: SizedBox(
+            height: 54,
+            child: Center(
+              child: Icon(
+                icon,
+                size: 27,
+                color: selected ? const Color(0xFF2468A0) : const Color(0xFF4B4E52),
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  @override
   Widget build(BuildContext context) {
     final markers = <Marker>[
       if (_routeOrigin != null)
@@ -1534,75 +1530,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           ),
           Positioned(
             left: 14,
-            bottom: 112,
+            bottom: 86,
             child: _roundMapButton(
               icon: Icons.my_location,
               tooltip: 'Моё местоположение',
               iconColor: const Color(0xFF2468A0),
               onPressed: _isLocating ? null : _locateMe,
-            ),
-          ),
-          Positioned(
-            left: 18,
-            right: 18,
-            bottom: 94,
-            child: SafeArea(
-              top: false,
-              child: Row(
-                children: [
-                  _roundMapButton(
-                    icon: Icons.tune,
-                    tooltip: 'Фильтры карты',
-                    onPressed: _openStationNetworks,
-                  ),
-                  const SizedBox(width: 8),
-                  Material(
-                    color: Colors.white,
-                    elevation: 4,
-                    borderRadius: BorderRadius.circular(18),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(18),
-                      onTap: _openStationNetworks,
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                        child: Row(children: [
-                          Text('Сети', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF4B4E52))),
-                          SizedBox(width: 7),
-                          Icon(Icons.keyboard_arrow_down, color: Color(0xFF4B4E52)),
-                        ]),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Material(
-                      color: Colors.white,
-                      elevation: 4,
-                      borderRadius: BorderRadius.circular(18),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(18),
-                        onTap: () => setState(() => _carPaymentOnly = !_carPaymentOnly),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              if (_carPaymentOnly) const Icon(Icons.check_circle, size: 17, color: Color(0xFF2468A0)),
-                              if (_carPaymentOnly) const SizedBox(width: 5),
-                              Flexible(child: Text(
-                                'Оплата из машины',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF4B4E52)),
-                              )),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
             ),
           ),
           Positioned(
