@@ -338,6 +338,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Future<void> _searchAddress({bool selectAsOrigin = false}) async {
     final query = _searchController.text.trim();
     if (query.isEmpty || _isSearching) return;
+    final prefs = await SharedPreferences.getInstance();
+    final history = prefs.getStringList('search_history') ?? <String>[];
+    history.remove(query);
+    history.insert(0, query);
+    await prefs.setStringList('search_history', history.take(20).toList());
     setState(() {
       _isSearching = true;
       _message = selectAsOrigin ? 'Ищем начальную точку…' : 'Ищем пункт назначения…';
@@ -1039,6 +1044,123 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
   }
 
+  Future<void> _showUnavailableFeature(String title, String detail) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(detail),
+        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Понятно'))],
+      ),
+    );
+  }
+
+  Future<void> _shareCurrentLocation() async {
+    final point = _currentLocation;
+    if (point == null) {
+      await _showUnavailableFeature('Геопозиция', 'Сначала дождитесь определения GPS.');
+      return;
+    }
+    final value = 'Моя геопозиция BAKE: https://www.openstreetmap.org/?mlat=${point.latitude}&mlon=${point.longitude}#map=17/${point.latitude}/${point.longitude}';
+    await Clipboard.setData(ClipboardData(text: value));
+    if (mounted) setState(() => _message = 'Ссылка на геопозицию скопирована.');
+  }
+
+  Future<void> _shareRoute() async {
+    if (_destination == null || _routePoints.isEmpty) {
+      await _showUnavailableFeature('Поделиться маршрутом', 'Сначала постройте маршрут.');
+      return;
+    }
+    final origin = _routeOrigin ?? _currentLocation;
+    final value = 'Маршрут BAKE Navigator\\n'
+        'Откуда: ${origin == null ? 'текущее местоположение' : '${origin.latitude}, ${origin.longitude}'}\\n'
+        'Куда: ${_destination!.latitude}, ${_destination!.longitude}\\n'
+        '${_routeSummary()}\\n'
+        'https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${origin?.latitude}%2C${origin?.longitude}%3B${_destination!.latitude}%2C${_destination!.longitude}';
+    await Clipboard.setData(ClipboardData(text: value));
+    if (mounted) setState(() => _message = 'Описание маршрута скопировано для отправки.');
+  }
+
+  Future<void> _reportRouteIssue() async {
+    final controller = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Сообщить об ошибке маршрута'),
+        content: TextField(
+          controller: controller,
+          maxLines: 4,
+          decoration: const InputDecoration(hintText: 'Опишите, что не так', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Скопировать отчёт')),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) { controller.dispose(); return; }
+    final report = 'Ошибка маршрута BAKE Navigator\\n${controller.text.trim()}\\n${_routeSummary()}';
+    await Clipboard.setData(ClipboardData(text: report));
+    controller.dispose();
+    if (mounted) setState(() => _message = 'Отчёт скопирован. Отправка на сервер пока не подключена.');
+  }
+
+  Future<void> _openRoutePreferences() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
+          child: StatefulBuilder(
+            builder: (sheetContext, refresh) => Column(mainAxisSize: MainAxisSize.min, children: [
+              const Align(alignment: Alignment.centerLeft, child: Text('Параметры маршрута', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _avoidTolls,
+                title: const Text('Избегать платных дорог'),
+                onChanged: (value) { setState(() => _avoidTolls = value); refresh(() {}); _saveNavigationPreferences(); },
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _avoidUnpaved,
+                title: const Text('Избегать плохих и грунтовых дорог'),
+                onChanged: (value) { setState(() => _avoidUnpaved = value); refresh(() {}); _saveNavigationPreferences(); },
+              ),
+              const Text('Эти параметры сохраняются на телефоне. Текущий тестовый сервис OSRM пока не применяет их при расчёте.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+              Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(sheetContext), child: const Text('Готово'))),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openMapLayers() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Align(alignment: Alignment.centerLeft, child: Text('Карта и слои', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+            ListTile(leading: const Icon(Icons.map_outlined), title: const Text('Схема'), subtitle: const Text('Карта OpenStreetMap'), trailing: const Icon(Icons.check, color: Color(0xFF269B68))),
+            ListTile(leading: const Icon(Icons.bookmark_border), title: const Text('Закладки'), onTap: () { Navigator.pop(sheetContext); _openBookmarks(); }),
+            ListTile(leading: const Icon(Icons.local_parking_outlined), title: const Text('Парковки'), onTap: () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
+            ListTile(leading: const Icon(Icons.traffic_outlined), title: const Text('Пробки'), subtitle: const Text('Источник данных о пробках пока не подключён'), enabled: false),
+            ListTile(leading: const Icon(Icons.panorama_outlined), title: const Text('Панорамы'), subtitle: const Text('Панорамный сервис пока не подключён'), enabled: false),
+            ListTile(leading: const Icon(Icons.satellite_alt_outlined), title: const Text('Спутник и гибрид'), subtitle: const Text('Поставщик спутниковых тайлов пока не подключён'), enabled: false),
+          ]),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openProfileMenu() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -1059,12 +1181,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ]),
             const SizedBox(height: 10),
             _menuTile(sheetContext, Icons.download_for_offline_outlined, 'Загрузка карт', () { Navigator.pop(sheetContext); _openSettings(); }),
-            _menuTile(sheetContext, Icons.support_agent_outlined, 'Поддержка', () { Navigator.pop(sheetContext); setState(() => _message = 'Раздел поддержки пока не подключён.'); }),
-            _menuTile(sheetContext, Icons.map_outlined, 'Изменить карту и слои', () { Navigator.pop(sheetContext); _openSettings(); }),
+            _menuTile(sheetContext, Icons.support_agent_outlined, 'Поддержка', () { Navigator.pop(sheetContext); _showUnavailableFeature('Поддержка', 'Канал обращений BAKE ещё не подключён.'); }),
+            _menuTile(sheetContext, Icons.map_outlined, 'Изменить карту и слои', () { Navigator.pop(sheetContext); _openMapLayers(); }),
+            _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Разместить объект', () { Navigator.pop(sheetContext); _showUnavailableFeature('Разместить объект', 'Форма добавления объекта появится после подключения проверки и отправки объектов на сервер.'); }),
+            _menuTile(sheetContext, Icons.share_location_outlined, 'Поделиться геопозицией', () { Navigator.pop(sheetContext); _shareCurrentLocation(); }),
             _menuTile(sheetContext, Icons.bookmark_border, 'Закладки', () { Navigator.pop(sheetContext); _openBookmarks(); }),
-            _menuTile(sheetContext, Icons.local_gas_station_outlined, 'Заправки', () { Navigator.pop(sheetContext); _searchController.text = 'АЗС'; _searchAddress(); }),
+            _menuTile(sheetContext, Icons.local_gas_station_outlined, 'Заправки', () { Navigator.pop(sheetContext); _openStationNetworks(); }),
             _menuTile(sheetContext, Icons.local_parking_outlined, 'Парковки', () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
             _menuTile(sheetContext, Icons.settings_outlined, 'Настройки', () { Navigator.pop(sheetContext); _openSettings(); }),
+            _menuTile(sheetContext, Icons.history, 'Бронирования и история заказов', () { Navigator.pop(sheetContext); _showUnavailableFeature('История заказов', 'BAKE пока не подключён к сервису бронирований и заказов.'); }),
+            _menuTile(sheetContext, Icons.rate_review_outlined, 'Лента отзывов и исправлений', () { Navigator.pop(sheetContext); _showUnavailableFeature('Отзывы и исправления', 'Для этой ленты пока нет серверного источника данных.'); }),
+            _menuTile(sheetContext, Icons.workspace_premium_outlined, 'BAKE Plus', () { Navigator.pop(sheetContext); _showUnavailableFeature('BAKE Plus', 'Подписка BAKE ещё не создана.'); }),
           ]),
         ),
       ),
@@ -1358,12 +1485,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             const SizedBox(height: 12),
             const Align(alignment: Alignment.centerLeft, child: Text('Маршрут', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
             _menuTile(sheetContext, Icons.edit_road_outlined, 'Планирование маршрута', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
-            _menuTile(sheetContext, Icons.edit_location_alt_outlined, 'Изменить маршрут', () { Navigator.pop(sheetContext); setState(() => _message = 'Выберите новую точку на карте или воспользуйтесь поиском.'); }),
-            _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Добавить точку', () { Navigator.pop(sheetContext); setState(() => _message = 'Удерживайте карту в месте промежуточной остановки.'); }),
+            _menuTile(sheetContext, Icons.edit_location_alt_outlined, 'Изменить маршрут', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
+            _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Добавить точку', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
             _menuTile(sheetContext, Icons.alt_route, 'Варианты маршрута', () { Navigator.pop(sheetContext); _openRouteAlternatives(); }),
-            _menuTile(sheetContext, Icons.tune, 'Параметры маршрута', () { Navigator.pop(sheetContext); _openSettings(); }),
-            _menuTile(sheetContext, Icons.share_outlined, 'Поделиться маршрутом', () { Navigator.pop(sheetContext); setState(() => _message = 'Поделиться маршрутом можно после его построения.'); }),
-            _menuTile(sheetContext, Icons.flag_outlined, 'Сообщить об ошибке', () { Navigator.pop(sheetContext); setState(() => _message = 'Отправка ошибок маршрута пока не подключена.'); }),
+            _menuTile(sheetContext, Icons.tune, 'Параметры маршрута', () { Navigator.pop(sheetContext); _openRoutePreferences(); }),
+            _menuTile(sheetContext, Icons.share_outlined, 'Поделиться маршрутом', () { Navigator.pop(sheetContext); _shareRoute(); }),
+            _menuTile(sheetContext, Icons.flag_outlined, 'Сообщить об ошибке', () { Navigator.pop(sheetContext); _reportRouteIssue(); }),
           ]),
         ),
       ),
