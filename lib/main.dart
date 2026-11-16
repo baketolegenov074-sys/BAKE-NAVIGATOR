@@ -263,57 +263,120 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
 
+  double _distanceKm(LatLng a, LatLng b) {
+    return Geolocator.distanceBetween(
+      a.latitude, a.longitude, b.latitude, b.longitude,
+    ) / 1000;
+  }
+
   Future<void> _searchAddress() async {
     final query = _searchController.text.trim();
     if (query.isEmpty || _isSearching) return;
     setState(() {
       _isSearching = true;
-      _message = 'Ищем адрес…';
+      _message = 'Ищем рядом с вами…';
     });
     try {
-      final uri = Uri.https(
-        'nominatim.openstreetmap.org',
-        '/search',
-        {
+      // Prefer the live GPS position; use Shymkent only before GPS is available.
+      final anchor = _currentLocation ?? _shymkent;
+      final west = (anchor.longitude - 0.45).toStringAsFixed(6);
+      final north = (anchor.latitude + 0.45).toStringAsFixed(6);
+      final east = (anchor.longitude + 0.45).toStringAsFixed(6);
+      final south = (anchor.latitude - 0.45).toStringAsFixed(6);
+
+      Future<List<dynamic>> requestSearch({required bool bounded}) async {
+        final params = <String, String>{
           'q': query,
           'format': 'jsonv2',
-          'limit': '6',
+          'limit': '12',
           'countrycodes': 'kz',
-          'accept-language': 'ru',
+          'accept-language': 'ru,kk',
           'addressdetails': '1',
-        },
-      );
-      // Manual search only: respect the public Nominatim usage policy.
-      final response = await http.get(
-        uri,
-        headers: const {'User-Agent': 'BAKE-Navigator/0.1'},
-      ).timeout(const Duration(seconds: 20));
-      if (response.statusCode != 200) {
-        throw Exception('Поиск адресов временно недоступен.');
+          'viewbox': '$west,$north,$east,$south',
+          if (bounded) 'bounded': '1',
+        };
+        final uri = Uri.https('nominatim.openstreetmap.org', '/search', params);
+        final response = await http.get(
+          uri,
+          headers: const {
+            'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+          },
+        ).timeout(const Duration(seconds: 20));
+        if (response.statusCode == 429) {
+          throw Exception('Сервис поиска просит подождать. Повторите через минуту.');
+        }
+        if (response.statusCode != 200) {
+          throw Exception('Поиск адресов временно недоступен.');
+        }
+        return jsonDecode(response.body) as List<dynamic>;
       }
-      final results = jsonDecode(response.body) as List<dynamic>;
+
+      // First search strictly around the driver to prevent distant-city matches.
+      var results = await requestSearch(bounded: true);
+      // If the local box has no match, broaden to Kazakhstan but keep nearest first.
+      if (results.isEmpty) results = await requestSearch(bounded: false);
       if (!mounted) return;
       if (results.isEmpty) {
-        setState(() => _message = 'Адрес не найден. Уточните название улицы или дома.');
+        setState(() => _message = 'В Казахстане такой объект не найден. Проверьте название или выберите точку на карте.');
         return;
       }
+
+      final valid = results.whereType<Map<String, dynamic>>().where((item) {
+        final lat = double.tryParse(item['lat']?.toString() ?? '');
+        final lon = double.tryParse(item['lon']?.toString() ?? '');
+        return lat != null && lon != null &&
+            lat >= 40.0 && lat <= 56.0 && lon >= 46.0 && lon <= 88.0;
+      }).toList();
+
+      valid.sort((a, b) {
+        final aPoint = LatLng(
+          double.parse(a['lat'].toString()),
+          double.parse(a['lon'].toString()),
+        );
+        final bPoint = LatLng(
+          double.parse(b['lat'].toString()),
+          double.parse(b['lon'].toString()),
+        );
+        return _distanceKm(anchor, aPoint).compareTo(_distanceKm(anchor, bPoint));
+      });
+
+      if (valid.isEmpty) {
+        setState(() => _message = 'Поиск вернул некорректные координаты. Попробуйте другое название.');
+        return;
+      }
+
       final selected = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Найденные адреса'),
+          title: const Text('Ближайшие результаты'),
           content: SizedBox(
             width: double.maxFinite,
             child: ListView.separated(
               shrinkWrap: true,
-              itemCount: results.length,
+              itemCount: valid.length,
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (context, index) {
-                final item = results[index] as Map<String, dynamic>;
+                final item = valid[index];
+                final point = LatLng(
+                  double.parse(item['lat'].toString()),
+                  double.parse(item['lon'].toString()),
+                );
+                final distance = _distanceKm(anchor, point);
+                final distanceLabel = distance < 1
+                    ? '${(distance * 1000).round()} м от вас'
+                    : '${distance.toStringAsFixed(1)} км от вас';
                 return ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.location_on_outlined),
+                  leading: const Icon(Icons.location_on_outlined, color: Color(0xFF2468A0)),
                   title: Text(
-                    item['display_name']?.toString() ?? 'Адрес',
+                    item['name']?.toString().isNotEmpty == true
+                        ? item['name'].toString()
+                        : (item['display_name']?.toString() ?? 'Адрес'),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    '${item['display_name'] ?? ''}\n$distanceLabel',
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -333,16 +396,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (selected == null || !mounted) return;
       final lat = double.tryParse(selected['lat']?.toString() ?? '');
       final lon = double.tryParse(selected['lon']?.toString() ?? '');
-      if (lat == null || lon == null) {
-        setState(() => _message = 'Не удалось определить координаты адреса.');
+      if (lat == null || lon == null || lat < 40 || lat > 56 || lon < 46 || lon > 88) {
+        setState(() => _message = 'Координаты результата не относятся к Казахстану.');
         return;
       }
       final point = LatLng(lat, lon);
       _selectDestination(point);
       _mapController.move(point, 16);
-      setState(() {
-        _message = 'Адрес выбран. Нажмите «Построить маршрут».';
-      });
+      setState(() => _message = 'Точка выбрана. Проверьте её на карте и постройте маршрут.');
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
@@ -667,9 +728,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final minutes = (_routeDurationSeconds! / 60).round();
     return '$km км · около $minutes мин';
   }
-
+ 
   @override
   Widget build(BuildContext context) {
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final markers = <Marker>[
       if (_currentLocation != null)
         Marker(
@@ -678,11 +740,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           height: 44,
           child: Transform.rotate(
             angle: (_gpsHeadingDegrees ?? 0) * math.pi / 180,
-            child: const Icon(
-              Icons.navigation,
-              color: Color(0xFF1769AA),
-              size: 36,
-            ),
+            child: const Icon(Icons.navigation, color: Color(0xFF1769AA), size: 36),
           ),
         ),
       if (_destination != null)
@@ -690,38 +748,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           point: _destination!,
           width: 48,
           height: 48,
-          child: const Icon(
-            Icons.location_pin,
-            color: Colors.red,
-            size: 42,
-          ),
+          child: const Icon(Icons.location_pin, color: Colors.red, size: 42),
         ),
     ];
 
     return Scaffold(
-      appBar: AppBar(
-        actions: [
-          IconButton(
-            tooltip: 'Настройки навигатора',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: _openSettings,
-          ),
-        ],
-        title: const Text(
-          'BAKE NAVIGATOR',
-          style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5),
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-      ),
+      resizeToAvoidBottomInset: false,
+      backgroundColor: const Color(0xFFF3F6FA),
       body: Stack(
         children: [
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
               initialCenter: _shymkent,
-              initialZoom: 12,
+              initialZoom: 13,
               onLongPress: (_, point) => _selectDestination(point),
             ),
             children: [
@@ -737,168 +777,189 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   polylines: [
                     Polyline(
                       points: _routePoints,
-                      strokeWidth: 6,
-                      color: const Color(0xFF1769AA),
+                      strokeWidth: 7,
+                      color: const Color(0xFF2378C8),
                     ),
                   ],
                 ),
               MarkerLayer(markers: markers),
               const RichAttributionWidget(
-                attributions: [
-                  TextSourceAttribution('© OpenStreetMap contributors'),
-                ],
+                attributions: [TextSourceAttribution('© OpenStreetMap contributors')],
               ),
             ],
           ),
           Positioned(
-            top: 12,
-            right: 12,
-            child: FloatingActionButton.small(
-              heroTag: 'locate',
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF1769AA),
-              onPressed: _isLocating ? null : _locateMe,
-              child: _isLocating
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.my_location),
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 12, offset: Offset(0, 3))],
+                          ),
+                          child: const Text(
+                            'BAKE NAVIGATOR',
+                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, letterSpacing: 0.2),
+                          ),
+                        ),
+                        const Spacer(),
+                        _MapActionButton(
+                          icon: Icons.settings_outlined,
+                          tooltip: 'Настройки',
+                          onPressed: _openSettings,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Material(
+                      color: Colors.white,
+                      elevation: 5,
+                      borderRadius: BorderRadius.circular(18),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 4, 6, 4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.search, color: Color(0xFF2468A0), size: 25),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: TextField(
+                                controller: _searchController,
+                                textInputAction: TextInputAction.search,
+                                onSubmitted: (_) => _searchAddress(),
+                                decoration: const InputDecoration(
+                                  hintText: 'Куда едем? Адрес или место',
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                ),
+                              ),
+                            ),
+                            IconButton.filled(
+                              tooltip: 'Найти',
+                              onPressed: _isSearching ? null : _searchAddress,
+                              icon: _isSearching
+                                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  : const Icon(Icons.arrow_forward),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
           Positioned(
+            top: 142,
+            right: 14,
+            child: _MapActionButton(
+              icon: Icons.my_location,
+              tooltip: 'Моё местоположение',
+              onPressed: _isLocating ? null : _locateMe,
+              loading: _isLocating,
+            ),
+          ),
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
             left: 12,
             right: 12,
-            bottom: 12,
+            bottom: keyboardInset > 0 ? keyboardInset + 8 : 12,
             child: SafeArea(
               top: false,
-              child: Card(
+              child: Material(
                 color: Colors.white,
-                elevation: 5,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(22),
-                ),
+                elevation: 8,
+                borderRadius: BorderRadius.circular(24),
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Row(
                         children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _searchController,
-                              textInputAction: TextInputAction.search,
-                              onSubmitted: (_) => _searchAddress(),
-                              decoration: const InputDecoration(
-                                hintText: 'Улица, номер дома, город',
-                                prefixIcon: Icon(Icons.search),
-                                isDense: true,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.all(Radius.circular(14)),
-                                ),
-                              ),
+                          Container(
+                            width: 9,
+                            height: 9,
+                            decoration: BoxDecoration(
+                              color: _navigationActive ? const Color(0xFF1E9B63) : const Color(0xFF2468A0),
+                              shape: BoxShape.circle,
                             ),
                           ),
                           const SizedBox(width: 8),
-                          IconButton.filled(
-                            onPressed: _isSearching ? null : _searchAddress,
-                            icon: _isSearching
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.search),
+                          Expanded(
+                            child: Text(
+                              _navigationActive ? 'НАВИГАЦИЯ АКТИВНА' : (_destination == null ? 'ГОТОВ К ПОИСКУ МАРШРУТА' : 'ТОЧКА НАЗНАЧЕНИЯ ВЫБРАНА'),
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.7, color: Color(0xFF526273)),
+                            ),
                           ),
+                          if (_destination != null)
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              tooltip: 'Очистить маршрут',
+                              onPressed: _clearDestination,
+                              icon: const Icon(Icons.close),
+                            ),
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      Text(
-                        _message,
-                        style: const TextStyle(fontSize: 13, color: Colors.black87),
-                      ),
-                      const SizedBox(height: 8),
-                      if (_gpsAccuracyMeters != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Точность GPS: ±${_gpsAccuracyMeters!.round()} м · ${_gpsQualityLabel(_gpsAccuracyMeters!)}',
-                          style: const TextStyle(fontSize: 11, color: Colors.black54),
-                        ),
-                      ],
                       Text(
                         _routeSummary(),
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF17212B)),
                       ),
-                      const SizedBox(height: 12),
-                      if (_instructions.isNotEmpty) ...[
-                        const SizedBox(height: 8),
+                      if (_gpsAccuracyMeters != null) ...[
+                        const SizedBox(height: 3),
                         Text(
-                          _navigationActive &&
-                                  _instructionIndex < _instructions.length
-                              ? _instructions[_instructionIndex].text
-                              : 'Подсказок: ${_instructions.length}. Нажмите «Начать навигацию».',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1769AA),
-                          ),
+                          'GPS ±${_gpsAccuracyMeters!.round()} м · ${_gpsQualityLabel(_gpsAccuracyMeters!)}',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF687786)),
                         ),
                       ],
+                      if (_message.isNotEmpty) ...[
+                        const SizedBox(height: 5),
+                        Text(
+                          _message,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF526273)),
+                        ),
+                      ],
+                      const SizedBox(height: 10),
                       Row(
                         children: [
                           Expanded(
                             child: FilledButton.icon(
                               onPressed: _isBuildingRoute ? null : _buildRoute,
                               icon: _isBuildingRoute
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
+                                  ? const SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                                   : const Icon(Icons.alt_route),
-                              label: const Text('Маршрут'),
+                              label: Text(_isBuildingRoute ? 'Строим…' : 'Маршрут'),
+                              style: FilledButton.styleFrom(minimumSize: const Size(0, 46), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                             ),
                           ),
                           if (_instructions.isNotEmpty) ...[
                             const SizedBox(width: 8),
                             Expanded(
                               child: FilledButton.tonalIcon(
-                                onPressed: _navigationActive
-                                    ? _stopNavigation
-                                    : _startNavigation,
-                                icon: Icon(_navigationActive
-                                    ? Icons.stop
-                                    : Icons.navigation),
-                                label: Text(_navigationActive
-                                    ? 'Стоп'
-                                    : 'Старт'),
+                                onPressed: _navigationActive ? _stopNavigation : _startNavigation,
+                                icon: Icon(_navigationActive ? Icons.stop : Icons.navigation),
+                                label: Text(_navigationActive ? 'Стоп' : 'Поехали'),
+                                style: FilledButton.styleFrom(minimumSize: const Size(0, 46), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                               ),
                             ),
                           ],
-                          if (_destination != null) ...[
-                            const SizedBox(width: 8),
-                            IconButton.filledTonal(
-                              tooltip: 'Очистить маршрут',
-                              onPressed: _clearDestination,
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
                         ],
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Можно искать улицу и номер дома. Подъезд найдётся, если его вход отмечен в OpenStreetMap; иначе выберите точку на карте.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 11, color: Colors.black54),
                       ),
                     ],
                   ),
@@ -912,18 +973,34 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 }
 
-
-class _PermissionEntry {
-  const _PermissionEntry({
-    required this.title,
-    required this.description,
+class _MapActionButton extends StatelessWidget {
+  const _MapActionButton({
     required this.icon,
-    required this.permissions,
+    required this.tooltip,
+    required this.onPressed,
+    this.loading = false,
   });
-  final String title;
-  final String description;
+
   final IconData icon;
-  final List<Permission> permissions;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 5,
+      borderRadius: BorderRadius.circular(16),
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: loading
+            ? const SizedBox(width: 19, height: 19, child: CircularProgressIndicator(strokeWidth: 2))
+            : Icon(icon, color: const Color(0xFF2468A0)),
+      ),
+    );
+  }
 }
 
 class NavigatorSettingsScreen extends StatefulWidget {
@@ -933,7 +1010,7 @@ class NavigatorSettingsScreen extends StatefulWidget {
   State<NavigatorSettingsScreen> createState() => _NavigatorSettingsScreenState();
 }
 
-class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> with WidgetsBindingObserver {
+class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   final _vehicleMake = TextEditingController();
   final _vehicleModel = TextEditingController();
   final _vehicleColor = TextEditingController();
@@ -941,7 +1018,6 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> with 
   bool _loading = true;
   String? _offlineMapPath;
   bool _importingOfflineMap = false;
-  final Map<String, List<PermissionStatus>> _statuses = {};
 
   static const _entries = <_PermissionEntry>[
     _PermissionEntry(
@@ -1003,13 +1079,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> with 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _loadSettings();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refreshStatuses();
   }
 
   Future<void> _loadSettings() async {
@@ -1019,51 +1089,8 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> with 
     _vehicleColor.text = prefs.getString('vehicle_color') ?? '';
     _vehiclePlate.text = prefs.getString('vehicle_plate') ?? '';
     _offlineMapPath = prefs.getString('offline_map_path');
-    await _refreshStatuses();
     if (mounted) setState(() => _loading = false);
   }
-
-  Future<void> _refreshStatuses() async {
-    final next = <String, List<PermissionStatus>>{};
-    for (final entry in _entries) {
-      next[entry.title] = await Future.wait(
-        entry.permissions.map((permission) => permission.status),
-      );
-    }
-    if (mounted) {
-      setState(() => _statuses
-        ..clear()
-        ..addAll(next));
-    }
-  }
-
-  String _statusLabel(_PermissionEntry entry) {
-    final values = _statuses[entry.title] ?? const <PermissionStatus>[];
-    if (values.isEmpty) return 'Проверяем…';
-    if (values.every((status) => status.isGranted || status.isLimited)) {
-      return values.any((status) => status.isLimited) ? 'Разрешено частично' : 'Разрешено';
-    }
-    if (values.any((status) => status.isPermanentlyDenied)) {
-      return 'Запрещено в настройках телефона';
-    }
-    if (values.any((status) => status.isRestricted)) return 'Ограничено системой';
-    return 'Не разрешено';
-  }
-
-  Future<void> _requestEntry(_PermissionEntry entry) async {
-    for (final permission in entry.permissions) {
-      final status = await permission.status;
-      if (status.isPermanentlyDenied || status.isRestricted) {
-        await openAppSettings();
-        break;
-      }
-      if (!status.isGranted && !status.isLimited) {
-        await permission.request();
-      }
-    }
-    await _refreshStatuses();
-  }
-
 
   Future<void> _importOfflineMap() async {
     if (_importingOfflineMap) return;
@@ -1126,93 +1153,44 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> with 
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _vehicleMake.dispose();
     _vehicleModel.dispose();
     _vehicleColor.dispose();
     _vehiclePlate.dispose();
     super.dispose();
   }
-
+ 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Настройки навигатора')),
+      appBar: AppBar(title: const Text('Настройки BAKE Navigator')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                const Text(
-                  'Разрешения телефона',
-                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Каждое разрешение включается отдельно. Навигатор не получает доступ к данным без вашего согласия.',
-                  style: TextStyle(color: Colors.black54),
-                ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: _refreshStatuses,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Обновить статусы'),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.security_outlined, color: Color(0xFF2468A0)),
+                    title: const Text('Разрешения телефона'),
+                    subtitle: const Text('Откроются системные настройки Android. Разрешения включаются только по необходимости.'),
+                    trailing: const Icon(Icons.open_in_new),
+                    onTap: openAppSettings,
                   ),
                 ),
-                const SizedBox(height: 8),
-                for (final entry in _entries)
-                  Card(
-                    child: ListTile(
-                      leading: Icon(entry.icon, color: const Color(0xFF1769AA)),
-                      title: Text(entry.title),
-                      subtitle: Text('${_statusLabel(entry)}\n${entry.description}'),
-                      isThreeLine: true,
-                      trailing: IconButton(
-                        tooltip: 'Изменить разрешение',
-                        icon: const Icon(Icons.tune),
-                        onPressed: () => _requestEntry(entry),
-                      ),
-                    ),
-                  ),
                 const SizedBox(height: 20),
-                const Text(
-                  'Данные автомобиля',
-                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
-                ),
+                const Text('Автомобиль', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
-                const Text(
-                  'Эти сведения сохраняются локально. Пока они не отправляются на сервер.',
-                  style: TextStyle(color: Colors.black54),
-                ),
+                const Text('Эти сведения сохраняются только на этом телефоне.'),
                 const SizedBox(height: 10),
-                TextField(
-                  controller: _vehicleMake,
-                  decoration: const InputDecoration(labelText: 'Марка автомобиля'),
-                ),
-                TextField(
-                  controller: _vehicleModel,
-                  decoration: const InputDecoration(labelText: 'Модель'),
-                ),
-                TextField(
-                  controller: _vehicleColor,
-                  decoration: const InputDecoration(labelText: 'Цвет'),
-                ),
-                TextField(
-                  controller: _vehiclePlate,
-                  decoration: const InputDecoration(labelText: 'Государственный номер'),
-                ),
+                TextField(controller: _vehicleMake, decoration: const InputDecoration(labelText: 'Марка автомобиля')),
+                TextField(controller: _vehicleModel, decoration: const InputDecoration(labelText: 'Модель')),
+                TextField(controller: _vehicleColor, decoration: const InputDecoration(labelText: 'Цвет')),
+                TextField(controller: _vehiclePlate, decoration: const InputDecoration(labelText: 'Государственный номер')),
                 const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: _saveVehicle,
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('Сохранить данные автомобиля'),
-                ),
+                FilledButton.icon(onPressed: _saveVehicle, icon: const Icon(Icons.save_outlined), label: const Text('Сохранить')),
                 const SizedBox(height: 20),
-                const Text(
-                  'Офлайн-карты',
-                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
-                ),
+                const Text('Офлайн-карты', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
                 Card(
                   child: Padding(
@@ -1224,26 +1202,18 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> with 
                           contentPadding: EdgeInsets.zero,
                           leading: const Icon(Icons.map_outlined),
                           title: const Text('Офлайн-карта'),
-                          subtitle: Text(
-                            _offlineMapPath == null
-                                ? 'Карта ещё не импортирована. Выберите готовый MBTiles-файл для работы карты без интернета.'
-                                : 'Офлайн-карта подключена на этом устройстве.',
-                          ),
+                          subtitle: Text(_offlineMapPath == null
+                              ? 'Готовый MBTiles-файл пока не подключён.'
+                              : 'Офлайн-карта подключена на этом устройстве.'),
                         ),
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(
                             onPressed: _importingOfflineMap ? null : _importOfflineMap,
                             icon: _importingOfflineMap
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
+                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                                 : const Icon(Icons.file_open_outlined),
-                            label: Text(_importingOfflineMap
-                                ? 'Импортируем…'
-                                : 'Импортировать MBTiles-карту'),
+                            label: Text(_importingOfflineMap ? 'Импортируем…' : 'Импортировать MBTiles-карту'),
                           ),
                         ),
                         if (_offlineMapPath != null)
@@ -1252,9 +1222,8 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> with 
                             icon: const Icon(Icons.cloud_outlined),
                             label: const Text('Отключить офлайн-карту'),
                           ),
-                        const SizedBox(height: 4),
                         const Text(
-                          'Файл карты нужно заранее получить из источника, разрешающего офлайн-использование. Обычные публичные тайлы OpenStreetMap массово скачивать нельзя.',
+                          'Исходный OSM PBF не является готовой MBTiles-картой. Для офлайн-режима нужны отдельно подготовленные тайлы.',
                           style: TextStyle(fontSize: 12, color: Colors.black54),
                         ),
                       ],
@@ -1265,5 +1234,6 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> with 
             ),
     );
   }
+
 }
 
