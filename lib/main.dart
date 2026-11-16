@@ -659,7 +659,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                       ),
                                     )
                                   : const Icon(Icons.alt_route),
-                              label: const Text('Построить маршрут'),
+                              label: const Text('Маршрут'),
                             ),
                           ),
                           if (_instructions.isNotEmpty) ...[
@@ -674,7 +674,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                     : Icons.navigation),
                                 label: Text(_navigationActive
                                     ? 'Стоп'
-                                    : 'Начать навигацию'),
+                                    : 'Старт'),
                               ),
                             ),
                           ],
