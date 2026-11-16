@@ -407,9 +407,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     setState(() {
       _navigationActive = true;
       _instructionIndex = _instructions.length > 1 ? 1 : 0;
+      _message = 'Включаем фоновый GPS и голосовые подсказки…';
+    });
+    try {
+      await _startLiveLocationUpdates(backgroundNavigation: true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _navigationActive = false;
+        _message = 'Не удалось включить фоновый GPS: $error';
+      });
+      return;
+    }
+    if (!mounted) return;
+    setState(() {
       _message = 'Навигация началась. GPS продолжит работать при свёрнутом приложении.';
     });
-    await _startLiveLocationUpdates(backgroundNavigation: true);
     await _speakCurrentInstruction();
   }
 
@@ -908,7 +921,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> with 
   static const _entries = <_PermissionEntry>[
     _PermissionEntry(
       title: 'Местоположение',
-      description: 'GPS для положения на карте, маршрута и навигации.',
+      description: 'GPS для карты и маршрута. Во время навигации Android показывает постоянное уведомление о работе GPS в фоне.',
       icon: Icons.location_on_outlined,
       permissions: [Permission.locationWhenInUse],
     ),
