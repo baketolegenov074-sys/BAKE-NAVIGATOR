@@ -1142,7 +1142,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
-                          _bottomAction(Icons.map_outlined, 'Карта', () {}),
+                          _bottomAction(Icons.map_outlined, 'Карта', _locateMe),
                           _bottomAction(Icons.search, 'Поиск', () => _searchFocusNode.requestFocus()),
                           _bottomAction(Icons.alt_route, 'Маршрут', _openRouteMenu),
                           _bottomAction(Icons.bookmark_border, 'Закладки', _openBookmarks),
