@@ -1234,22 +1234,133 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ]),
             const SizedBox(height: 10),
             _menuTile(sheetContext, Icons.download_for_offline_outlined, 'Загрузка карт', () { Navigator.pop(sheetContext); _openOfflineAndVehicleSettings(); }),
-            _menuTile(sheetContext, Icons.support_agent_outlined, 'Поддержка', () { Navigator.pop(sheetContext); _showUnavailableFeature('Поддержка', 'Канал обращений BAKE ещё не подключён.'); }),
+            _menuTile(sheetContext, Icons.support_agent_outlined, 'Поддержка', () { Navigator.pop(sheetContext); _openSupportPage(); }),
             _menuTile(sheetContext, Icons.map_outlined, 'Изменить карту и слои', () { Navigator.pop(sheetContext); _openMapLayers(); }),
-            _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Разместить объект', () { Navigator.pop(sheetContext); _showUnavailableFeature('Разместить объект', 'Форма добавления объекта появится после подключения проверки и отправки объектов на сервер.'); }),
+            _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Разместить объект', () { Navigator.pop(sheetContext); _openPlaceSubmissionPage(); }),
             _menuTile(sheetContext, Icons.share_location_outlined, 'Поделиться геопозицией', () { Navigator.pop(sheetContext); _shareCurrentLocation(); }),
             _menuTile(sheetContext, Icons.bookmark_border, 'Закладки', () { Navigator.pop(sheetContext); _openBookmarks(); }),
             _menuTile(sheetContext, Icons.local_gas_station_outlined, 'Заправки', () { Navigator.pop(sheetContext); _openStationNetworks(); }),
             _menuTile(sheetContext, Icons.local_parking_outlined, 'Парковки', () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
             _menuTile(sheetContext, Icons.settings_outlined, 'Настройки', () { Navigator.pop(sheetContext); _openSettings(); }),
-            _menuTile(sheetContext, Icons.history, 'Бронирования и история заказов', () { Navigator.pop(sheetContext); _showUnavailableFeature('История заказов', 'BAKE пока не подключён к сервису бронирований и заказов.'); }),
-            _menuTile(sheetContext, Icons.rate_review_outlined, 'Лента отзывов и исправлений', () { Navigator.pop(sheetContext); _showUnavailableFeature('Отзывы и исправления', 'Для этой ленты пока нет серверного источника данных.'); }),
-            _menuTile(sheetContext, Icons.workspace_premium_outlined, 'BAKE Plus', () { Navigator.pop(sheetContext); _showUnavailableFeature('BAKE Plus', 'Подписка BAKE ещё не создана.'); }),
+            _menuTile(sheetContext, Icons.history, 'Бронирования и история заказов', () { Navigator.pop(sheetContext); _openBookingsPage(); }),
+            _menuTile(sheetContext, Icons.rate_review_outlined, 'Лента отзывов и исправлений', () { Navigator.pop(sheetContext); _openFeedbackPage(); }),
+            _menuTile(sheetContext, Icons.workspace_premium_outlined, 'BAKE Plus', () { Navigator.pop(sheetContext); _openBakePlusPage(); }),
           ]),
         ),
       ),
     );
   }
+
+  Future<void> _openFeaturePage({
+    required String title,
+    required IconData icon,
+    required String description,
+    required String status,
+    String? actionLabel,
+    Future<void> Function()? onAction,
+  }) async {
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => Scaffold(
+          backgroundColor: const Color(0xFFF5F7FA),
+          appBar: AppBar(
+            title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            backgroundColor: const Color(0xFFF5F7FA),
+          ),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CircleAvatar(
+                        radius: 28,
+                        backgroundColor: const Color(0xFFEAF2FA),
+                        child: Icon(icon, size: 30, color: const Color(0xFF2468A0)),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(title, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 10),
+                      Text(description, style: const TextStyle(fontSize: 16, height: 1.45)),
+                      const SizedBox(height: 18),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F4F7),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Text(status, style: const TextStyle(fontSize: 14, color: Color(0xFF555B63))),
+                      ),
+                    ],
+                  ),
+                ),
+                if (actionLabel != null && onAction != null) ...[
+                  const SizedBox(height: 18),
+                  FilledButton.icon(
+                    onPressed: () async {
+                      await onAction();
+                      if (pageContext.mounted) Navigator.pop(pageContext);
+                    },
+                    icon: const Icon(Icons.copy),
+                    label: Text(actionLabel),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSupportPage() => _openFeaturePage(
+    title: 'Поддержка BAKE',
+    icon: Icons.support_agent_outlined,
+    description: 'Здесь будет раздел помощи по поиску, маршрутам, GPS и офлайн-картам. Можно подготовить обращение и скопировать его, чтобы отправить удобным способом.',
+    status: 'Канал отправки обращений на сервер ещё не подключён. Эта страница не отправляет сообщения автоматически.',
+    actionLabel: 'Подготовить обращение',
+    onAction: () async {
+      await Clipboard.setData(const ClipboardData(text: 'Обращение в поддержку BAKE Navigator. Опишите проблему и приложите скриншот.'));
+      if (mounted) setState(() => _message = 'Шаблон обращения скопирован.');
+    },
+  );
+
+  Future<void> _openPlaceSubmissionPage() => _openFeaturePage(
+    title: 'Разместить объект',
+    icon: Icons.add_location_alt_outlined,
+    description: 'Раздел предназначен для подготовки карточки нового места: название, категория, адрес и координаты. Для добавления объекта на общую карту потребуется серверная проверка.',
+    status: 'Публикация объектов пока не подключена. Ничего не будет отправлено без сервера.',
+  );
+
+  Future<void> _openBookingsPage() => _openFeaturePage(
+    title: 'Бронирования и история',
+    icon: Icons.history,
+    description: 'Здесь будет история поездок и сохранённые бронирования BAKE, когда приложение получит соответствующий сервис.',
+    status: 'История пока пуста: сервис бронирований и учёт поездок ещё не подключены.',
+  );
+
+  Future<void> _openFeedbackPage() => _openFeaturePage(
+    title: 'Отзывы и исправления',
+    icon: Icons.rate_review_outlined,
+    description: 'Раздел для просмотра сообщений об ошибках карты и предложенных исправлений.',
+    status: 'Лента пока недоступна: серверный источник отзывов и модерация ещё не подключены.',
+  );
+
+  Future<void> _openBakePlusPage() => _openFeaturePage(
+    title: 'BAKE Plus',
+    icon: Icons.workspace_premium_outlined,
+    description: 'Будущий раздел дополнительных возможностей BAKE Navigator. Здесь будут описаны условия, если будет создана собственная подписка.',
+    status: 'Подписка BAKE Plus пока не создана. Оплата и платные функции не включены.',
+  );
 
   Future<void> _showPointDetails(LatLng point) async {
     try {
