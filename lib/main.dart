@@ -1287,7 +1287,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
  
   @override
   Widget build(BuildContext context) {
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final markers = <Marker>[
       if (_routeOrigin != null)
         Marker(
@@ -1426,142 +1425,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               loading: _isLocating,
             ),
           ),
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            left: 12,
-            right: 12,
-            bottom: keyboardInset > 0 ? keyboardInset + 8 : 12,
-            child: SafeArea(
-              top: false,
-              child: Material(
-                color: Colors.white,
-                elevation: 8,
-                borderRadius: BorderRadius.circular(24),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 9,
-                            height: 9,
-                            decoration: BoxDecoration(
-                              color: _navigationActive ? const Color(0xFF1E9B63) : const Color(0xFF2468A0),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _navigationActive ? 'НАВИГАЦИЯ АКТИВНА' : (_destination == null ? 'ГОТОВ К ПОИСКУ МАРШРУТА' : 'ТОЧКА НАЗНАЧЕНИЯ ВЫБРАНА'),
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.7, color: Color(0xFF526273)),
-                            ),
-                          ),
-                          if (_destination != null)
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              tooltip: 'Очистить маршрут',
-                              onPressed: _clearDestination,
-                              icon: const Icon(Icons.close),
-                            ),
-                        ],
-                      ),
-                      if (_routeStops.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Text('Промежуточных остановок: ${_routeStops.length}', style: const TextStyle(fontSize: 12, color: Color(0xFF2468A0))),
-                        ),
-                      Text(
-                        _routeSummary(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF17212B)),
-                      ),
-                      if (_gpsAccuracyMeters != null) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          'GPS ±${_gpsAccuracyMeters!.round()} м · ${_gpsQualityLabel(_gpsAccuracyMeters!)}',
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF687786)),
-                        ),
-                      ],
-                      if (_message.isNotEmpty) ...[
-                        const SizedBox(height: 5),
-                        Text(
-                          _message,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF526273)),
-                        ),
-                      ],
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: FilledButton.icon(
-                              onPressed: _isBuildingRoute ? null : _buildRoute,
-                              icon: _isBuildingRoute
-                                  ? const SizedBox(width: 17, height: 17, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                  : const Icon(Icons.alt_route),
-                              label: Text(_isBuildingRoute ? 'Строим…' : 'Маршрут'),
-                              style: FilledButton.styleFrom(minimumSize: const Size(0, 46), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-                            ),
-                          ),
-                          if (_instructions.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: FilledButton.tonalIcon(
-                                onPressed: _navigationActive ? _stopNavigation : _startNavigation,
-                                icon: Icon(_navigationActive ? Icons.stop : Icons.navigation),
-                                label: Text(_navigationActive ? 'Стоп' : 'Поехали'),
-                                style: FilledButton.styleFrom(minimumSize: const Size(0, 46), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      const Divider(height: 1),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _bottomAction(Icons.map_outlined, 'Карта', _locateMe),
-                          _bottomAction(Icons.search, 'Поиск', () => _searchFocusNode.requestFocus()),
-                          _bottomAction(Icons.alt_route, 'Маршрут', _openRoutePlanner),
-                          _bottomAction(Icons.bookmark_border, 'Закладки', _openBookmarks),
-                          _bottomAction(Icons.person_outline, 'Профиль', _openProfileMenu),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _bottomAction(IconData icon, String label, VoidCallback onTap) {
-    return Expanded(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 21, color: const Color(0xFF4B5662)),
-            const SizedBox(height: 3),
-            Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF4B5662))),
-          ]),
-        ),
-      ),
-    );
-  }
+
 }
 
 class _MapActionButton extends StatelessWidget {
