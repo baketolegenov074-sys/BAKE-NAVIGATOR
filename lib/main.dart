@@ -188,7 +188,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
-          timeLimit: const Duration(seconds: 20),
+          timeLimit: Duration(seconds: 20),
         ),
       );
 
