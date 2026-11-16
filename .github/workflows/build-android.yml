@@ -31,45 +31,40 @@ jobs:
           cp pubspec.yaml /tmp/bake-pubspec.yaml
           cp lib/main.dart /tmp/bake-main.dart
           flutter create --platforms=android --org kz.bake --project-name bake_navigator --no-pub .
-          # flutter create adds a sample test for MyApp, but this app entry point is BakeNavigatorApp.
+          # Remove the generated sample test: this app uses BakeNavigatorApp.
           rm -f test/widget_test.dart
           cp /tmp/bake-pubspec.yaml pubspec.yaml
           cp /tmp/bake-main.dart lib/main.dart
 
-      - name: Add Android permissions and app label
+      - name: Add required Android permissions and app label
         run: |
           python3 - <<'PY'
           from pathlib import Path
           path = Path("android/app/src/main/AndroidManifest.xml")
           manifest = path.read_text()
           permissions = (
-              '    <uses-feature android:name="android.hardware.camera" android:required="false" />\n'
-              '    <uses-feature android:name="android.hardware.telephony" android:required="false" />\n'
-              '    <uses-permission android:name="android.permission.INTERNET" />\n'
-              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
-              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n'
-              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n'
-              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n'
-              '    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n'
-              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
-              '    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />\n'
-              '    <uses-permission android:name="android.permission.CAMERA" />\n'
-              '    <uses-permission android:name="android.permission.READ_CONTACTS" />\n'
-              '    <uses-permission android:name="android.permission.READ_PHONE_STATE" />\n'
-              '    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />\n'
-              '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n'
-              '    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />\n'
-              '    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />\n'
-              '    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />\n'
-              '    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n'
+              '    <uses-permission android:name="android.permission.INTERNET" />\\n'
+              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\\n'
+              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\\n'
+              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\\n'
+              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\\n'
+              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\\n'
           )
-          manifest = manifest.replace("    <application", permissions + "    <application", 1)
+          if 'android.permission.ACCESS_FINE_LOCATION' not in manifest:
+              manifest = manifest.replace("    <application", permissions + "    <application", 1)
           manifest = manifest.replace('android:label="bake_navigator"', 'android:label="BAKE Navigator"')
           path.write_text(manifest)
           PY
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Save resolved dependency versions
+        uses: actions/upload-artifact@v4
+        with:
+          name: BAKE-NAVIGATOR-pubspec-lock
+          path: pubspec.lock
+          if-no-files-found: error
 
       - name: Analyze Flutter code
         run: flutter analyze
