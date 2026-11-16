@@ -1401,6 +1401,56 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     return '$date · $time';
   }
 
+  Future<void> _openDepartureTime(StateSetter refreshPlanner) async {
+    var selected = _plannedDeparture ?? DateTime.now();
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, refresh) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                const Expanded(child: Text('Время отправления', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+                TextButton(onPressed: () { setState(() => _plannedDeparture = null); refreshPlanner(() {}); Navigator.pop(sheetContext); }, child: const Text('Сбросить')),
+              ]),
+              const SizedBox(height: 10),
+              ListTile(
+                leading: const Icon(Icons.calendar_today_outlined),
+                title: const Text('Дата'),
+                subtitle: Text('${selected.day.toString().padLeft(2, '0')}.${selected.month.toString().padLeft(2, '0')}.${selected.year}'),
+                onTap: () async {
+                  final now = DateTime.now();
+                  final date = await showDatePicker(
+                    context: sheetContext,
+                    initialDate: selected.isBefore(DateTime(now.year, now.month, now.day)) ? now : selected,
+                    firstDate: DateTime(now.year, now.month, now.day),
+                    lastDate: DateTime(now.year + 2),
+                    helpText: 'Дата отправления',
+                  );
+                  if (date != null) { selected = DateTime(date.year, date.month, date.day, selected.hour, selected.minute); refresh(() {}); }
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.access_time),
+                title: const Text('Время'),
+                subtitle: Text('${selected.hour.toString().padLeft(2, '0')}:${selected.minute.toString().padLeft(2, '0')}'),
+                onTap: () async {
+                  final time = await showTimePicker(context: sheetContext, initialTime: TimeOfDay.fromDateTime(selected), helpText: 'Время отправления');
+                  if (time != null) { selected = DateTime(selected.year, selected.month, selected.day, time.hour, time.minute); refresh(() {}); }
+                },
+              ),
+              const SizedBox(height: 10),
+              SizedBox(width: double.infinity, child: FilledButton(onPressed: () { setState(() => _plannedDeparture = selected); refreshPlanner(() {}); Navigator.pop(sheetContext); }, child: const Text('Готово'))),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openRoutePlanner() async {
     final destinationController = TextEditingController();
     final originController = TextEditingController();
@@ -1508,24 +1558,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     title: const Text('Время выезда', style: TextStyle(fontWeight: FontWeight.w700)),
                     subtitle: Text(_plannedDeparture == null ? 'Сейчас' : _formatDeparture(_plannedDeparture!)),
                     trailing: TextButton(
-                      onPressed: () async {
-                        final now = DateTime.now();
-                        final initial = _plannedDeparture ?? now;
-                        final date = await showDatePicker(
-                          context: sheetContext,
-                          initialDate: initial.isBefore(DateTime(now.year, now.month, now.day)) ? now : initial,
-                          firstDate: DateTime(now.year, now.month, now.day),
-                          lastDate: DateTime(now.year + 2),
-                          helpText: 'Дата выезда',
-                          cancelText: 'Отмена',
-                          confirmText: 'Далее',
-                        );
-                        if (date == null || !sheetContext.mounted) return;
-                        final time = await showTimePicker(context: sheetContext, initialTime: TimeOfDay.fromDateTime(initial), helpText: 'Время выезда');
-                        if (time == null) return;
-                        setState(() => _plannedDeparture = DateTime(date.year, date.month, date.day, time.hour, time.minute));
-                        refreshSheet(() {});
-                      },
+                      onPressed: () => _openDepartureTime(refreshSheet),
                       child: const Text('Изменить'),
                     ),
                   ),
