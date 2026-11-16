@@ -1319,6 +1319,10 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   bool _loading = true;
   String? _offlineMapPath;
   bool _importingOfflineMap = false;
+  double _voiceVolume = 1.0;
+  double _voiceRate = 0.48;
+  bool _avoidTolls = false;
+  bool _avoidUnpaved = false;
 
 
   @override
@@ -1334,6 +1338,10 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     _vehicleColor.text = prefs.getString('vehicle_color') ?? '';
     _vehiclePlate.text = prefs.getString('vehicle_plate') ?? '';
     _offlineMapPath = prefs.getString('offline_map_path');
+    _voiceVolume = prefs.getDouble('voice_volume') ?? 1.0;
+    _voiceRate = prefs.getDouble('voice_rate') ?? 0.48;
+    _avoidTolls = prefs.getBool('avoid_tolls') ?? false;
+    _avoidUnpaved = prefs.getBool('avoid_unpaved') ?? false;
     if (mounted) setState(() => _loading = false);
   }
 
@@ -1384,6 +1392,14 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     Navigator.of(context).pop('__use_online_map__');
   }
 
+  Future<void> _saveNavigationPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('voice_volume', _voiceVolume);
+    await prefs.setDouble('voice_rate', _voiceRate);
+    await prefs.setBool('avoid_tolls', _avoidTolls);
+    await prefs.setBool('avoid_unpaved', _avoidUnpaved);
+  }
+
   Future<void> _saveVehicle() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('vehicle_make', _vehicleMake.text.trim());
@@ -1425,6 +1441,68 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                 TextField(controller: _vehiclePlate, decoration: const InputDecoration(labelText: 'Государственный номер')),
                 const SizedBox(height: 12),
                 FilledButton.icon(onPressed: _saveVehicle, icon: const Icon(Icons.save_outlined), label: const Text('Сохранить')),
+                const SizedBox(height: 22),
+                const Text('Голосовые подсказки', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Громкость · ${(_voiceVolume * 100).round()}%'),
+                      Slider(
+                        value: _voiceVolume,
+                        min: 0,
+                        max: 1,
+                        divisions: 10,
+                        label: '${(_voiceVolume * 100).round()}%',
+                        onChanged: (value) {
+                          setState(() => _voiceVolume = value);
+                          _saveNavigationPreferences();
+                        },
+                      ),
+                      Text('Скорость речи · ${_voiceRate.toStringAsFixed(2)}'),
+                      Slider(
+                        value: _voiceRate,
+                        min: 0.25,
+                        max: 0.75,
+                        divisions: 10,
+                        label: _voiceRate.toStringAsFixed(2),
+                        onChanged: (value) {
+                          setState(() => _voiceRate = value);
+                          _saveNavigationPreferences();
+                        },
+                      ),
+                      const Text('Изменения сохраняются на этом телефоне и применяются при следующем запуске навигатора.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                    ]),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text('Параметры маршрута', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                Card(
+                  child: Column(children: [
+                    SwitchListTile(
+                      value: _avoidTolls,
+                      title: const Text('Избегать платных дорог'),
+                      onChanged: (value) {
+                        setState(() => _avoidTolls = value);
+                        _saveNavigationPreferences();
+                      },
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      value: _avoidUnpaved,
+                      title: const Text('Избегать грунтовых дорог'),
+                      onChanged: (value) {
+                        setState(() => _avoidUnpaved = value);
+                        _saveNavigationPreferences();
+                      },
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 14),
+                      child: Text('Фильтры сохраняются, но текущий тестовый сервис маршрутов OSRM пока не применяет их при расчёте.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                    ),
+                  ]),
+                ),
                 const SizedBox(height: 20),
                 const Text('Офлайн-карты', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
