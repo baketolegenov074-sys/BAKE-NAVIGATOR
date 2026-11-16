@@ -89,6 +89,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   double? _gpsHeadingDegrees;
   int _offRouteSamples = 0;
   DateTime? _lastAutomaticReroute;
+  DateTime? _plannedDeparture;
   String _message = 'Нажмите «Моё местоположение» или удерживайте точку на карте';
 
   @override
@@ -962,6 +963,143 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
   }
 
+  String _formatDeparture(DateTime value) {
+    final date = '${value.day.toString().padLeft(2, '0')}.${value.month.toString().padLeft(2, '0')}.${value.year}';
+    final time = '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+    return '$date · $time';
+  }
+
+  Future<void> _openRoutePlanner() async {
+    final destinationController = TextEditingController();
+    var searchAfterClose = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, refreshSheet) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(18, 12, 18, 18 + MediaQuery.of(sheetContext).viewInsets.bottom),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(child: Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8)))),
+                  const SizedBox(height: 14),
+                  const Text('Планирование маршрута', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 16),
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Padding(padding: EdgeInsets.only(top: 12), child: Icon(Icons.my_location, color: Color(0xFF269B68))),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('ОТКУДА', style: TextStyle(fontSize: 10, color: Color(0xFF78838D), fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+                      const SizedBox(height: 3),
+                      Text(_currentLocation == null ? 'Моё местоположение (ожидаем GPS)' : '${_currentLocation!.latitude.toStringAsFixed(5)}, ${_currentLocation!.longitude.toStringAsFixed(5)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                      const Text('Начальная точка определяется по GPS', style: TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
+                    ])),
+                    TextButton(onPressed: () { Navigator.pop(sheetContext); unawaited(_locateMe()); }, child: const Text('Обновить')),
+                  ]),
+                  const Divider(height: 22),
+                  Row(children: [
+                    const Icon(Icons.location_on, color: Color(0xFFE45D52)),
+                    const SizedBox(width: 12),
+                    Expanded(child: TextField(
+                      controller: destinationController,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) { searchAfterClose = true; Navigator.pop(sheetContext); },
+                      decoration: const InputDecoration(labelText: 'Куда', hintText: 'Введите адрес или место', border: InputBorder.none),
+                    )),
+                    IconButton(
+                      tooltip: 'Найти место',
+                      onPressed: () { searchAfterClose = destinationController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
+                      icon: const Icon(Icons.search, color: Color(0xFF2468A0)),
+                    ),
+                  ]),
+                  if (_destination != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 36, bottom: 8),
+                      child: Text('Точка на карте: ${_destination!.latitude.toStringAsFixed(5)}, ${_destination!.longitude.toStringAsFixed(5)}', style: const TextStyle(fontSize: 11, color: Color(0xFF6D7882))),
+                    ),
+                  const Divider(height: 18),
+                  Row(children: [
+                    const Icon(Icons.more_horiz, color: Color(0xFF2468A0)),
+                    const SizedBox(width: 12),
+                    const Expanded(child: Text('Промежуточные остановки', style: TextStyle(fontWeight: FontWeight.w700))),
+                    Text('${_routeStops.length}/5', style: const TextStyle(color: Color(0xFF687786))),
+                  ]),
+                  if (_routeStops.isEmpty)
+                    const Padding(padding: EdgeInsets.fromLTRB(36, 6, 0, 8), child: Text('Добавьте остановку долгим нажатием на нужное место карты.', style: TextStyle(fontSize: 12, color: Color(0xFF7B8792))))
+                  else
+                    ..._routeStops.asMap().entries.map((entry) => ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.only(left: 30),
+                      leading: CircleAvatar(radius: 12, child: Text('${entry.key + 1}', style: const TextStyle(fontSize: 11))),
+                      title: Text('${entry.value.latitude.toStringAsFixed(5)}, ${entry.value.longitude.toStringAsFixed(5)}', style: const TextStyle(fontSize: 13)),
+                      trailing: IconButton(
+                        tooltip: 'Удалить остановку',
+                        icon: const Icon(Icons.close, size: 19),
+                        onPressed: () { setState(() { _routeStops.removeAt(entry.key); _routePoints = []; _instructions = []; }); refreshSheet(() {}); },
+                      ),
+                    )),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _routeStops.length >= 5 ? null : () { Navigator.pop(sheetContext); setState(() => _message = 'Удерживайте нужную точку карты и выберите «Добавить как промежуточную остановку».'); },
+                    icon: const Icon(Icons.add_location_alt_outlined),
+                    label: const Text('Добавить остановку на карте'),
+                  ),
+                  const Divider(height: 20),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.schedule, color: Color(0xFF2468A0)),
+                    title: const Text('Время выезда', style: TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text(_plannedDeparture == null ? 'Сейчас' : _formatDeparture(_plannedDeparture!)),
+                    trailing: TextButton(
+                      onPressed: () async {
+                        final now = DateTime.now();
+                        final initial = _plannedDeparture ?? now;
+                        final date = await showDatePicker(
+                          context: sheetContext,
+                          initialDate: initial.isBefore(DateTime(now.year, now.month, now.day)) ? now : initial,
+                          firstDate: DateTime(now.year, now.month, now.day),
+                          lastDate: DateTime(now.year + 2),
+                          helpText: 'Дата выезда',
+                          cancelText: 'Отмена',
+                          confirmText: 'Далее',
+                        );
+                        if (date == null || !sheetContext.mounted) return;
+                        final time = await showTimePicker(context: sheetContext, initialTime: TimeOfDay.fromDateTime(initial), helpText: 'Время выезда');
+                        if (time == null) return;
+                        setState(() => _plannedDeparture = DateTime(date.year, date.month, date.day, time.hour, time.minute));
+                        refreshSheet(() {});
+                      },
+                      child: const Text('Изменить'),
+                    ),
+                  ),
+                  if (_plannedDeparture != null)
+                    Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () { setState(() => _plannedDeparture = null); refreshSheet(() {}); }, child: const Text('Сбросить время'))),
+                  const Text('Выбранное время сохраняется как план. Оно пока не учитывается тестовым сервисом расчёта маршрута и пробок.', style: TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () { Navigator.pop(sheetContext); },
+                    child: const Text('Готово'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final query = destinationController.text.trim();
+    destinationController.dispose();
+    if (searchAfterClose && query.isNotEmpty && mounted) {
+      _searchController.text = query;
+      await _searchAddress();
+    }
+  }
+
   Future<void> _openRouteMenu() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -974,7 +1112,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8))),
             const SizedBox(height: 12),
             const Align(alignment: Alignment.centerLeft, child: Text('Маршрут', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
-            _menuTile(sheetContext, Icons.edit_road_outlined, 'Изменить маршрут', () { Navigator.pop(sheetContext); setState(() => _message = 'Выберите новую точку на карте или воспользуйтесь поиском.'); }),
+            _menuTile(sheetContext, Icons.edit_road_outlined, 'Планирование маршрута', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
+            _menuTile(sheetContext, Icons.edit_location_alt_outlined, 'Изменить маршрут', () { Navigator.pop(sheetContext); setState(() => _message = 'Выберите новую точку на карте или воспользуйтесь поиском.'); }),
             _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Добавить точку', () { Navigator.pop(sheetContext); setState(() => _message = 'Удерживайте карту в месте промежуточной остановки.'); }),
             _menuTile(sheetContext, Icons.alt_route, 'Варианты маршрута', () { Navigator.pop(sheetContext); _openRouteAlternatives(); }),
             _menuTile(sheetContext, Icons.tune, 'Параметры маршрута', () { Navigator.pop(sheetContext); _openSettings(); }),
@@ -1249,7 +1388,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         children: [
                           _bottomAction(Icons.map_outlined, 'Карта', _locateMe),
                           _bottomAction(Icons.search, 'Поиск', () => _searchFocusNode.requestFocus()),
-                          _bottomAction(Icons.alt_route, 'Маршрут', _openRouteMenu),
+                          _bottomAction(Icons.alt_route, 'Маршрут', _openRoutePlanner),
                           _bottomAction(Icons.bookmark_border, 'Закладки', _openBookmarks),
                           _bottomAction(Icons.person_outline, 'Профиль', _openProfileMenu),
                         ],
