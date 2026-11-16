@@ -72,6 +72,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   LatLng? _currentLocation;
   LatLng? _destination;
+  final List<LatLng> _routeStops = <LatLng>[];
+  List<Map<String, dynamic>> _routeAlternatives = <Map<String, dynamic>>[];
+  int _selectedRouteIndex = 0;
   List<LatLng> _routePoints = [];
   List<RouteInstruction> _instructions = [];
   int _instructionIndex = 0;
@@ -635,93 +638,88 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _buildRoute({bool automaticReroute = false}) async {
     if (_destination == null) {
-      setState(() => _message = 'Сначала удерживайте нужное место на карте.');
+      setState(() => _message = 'Сначала выберите конечную точку на карте.');
       return;
     }
-
-    if (_currentLocation == null) {
-      await _locateMe();
-    }
+    if (_currentLocation == null) await _locateMe();
     if (_currentLocation == null || _destination == null) return;
 
     final resumeNavigation = automaticReroute && _navigationActive;
     setState(() {
       _isBuildingRoute = true;
-      _message = automaticReroute ? 'Вы отклонились от маршрута. Перестраиваем…' : 'Строим маршрут…';
+      _message = automaticReroute ? 'Вы отклонились от маршрута. Перестраиваем…' : 'Строим варианты маршрута…';
     });
 
     try {
-      final start = _currentLocation!;
-      final end = _destination!;
+      final coordinates = <LatLng>[_currentLocation!, ..._routeStops, _destination!]
+          .map((point) => '${point.longitude},${point.latitude}')
+          .join(';');
       final uri = Uri.parse(
-        'https://router.project-osrm.org/route/v1/driving/'
-        '${start.longitude},${start.latitude};'
-        '${end.longitude},${end.latitude}'
-        '?overview=full&geometries=geojson&steps=true',
+        'https://router.project-osrm.org/route/v1/driving/$coordinates'
+        '?overview=full&geometries=geojson&steps=true&alternatives=true',
       );
-
       // Public OSRM demo endpoint is for testing, not production traffic.
       final response = await http.get(uri).timeout(const Duration(seconds: 25));
-      if (response.statusCode != 200) {
-        throw Exception('Сервис маршрутов временно недоступен.');
-      }
+      if (response.statusCode != 200) throw Exception('Сервис маршрутов временно недоступен.');
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      if (data['code'] != 'Ok' || (data['routes'] as List).isEmpty) {
-        throw Exception('Маршрут не найден. Попробуйте другую точку.');
+      final routes = (data['routes'] as List?) ?? const [];
+      if (data['code'] != 'Ok' || routes.isEmpty) {
+        throw Exception('Маршрут не найден. Попробуйте изменить выбранные точки.');
       }
 
-      final route = (data['routes'] as List).first as Map<String, dynamic>;
-      final routeDistance = (route['distance'] as num).toDouble();
-      final directDistance = Geolocator.distanceBetween(
-        start.latitude, start.longitude, end.latitude, end.longitude,
-      );
-      // Reject implausibly long results instead of showing a route across the country.
-      if (routeDistance > math.max(5000.0, directDistance * 8.0)) {
-        throw Exception('Сервис вернул слишком длинный маршрут. Проверьте выбранную точку на карте.');
-      }
-      final geometry = route['geometry'] as Map<String, dynamic>;
-      final coordinates = geometry['coordinates'] as List<dynamic>;
-      final instructions = _readInstructions(route);
-      final points = coordinates.map((coordinate) {
-        final pair = coordinate as List<dynamic>;
-        return LatLng(
-          (pair[1] as num).toDouble(),
-          (pair[0] as num).toDouble(),
+      final validRoutes = routes.cast<Map<String, dynamic>>().where((route) {
+        final distance = (route['distance'] as num).toDouble();
+        final directDistance = Geolocator.distanceBetween(
+          _currentLocation!.latitude, _currentLocation!.longitude,
+          _destination!.latitude, _destination!.longitude,
         );
+        return distance <= math.max(5000.0, directDistance * 8.0);
       }).toList();
+      if (validRoutes.isEmpty) {
+        throw Exception('Сервис вернул слишком длинный маршрут. Проверьте выбранные точки.');
+      }
+
+      final first = validRoutes.first;
+      final geometry = first['geometry'] as Map<String, dynamic>;
+      final coordinatesList = geometry['coordinates'] as List<dynamic>;
+      final points = coordinatesList.map((coordinate) {
+        final pair = coordinate as List<dynamic>;
+        return LatLng((pair[1] as num).toDouble(), (pair[0] as num).toDouble());
+      }).toList();
+      final instructions = _readInstructions(first);
+      final distance = (first['distance'] as num).toDouble();
+      final duration = (first['duration'] as num).toDouble();
 
       if (!mounted) return;
       setState(() {
+        _routeAlternatives = validRoutes;
+        _selectedRouteIndex = 0;
         _routePoints = points;
         _instructions = instructions;
         _navigationActive = resumeNavigation;
         _instructionIndex = resumeNavigation && instructions.length > 1 ? 1 : 0;
         _offRouteSamples = 0;
-        _routeDistanceMeters = routeDistance;
-        _routeDurationSeconds = (route['duration'] as num).toDouble();
+        _routeDistanceMeters = distance;
+        _routeDurationSeconds = duration;
         _message = automaticReroute
             ? 'Маршрут перестроен. Продолжаем навигацию.'
-            : 'Маршрут построен. Это предварительный расчёт для тестирования.';
+            : 'Найдено вариантов: ${validRoutes.length}. Выберите подходящий маршрут.';
       });
-
       if (points.isNotEmpty) {
-        _mapController.fitCamera(
-          CameraFit.coordinates(
-            coordinates: points,
-            padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
-          ),
-        );
+        _mapController.fitCamera(CameraFit.coordinates(
+          coordinates: points,
+          padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
+        ));
       }
-
       if (automaticReroute && resumeNavigation) {
         await _tts.speak('Вы отклонились от маршрута. Маршрут перестроен.');
         await _speakCurrentInstruction();
       } else {
-        final distanceKm = (_routeDistanceMeters! / 1000).toStringAsFixed(1);
-        final minutes = (_routeDurationSeconds! / 60).round();
-        await _tts.speak('Маршрут построен. Расстояние $distanceKm километра. '
-            'Примерное время в пути $minutes минут.');
+        final distanceKm = (distance / 1000).toStringAsFixed(1);
+        final minutes = (duration / 60).round();
+        await _tts.speak('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.');
+        if (validRoutes.length > 1) unawaited(_openRouteAlternatives());
       }
     } catch (error) {
       if (!mounted) return;
@@ -731,10 +729,91 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
+  void _selectRouteAlternative(int index) {
+    if (index < 0 || index >= _routeAlternatives.length) return;
+    final route = _routeAlternatives[index];
+    final geometry = route['geometry'] as Map<String, dynamic>;
+    final coordinates = geometry['coordinates'] as List<dynamic>;
+    final points = coordinates.map((coordinate) {
+      final pair = coordinate as List<dynamic>;
+      return LatLng((pair[1] as num).toDouble(), (pair[0] as num).toDouble());
+    }).toList();
+    final instructions = _readInstructions(route);
+    setState(() {
+      _selectedRouteIndex = index;
+      _routePoints = points;
+      _instructions = instructions;
+      _instructionIndex = 0;
+      _routeDistanceMeters = (route['distance'] as num).toDouble();
+      _routeDurationSeconds = (route['duration'] as num).toDouble();
+      _message = 'Выбран вариант маршрута ${index + 1}.';
+    });
+    if (points.isNotEmpty) {
+      _mapController.fitCamera(CameraFit.coordinates(
+        coordinates: points,
+        padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
+      ));
+    }
+  }
+
+  Future<void> _openRouteAlternatives() async {
+    if (_routeAlternatives.isEmpty) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Align(alignment: Alignment.centerLeft, child: Text('Варианты маршрута', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+            const SizedBox(height: 8),
+            ...List.generate(_routeAlternatives.length, (index) {
+              final route = _routeAlternatives[index];
+              final km = ((route['distance'] as num).toDouble() / 1000).toStringAsFixed(1);
+              final minutes = (((route['duration'] as num).toDouble()) / 60).round();
+              return Card(
+                color: index == _selectedRouteIndex ? const Color(0xFFEAF3FC) : Colors.white,
+                child: ListTile(
+                  leading: Icon(index == _selectedRouteIndex ? Icons.radio_button_checked : Icons.alt_route, color: const Color(0xFF2468A0)),
+                  title: Text('$minutes мин · $km км', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text('Вариант ${index + 1}'),
+                  onTap: () {
+                    _selectRouteAlternative(index);
+                    Navigator.pop(sheetContext);
+                  },
+                ),
+              );
+            }),
+            const SizedBox(height: 6),
+            SizedBox(width: double.infinity, child: FilledButton(
+              onPressed: () => Navigator.pop(sheetContext),
+              child: const Text('Готово'),
+            )),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addRouteStop(LatLng point) async {
+    if (_routeStops.length >= 5) {
+      setState(() => _message = 'Можно добавить не более пяти промежуточных остановок.');
+      return;
+    }
+    setState(() {
+      _routeStops.add(point);
+      _message = 'Промежуточная остановка добавлена. Перестройте маршрут.';
+    });
+  }
+
   void _clearDestination() {
     final wasNavigating = _navigationActive;
     setState(() {
       _destination = null;
+      _routeStops.clear();
+      _routeAlternatives = [];
+      _selectedRouteIndex = 0;
       _routePoints = [];
       _instructions = [];
       _navigationActive = false;
