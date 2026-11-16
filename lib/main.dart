@@ -1201,6 +1201,36 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
   }
 
+  Future<void> _sharePoint(LatLng point) async {
+    final url = 'https://www.openstreetmap.org/?mlat=${point.latitude}&mlon=${point.longitude}#map=17/${point.latitude}/${point.longitude}';
+    await Clipboard.setData(ClipboardData(text: url));
+    if (mounted) setState(() => _message = 'Ссылка на точку скопирована.');
+  }
+
+  Future<void> _reportMapItem(LatLng point, String title) async {
+    final controller = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          maxLines: 4,
+          decoration: const InputDecoration(hintText: 'Опишите объект или событие', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Скопировать')),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) { controller.dispose(); return; }
+    final report = '$title\\nКоординаты: ${point.latitude}, ${point.longitude}\\n${controller.text.trim()}';
+    await Clipboard.setData(ClipboardData(text: report));
+    controller.dispose();
+    if (mounted) setState(() => _message = 'Отчёт скопирован. Отправка на сервер пока не подключена.');
+  }
+
   Future<void> _openPointMenu(LatLng point) async {
     final coordinates = '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}';
     await showModalBottomSheet<void>(
@@ -1228,6 +1258,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 Navigator.pop(sheetContext);
                 setState(() => _message = 'Координаты скопированы: $coordinates');
               },
+            ),
+            ListTile(
+              leading: const Icon(Icons.place_outlined),
+              title: const Text('Посмотреть, что здесь'),
+              subtitle: const Text('Открыть поиск места рядом с выбранной точкой'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _mapController.move(point, 17);
+                _searchController.text = 'места рядом';
+                _searchAddress();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.add_business_outlined),
+              title: const Text('Сообщить о новом объекте'),
+              onTap: () { Navigator.pop(sheetContext); _reportMapItem(point, 'Новый объект на карте'); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.warning_amber_outlined),
+              title: const Text('Добавить дорожное событие'),
+              onTap: () { Navigator.pop(sheetContext); _reportMapItem(point, 'Дорожное событие'); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share_outlined),
+              title: const Text('Поделиться точкой'),
+              onTap: () { Navigator.pop(sheetContext); _sharePoint(point); },
             ),
             ListTile(
               leading: const Icon(Icons.trip_origin, color: Color(0xFF269B68)),
