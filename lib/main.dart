@@ -34,6 +34,18 @@ class BakeNavigatorApp extends StatelessWidget {
   }
 }
 
+
+class RouteInstruction {
+  const RouteInstruction({
+    required this.location,
+    required this.text,
+    required this.distanceMeters,
+  });
+  final LatLng location;
+  final String text;
+  final double distanceMeters;
+}
+
 class NavigatorScreen extends StatefulWidget {
   const NavigatorScreen({super.key});
 
@@ -50,6 +62,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   LatLng? _currentLocation;
   LatLng? _destination;
   List<LatLng> _routePoints = [];
+  List<RouteInstruction> _instructions = [];
+  int _instructionIndex = 0;
+  bool _navigationActive = false;
   double? _routeDistanceMeters;
   double? _routeDurationSeconds;
   StreamSubscription<Position>? _positionSubscription;
@@ -141,6 +156,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         setState(() {
           _currentLocation = LatLng(position.latitude, position.longitude);
         });
+        _updateNavigationProgress(_currentLocation!);
       },
       onError: (Object error) {
         if (!mounted) return;
@@ -155,10 +171,120 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     setState(() {
       _destination = point;
       _routePoints = [];
+      _instructions = [];
+      _navigationActive = false;
+      _instructionIndex = 0;
       _routeDistanceMeters = null;
       _routeDurationSeconds = null;
       _message = 'Точка назначения выбрана. Нажмите «Построить маршрут».';
     });
+  }
+
+
+  String _instructionText(Map<String, dynamic> step) {
+    final maneuver = step['maneuver'] as Map<String, dynamic>? ?? {};
+    final type = maneuver['type']?.toString() ?? '';
+    final modifier = maneuver['modifier']?.toString() ?? '';
+    final name = (step['name']?.toString() ?? '').trim();
+    final road = name.isEmpty ? '' : ' на $name';
+    if (type == 'depart') return 'Начинайте движение$road';
+    if (type == 'arrive') return 'Вы прибыли в пункт назначения';
+    if (type == 'roundabout' || type == 'rotary') {
+      return 'На круговом движении продолжайте$road';
+    }
+    final actions = <String, String>{
+      'left': 'Поверните налево',
+      'slight left': 'Плавно поверните налево',
+      'sharp left': 'Резко поверните налево',
+      'right': 'Поверните направо',
+      'slight right': 'Плавно поверните направо',
+      'sharp right': 'Резко поверните направо',
+      'uturn': 'Развернитесь',
+      'straight': 'Продолжайте прямо',
+    };
+    final action = actions[modifier] ??
+        (type == 'new name' ? 'Продолжайте движение' : 'Продолжайте по маршруту');
+    return '$action$road';
+  }
+
+  List<RouteInstruction> _readInstructions(Map<String, dynamic> route) {
+    final result = <RouteInstruction>[];
+    final legs = route['legs'] as List<dynamic>? ?? [];
+    for (final legValue in legs) {
+      final leg = legValue as Map<String, dynamic>;
+      final steps = leg['steps'] as List<dynamic>? ?? [];
+      for (final stepValue in steps) {
+        final step = stepValue as Map<String, dynamic>;
+        final maneuver = step['maneuver'] as Map<String, dynamic>? ?? {};
+        final location = maneuver['location'] as List<dynamic>?;
+        if (location == null || location.length < 2) continue;
+        result.add(RouteInstruction(
+          location: LatLng(
+            (location[1] as num).toDouble(),
+            (location[0] as num).toDouble(),
+          ),
+          text: _instructionText(step),
+          distanceMeters: (step['distance'] as num?)?.toDouble() ?? 0,
+        ));
+      }
+    }
+    return result;
+  }
+
+  Future<void> _startNavigation() async {
+    if (_instructions.isEmpty || _currentLocation == null) return;
+    setState(() {
+      _navigationActive = true;
+      _instructionIndex = _instructions.length > 1 ? 1 : 0;
+      _message = 'Навигация началась. Следуйте голосовым подсказкам.';
+    });
+    await _speakCurrentInstruction();
+  }
+
+  Future<void> _speakCurrentInstruction() async {
+    if (!_navigationActive || _instructionIndex >= _instructions.length) return;
+    final instruction = _instructions[_instructionIndex];
+    final meters = Geolocator.distanceBetween(
+      _currentLocation!.latitude,
+      _currentLocation!.longitude,
+      instruction.location.latitude,
+      instruction.location.longitude,
+    );
+    final distanceText = meters >= 1000
+        ? '${(meters / 1000).toStringAsFixed(1)} километра'
+        : '${meters.round()} метров';
+    await _tts.speak('${instruction.text} через $distanceText.');
+  }
+
+  void _updateNavigationProgress(LatLng position) {
+    if (!_navigationActive || _instructionIndex >= _instructions.length) return;
+    final target = _instructions[_instructionIndex];
+    final meters = Geolocator.distanceBetween(
+      position.latitude,
+      position.longitude,
+      target.location.latitude,
+      target.location.longitude,
+    );
+    if (meters <= 35) {
+      if (_instructionIndex + 1 >= _instructions.length) {
+        setState(() {
+          _navigationActive = false;
+          _message = 'Вы прибыли в пункт назначения.';
+        });
+        _tts.speak('Вы прибыли в пункт назначения.');
+        return;
+      }
+      setState(() => _instructionIndex++);
+      _speakCurrentInstruction();
+    }
+  }
+
+  void _stopNavigation() {
+    setState(() {
+      _navigationActive = false;
+      _message = 'Навигация остановлена.';
+    });
+    _tts.stop();
   }
 
   Future<void> _buildRoute() async {
@@ -201,6 +327,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final route = (data['routes'] as List).first as Map<String, dynamic>;
       final geometry = route['geometry'] as Map<String, dynamic>;
       final coordinates = geometry['coordinates'] as List<dynamic>;
+      final instructions = _readInstructions(route);
       final points = coordinates.map((coordinate) {
         final pair = coordinate as List<dynamic>;
         return LatLng(
@@ -212,6 +339,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (!mounted) return;
       setState(() {
         _routePoints = points;
+        _instructions = instructions;
+        _navigationActive = false;
+        _instructionIndex = 0;
         _routeDistanceMeters = (route['distance'] as num).toDouble();
         _routeDurationSeconds = (route['duration'] as num).toDouble();
         _message = 'Маршрут построен. Это предварительный расчёт для тестирования.';
@@ -242,6 +372,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     setState(() {
       _destination = null;
       _routePoints = [];
+      _instructions = [];
+      _navigationActive = false;
+      _instructionIndex = 0;
       _routeDistanceMeters = null;
       _routeDurationSeconds = null;
       _message = 'Маршрут очищен. Удерживайте карту, чтобы выбрать новую точку.';
@@ -374,6 +507,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      if (_instructions.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _navigationActive &&
+                                  _instructionIndex < _instructions.length
+                              ? _instructions[_instructionIndex].text
+                              : 'Подсказок: ${_instructions.length}. Нажмите «Начать навигацию».',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1769AA),
+                          ),
+                        ),
+                      ],
                       Row(
                         children: [
                           Expanded(
@@ -392,6 +539,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               label: const Text('Построить маршрут'),
                             ),
                           ),
+                          if (_instructions.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: FilledButton.tonalIcon(
+                                onPressed: _navigationActive
+                                    ? _stopNavigation
+                                    : _startNavigation,
+                                icon: Icon(_navigationActive
+                                    ? Icons.stop
+                                    : Icons.navigation),
+                                label: Text(_navigationActive
+                                    ? 'Стоп'
+                                    : 'Начать навигацию'),
+                              ),
+                            ),
+                          ],
                           if (_destination != null) ...[
                             const SizedBox(width: 8),
                             IconButton.filledTonal(
