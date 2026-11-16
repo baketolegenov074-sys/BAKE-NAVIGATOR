@@ -678,7 +678,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               textInputAction: TextInputAction.search,
                               onSubmitted: (_) => _searchAddress(),
                               decoration: const InputDecoration(
-                                hintText: 'Найти улицу или адрес в Казахстане',
+                                hintText: 'Улица, номер дома, город',
                                 prefixIcon: Icon(Icons.search),
                                 isDense: true,
                                 border: OutlineInputBorder(
@@ -781,7 +781,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        'Удерживайте нужное место на карте, чтобы выбрать пункт назначения.',
+                        'Можно искать улицу и номер дома. Подъезд найдётся, если его вход отмечен в OpenStreetMap; иначе выберите точку на карте.',
                         textAlign: TextAlign.center,
                         style: TextStyle(fontSize: 11, color: Colors.black54),
                       ),
