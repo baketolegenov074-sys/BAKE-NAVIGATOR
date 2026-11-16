@@ -1201,6 +1201,33 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
   }
 
+  Future<void> _showPointDetails(LatLng point) async {
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+        'lat': point.latitude.toString(),
+        'lon': point.longitude.toString(),
+        'format': 'jsonv2',
+        'zoom': '18',
+        'accept-language': 'ru,kk',
+      });
+      final response = await http.get(uri, headers: const {'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)'}).timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) throw Exception('Сервис адресов временно недоступен.');
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final address = data['display_name']?.toString() ?? 'Адрес не найден в OpenStreetMap.';
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Что здесь'),
+          content: Text('$address\\n\\nКоординаты: ${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Закрыть'))],
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
   Future<void> _sharePoint(LatLng point) async {
     final url = 'https://www.openstreetmap.org/?mlat=${point.latitude}&mlon=${point.longitude}#map=17/${point.latitude}/${point.longitude}';
     await Clipboard.setData(ClipboardData(text: url));
@@ -1266,8 +1293,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               onTap: () {
                 Navigator.pop(sheetContext);
                 _mapController.move(point, 17);
-                _searchController.text = 'места рядом';
-                _searchAddress();
+                _showPointDetails(point);
               },
             ),
             ListTile(
