@@ -72,6 +72,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   LatLng? _currentLocation;
   LatLng? _destination;
+  LatLng? _routeOrigin;
   final List<LatLng> _routeStops = <LatLng>[];
   List<Map<String, dynamic>> _routeAlternatives = <Map<String, dynamic>>[];
   int _selectedRouteIndex = 0;
@@ -444,6 +445,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
+  void _selectRouteOrigin(LatLng point) {
+    final wasNavigating = _navigationActive;
+    setState(() {
+      _routeOrigin = point;
+      _routePoints = [];
+      _instructions = [];
+      _navigationActive = false;
+      _instructionIndex = 0;
+      _routeDistanceMeters = null;
+      _routeDurationSeconds = null;
+      _message = 'Начальная точка выбрана на карте. Выберите пункт назначения.';
+    });
+    if (wasNavigating) unawaited(_startLiveLocationUpdates());
+  }
+
+  void _resetRouteOrigin() {
+    setState(() {
+      _routeOrigin = null;
+      _routePoints = [];
+      _instructions = [];
+      _routeDistanceMeters = null;
+      _routeDurationSeconds = null;
+      _message = 'Начальная точка снова определяется по GPS.';
+    });
+  }
+
   void _selectDestination(LatLng point) {
     final wasNavigating = _navigationActive;
     setState(() {
@@ -645,8 +672,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       setState(() => _message = 'Сначала выберите конечную точку на карте.');
       return;
     }
-    if (_currentLocation == null) await _locateMe();
-    if (_currentLocation == null || _destination == null) return;
+    if (_routeOrigin == null && _currentLocation == null) await _locateMe();
+    final routeOrigin = _routeOrigin ?? _currentLocation;
+    if (routeOrigin == null || _destination == null) {
+      if (mounted) setState(() => _message = 'Не удалось определить начальную точку. Выберите её на карте или включите GPS.');
+      return;
+    }
 
     final resumeNavigation = automaticReroute && _navigationActive;
     setState(() {
@@ -655,7 +686,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     });
 
     try {
-      final coordinates = <LatLng>[_currentLocation!, ..._routeStops, _destination!]
+      final coordinates = <LatLng>[routeOrigin, ..._routeStops, _destination!]
           .map((point) => '${point.longitude},${point.latitude}')
           .join(';');
       final uri = Uri.parse(
@@ -675,7 +706,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final validRoutes = routes.cast<Map<String, dynamic>>().where((route) {
         final distance = (route['distance'] as num).toDouble();
         final directDistance = Geolocator.distanceBetween(
-          _currentLocation!.latitude, _currentLocation!.longitude,
+          routeOrigin.latitude, routeOrigin.longitude,
           _destination!.latitude, _destination!.longitude,
         );
         return distance <= math.max(5000.0, directDistance * 8.0);
@@ -815,6 +846,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final wasNavigating = _navigationActive;
     setState(() {
       _destination = null;
+      _routeOrigin = null;
       _routeStops.clear();
       _routeAlternatives = [];
       _selectedRouteIndex = 0;
@@ -887,6 +919,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 Clipboard.setData(ClipboardData(text: coordinates));
                 Navigator.pop(sheetContext);
                 setState(() => _message = 'Координаты скопированы: $coordinates');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.trip_origin, color: Color(0xFF269B68)),
+              title: const Text('Отсюда'),
+              subtitle: const Text('Сделать эту точку началом маршрута'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _selectRouteOrigin(point);
+                _mapController.move(point, 16);
               },
             ),
             ListTile(
@@ -996,10 +1038,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       const Text('ОТКУДА', style: TextStyle(fontSize: 10, color: Color(0xFF78838D), fontWeight: FontWeight.w800, letterSpacing: 0.8)),
                       const SizedBox(height: 3),
-                      Text(_currentLocation == null ? 'Моё местоположение (ожидаем GPS)' : '${_currentLocation!.latitude.toStringAsFixed(5)}, ${_currentLocation!.longitude.toStringAsFixed(5)}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                      const Text('Начальная точка определяется по GPS', style: TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
+                      Text(_routeOrigin != null
+                          ? '${_routeOrigin!.latitude.toStringAsFixed(5)}, ${_routeOrigin!.longitude.toStringAsFixed(5)}'
+                          : (_currentLocation == null ? 'Моё местоположение (ожидаем GPS)' : '${_currentLocation!.latitude.toStringAsFixed(5)}, ${_currentLocation!.longitude.toStringAsFixed(5)}'),
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                      Text(_routeOrigin == null ? 'Начальная точка определяется по GPS' : 'Начальная точка выбрана на карте', style: const TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
                     ])),
-                    TextButton(onPressed: () { Navigator.pop(sheetContext); unawaited(_locateMe()); }, child: const Text('Обновить')),
+                    if (_routeOrigin != null)
+                      TextButton(onPressed: () { _resetRouteOrigin(); refreshSheet(() {}); }, child: const Text('Сбросить')),
+                    TextButton(onPressed: () { Navigator.pop(sheetContext); unawaited(_locateMe()); }, child: const Text('GPS')),
                   ]),
                   const Divider(height: 22),
                   Row(children: [
@@ -1154,6 +1201,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Widget build(BuildContext context) {
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final markers = <Marker>[
+      if (_routeOrigin != null)
+        Marker(
+          point: _routeOrigin!,
+          width: 46,
+          height: 46,
+          child: const Icon(Icons.trip_origin, color: Color(0xFF269B68), size: 34),
+        ),
       if (_currentLocation != null)
         Marker(
           point: _currentLocation!,
