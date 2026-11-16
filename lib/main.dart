@@ -869,7 +869,7 @@ class NavigatorSettingsScreen extends StatefulWidget {
   State<NavigatorSettingsScreen> createState() => _NavigatorSettingsScreenState();
 }
 
-class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
+class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> with WidgetsBindingObserver {
   final _vehicleMake = TextEditingController();
   final _vehicleModel = TextEditingController();
   final _vehicleColor = TextEditingController();
@@ -939,7 +939,13 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSettings();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshStatuses();
   }
 
   Future<void> _loadSettings() async {
@@ -1054,6 +1060,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _vehicleMake.dispose();
     _vehicleModel.dispose();
     _vehicleColor.dispose();
@@ -1079,7 +1086,15 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                   'Каждое разрешение включается отдельно. Навигатор не получает доступ к данным без вашего согласия.',
                   style: TextStyle(color: Colors.black54),
                 ),
-                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _refreshStatuses,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Обновить статусы'),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 for (final entry in _entries)
                   Card(
                     child: ListTile(
