@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_mbtiles/flutter_map_mbtiles.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -62,6 +66,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   final MapController _mapController = MapController();
   final FlutterTts _tts = FlutterTts();
   final TextEditingController _searchController = TextEditingController();
+  MbTilesTileProvider? _offlineTileProvider;
 
   LatLng? _currentLocation;
   LatLng? _destination;
@@ -84,6 +89,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   void initState() {
     super.initState();
     _configureVoice();
+    _loadSavedOfflineMap();
   }
 
   Future<void> _configureVoice() async {
@@ -99,9 +105,45 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   @override
   void dispose() {
     _positionSubscription?.cancel();
+    _offlineTileProvider?.dispose();
     _searchController.dispose();
     _tts.stop();
     super.dispose();
+  }
+
+
+  Future<void> _loadSavedOfflineMap() async {
+    final prefs = await SharedPreferences.getInstance();
+    final path = prefs.getString('offline_map_path');
+    if (path == null || !await File(path).exists()) return;
+    try {
+      final provider = MbTilesTileProvider.fromPath(path: path);
+      if (!mounted) {
+        provider.dispose();
+        return;
+      }
+      setState(() => _offlineTileProvider = provider);
+    } catch (_) {
+      // Keep the online map available if an offline archive cannot be opened.
+    }
+  }
+
+  Future<void> _openSettings() async {
+    final selectedPath = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const NavigatorSettingsScreen()),
+    );
+    if (selectedPath == null || !mounted) return;
+    try {
+      final provider = MbTilesTileProvider.fromPath(path: selectedPath);
+      _offlineTileProvider?.dispose();
+      setState(() {
+        _offlineTileProvider = provider;
+        _message = 'Офлайн-карта подключена. Для построения маршрута пока нужен интернет.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _message = 'Не удалось открыть офлайн-карту: $error');
+    }
   }
 
   Future<void> _locateMe() async {
@@ -590,9 +632,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           IconButton(
             tooltip: 'Настройки навигатора',
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const NavigatorSettingsScreen()),
-            ),
+            onPressed: _openSettings,
           ),
         ],
         title: const Text(
@@ -613,10 +653,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               onLongPress: (_, point) => _selectDestination(point),
             ),
             children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'kz.bake.bake_navigator',
-              ),
+              if (_offlineTileProvider == null)
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'kz.bake.bake_navigator',
+                )
+              else
+                TileLayer(tileProvider: _offlineTileProvider!),
               if (_routePoints.isNotEmpty)
                 PolylineLayer(
                   polylines: [
@@ -824,6 +867,8 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   final _vehicleColor = TextEditingController();
   final _vehiclePlate = TextEditingController();
   bool _loading = true;
+  String? _offlineMapPath;
+  bool _importingOfflineMap = false;
   final Map<String, List<PermissionStatus>> _statuses = {};
 
   static const _entries = <_PermissionEntry>[
@@ -895,6 +940,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     _vehicleModel.text = prefs.getString('vehicle_model') ?? '';
     _vehicleColor.text = prefs.getString('vehicle_color') ?? '';
     _vehiclePlate.text = prefs.getString('vehicle_plate') ?? '';
+    _offlineMapPath = prefs.getString('offline_map_path');
     await _refreshStatuses();
     if (mounted) setState(() => _loading = false);
   }
@@ -936,6 +982,42 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
       }
     }
     await _refreshStatuses();
+  }
+
+
+  Future<void> _importOfflineMap() async {
+    if (_importingOfflineMap) return;
+    setState(() => _importingOfflineMap = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['mbtiles'],
+        allowMultiple: false,
+        withData: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final sourcePath = result.files.single.path;
+      if (sourcePath == null) {
+        throw Exception('Сначала сохраните файл карты в память телефона, затем выберите его.');
+      }
+      final source = File(sourcePath);
+      final directory = await getApplicationSupportDirectory();
+      final destination = File('${directory.path}/bake_offline_map.mbtiles');
+      if (await destination.exists()) await destination.delete();
+      await source.copy(destination.path);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('offline_map_path', destination.path);
+      if (!mounted) return;
+      setState(() => _offlineMapPath = destination.path);
+      Navigator.of(context).pop(destination.path);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _importingOfflineMap = false);
+    }
   }
 
   Future<void> _saveVehicle() async {
@@ -1031,12 +1113,44 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                   style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
-                const Card(
-                  child: ListTile(
-                    leading: Icon(Icons.map_outlined),
-                    title: Text('Карты Шымкента и Казахстана'),
-                    subtitle: Text(
-                      'Раздел подготовлен. Загрузка областей и работа без интернета ещё разрабатываются. Для офлайн-карт выберем источник данных с разрешённым кешированием и загрузкой.',
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.map_outlined),
+                          title: const Text('Офлайн-карта'),
+                          subtitle: Text(
+                            _offlineMapPath == null
+                                ? 'Карта ещё не импортирована. Выберите готовый MBTiles-файл для работы карты без интернета.'
+                                : 'Офлайн-карта подключена на этом устройстве.',
+                          ),
+                        ),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _importingOfflineMap ? null : _importOfflineMap,
+                            icon: _importingOfflineMap
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.file_open_outlined),
+                            label: Text(_importingOfflineMap
+                                ? 'Импортируем…'
+                                : 'Импортировать MBTiles-карту'),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Файл карты нужно заранее получить из источника, разрешающего офлайн-использование. Обычные публичные тайлы OpenStreetMap массово скачивать нельзя.',
+                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                      ],
                     ),
                   ),
                 ),
