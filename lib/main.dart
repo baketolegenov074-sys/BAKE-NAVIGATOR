@@ -67,6 +67,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   final MapController _mapController = MapController();
   final FlutterTts _tts = FlutterTts();
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   MbTilesTileProvider? _offlineTileProvider;
 
   LatLng? _currentLocation;
@@ -113,6 +114,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     _positionSubscription?.cancel();
     _offlineTileProvider?.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _tts.stop();
     super.dispose();
   }
@@ -1141,7 +1143,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
                           _bottomAction(Icons.map_outlined, 'Карта', () {}),
-                          _bottomAction(Icons.search, 'Поиск', () => FocusScope.of(context).requestFocus(FocusNode())),
+                          _bottomAction(Icons.search, 'Поиск', () => _searchFocusNode.requestFocus()),
                           _bottomAction(Icons.alt_route, 'Маршрут', _openRouteMenu),
                           _bottomAction(Icons.bookmark_border, 'Закладки', _openBookmarks),
                           _bottomAction(Icons.person_outline, 'Профиль', _openProfileMenu),
