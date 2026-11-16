@@ -41,9 +41,9 @@ jobs:
           path = Path("android/app/src/main/AndroidManifest.xml")
           manifest = path.read_text()
           permissions = (
-              '    <uses-permission android:name="android.permission.INTERNET" />\\n'
-              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\\n'
-              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\\n'
+              '    <uses-permission android:name="android.permission.INTERNET" />\n'
+              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
+              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n'
           )
           manifest = manifest.replace("    <application", permissions + "    <application", 1)
           manifest = manifest.replace('android:label="bake_navigator"', 'android:label="BAKE Navigator"')
