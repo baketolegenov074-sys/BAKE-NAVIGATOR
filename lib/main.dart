@@ -894,8 +894,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             }),
             const SizedBox(height: 6),
             SizedBox(width: double.infinity, child: FilledButton(
-              onPressed: () => Navigator.pop(sheetContext),
-              child: const Text('Готово'),
+              onPressed: () {
+                Navigator.pop(sheetContext);
+                _startNavigation();
+              },
+              child: const Text('Поехали'),
             )),
           ]),
         ),
