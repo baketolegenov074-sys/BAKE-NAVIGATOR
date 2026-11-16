@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -7,6 +8,8 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -72,6 +75,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _isLocating = false;
   bool _isSearching = false;
   bool _isBuildingRoute = false;
+  double? _gpsAccuracyMeters;
+  int _offRouteSamples = 0;
+  DateTime? _lastAutomaticReroute;
   String _message = 'Нажмите «Моё местоположение» или удерживайте точку на карте';
 
   @override
@@ -158,8 +164,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         if (!mounted) return;
         setState(() {
           _currentLocation = LatLng(position.latitude, position.longitude);
+          _gpsAccuracyMeters = position.accuracy;
         });
         _updateNavigationProgress(_currentLocation!);
+        _checkForOffRoute(position);
       },
       onError: (Object error) {
         if (!mounted) return;
@@ -379,7 +387,65 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     _tts.stop();
   }
 
-  Future<void> _buildRoute() async {
+
+  double _distanceToRouteMeters(LatLng position) {
+    if (_routePoints.length < 2) return double.infinity;
+    final latScale = 110540.0;
+    final lonScale = 111320.0 * math.cos(position.latitude * math.pi / 180);
+    final px = position.longitude * lonScale;
+    final py = position.latitude * latScale;
+    var best = double.infinity;
+    for (var i = 0; i < _routePoints.length - 1; i++) {
+      final a = _routePoints[i];
+      final b = _routePoints[i + 1];
+      final ax = a.longitude * lonScale;
+      final ay = a.latitude * latScale;
+      final bx = b.longitude * lonScale;
+      final by = b.latitude * latScale;
+      final dx = bx - ax;
+      final dy = by - ay;
+      final lengthSquared = dx * dx + dy * dy;
+      final t = lengthSquared == 0
+          ? 0.0
+          : (((px - ax) * dx + (py - ay) * dy) / lengthSquared)
+              .clamp(0.0, 1.0);
+      final nearestX = ax + t * dx;
+      final nearestY = ay + t * dy;
+      final distance = math.sqrt(
+        (px - nearestX) * (px - nearestX) +
+            (py - nearestY) * (py - nearestY),
+      );
+      if (distance < best) best = distance;
+    }
+    return best;
+  }
+
+  void _checkForOffRoute(Position position) {
+    if (!_navigationActive || _isBuildingRoute || _destination == null) return;
+    // Ignore poor fixes; a bad GPS point must not trigger a false reroute.
+    if (position.accuracy > 45 || _routePoints.length < 2) return;
+    final now = DateTime.now();
+    if (_lastAutomaticReroute != null &&
+        now.difference(_lastAutomaticReroute!) < const Duration(seconds: 25)) {
+      return;
+    }
+    final distance = _distanceToRouteMeters(
+      LatLng(position.latitude, position.longitude),
+    );
+    final offRouteLimit = math.max(55.0, position.accuracy * 2.0);
+    if (distance > offRouteLimit) {
+      _offRouteSamples++;
+    } else {
+      _offRouteSamples = 0;
+    }
+    if (_offRouteSamples >= 3) {
+      _offRouteSamples = 0;
+      _lastAutomaticReroute = now;
+      _buildRoute(automaticReroute: true);
+    }
+  }
+
+  Future<void> _buildRoute({bool automaticReroute = false}) async {
     if (_destination == null) {
       setState(() => _message = 'Сначала удерживайте нужное место на карте.');
       return;
@@ -390,9 +456,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
     if (_currentLocation == null || _destination == null) return;
 
+    final resumeNavigation = automaticReroute && _navigationActive;
     setState(() {
       _isBuildingRoute = true;
-      _message = 'Строим маршрут…';
+      _message = automaticReroute ? 'Вы отклонились от маршрута. Перестраиваем…' : 'Строим маршрут…';
     });
 
     try {
@@ -432,11 +499,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       setState(() {
         _routePoints = points;
         _instructions = instructions;
-        _navigationActive = false;
-        _instructionIndex = 0;
+        _navigationActive = resumeNavigation;
+        _instructionIndex = resumeNavigation && instructions.length > 1 ? 1 : 0;
+        _offRouteSamples = 0;
         _routeDistanceMeters = (route['distance'] as num).toDouble();
         _routeDurationSeconds = (route['duration'] as num).toDouble();
-        _message = 'Маршрут построен. Это предварительный расчёт для тестирования.';
+        _message = automaticReroute
+            ? 'Маршрут перестроен. Продолжаем навигацию.'
+            : 'Маршрут построен. Это предварительный расчёт для тестирования.';
       });
 
       if (points.isNotEmpty) {
@@ -448,10 +518,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         );
       }
 
-      final distanceKm = (_routeDistanceMeters! / 1000).toStringAsFixed(1);
-      final minutes = (_routeDurationSeconds! / 60).round();
-      await _tts.speak('Маршрут построен. Расстояние $distanceKm километра. '
-          'Примерное время в пути $minutes минут.');
+      if (automaticReroute && resumeNavigation) {
+        await _tts.speak('Вы отклонились от маршрута. Маршрут перестроен.');
+        await _speakCurrentInstruction();
+      } else {
+        final distanceKm = (_routeDistanceMeters! / 1000).toStringAsFixed(1);
+        final minutes = (_routeDurationSeconds! / 60).round();
+        await _tts.speak('Маршрут построен. Расстояние $distanceKm километра. '
+            'Примерное время в пути $minutes минут.');
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
@@ -511,6 +586,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        actions: [
+          IconButton(
+            tooltip: 'Настройки навигатора',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const NavigatorSettingsScreen()),
+            ),
+          ),
+        ],
         title: const Text(
           'BAKE NAVIGATOR',
           style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5),
@@ -622,6 +706,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         style: const TextStyle(fontSize: 13, color: Colors.black87),
                       ),
                       const SizedBox(height: 8),
+                      if (_gpsAccuracyMeters != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'Точность GPS: ±${_gpsAccuracyMeters!.round()} м',
+                          style: const TextStyle(fontSize: 11, color: Colors.black54),
+                        ),
+                      ],
                       Text(
                         _routeSummary(),
                         style: const TextStyle(
@@ -705,3 +796,253 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
   }
 }
+
+
+class _PermissionEntry {
+  const _PermissionEntry({
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.permissions,
+  });
+  final String title;
+  final String description;
+  final IconData icon;
+  final List<Permission> permissions;
+}
+
+class NavigatorSettingsScreen extends StatefulWidget {
+  const NavigatorSettingsScreen({super.key});
+
+  @override
+  State<NavigatorSettingsScreen> createState() => _NavigatorSettingsScreenState();
+}
+
+class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
+  final _vehicleMake = TextEditingController();
+  final _vehicleModel = TextEditingController();
+  final _vehicleColor = TextEditingController();
+  final _vehiclePlate = TextEditingController();
+  bool _loading = true;
+  final Map<String, List<PermissionStatus>> _statuses = {};
+
+  static const _entries = <_PermissionEntry>[
+    _PermissionEntry(
+      title: 'Местоположение',
+      description: 'GPS для положения на карте, маршрута и навигации.',
+      icon: Icons.location_on_outlined,
+      permissions: [Permission.locationWhenInUse],
+    ),
+    _PermissionEntry(
+      title: 'Микрофон',
+      description: 'Для будущего голосового управления и голосового поиска.',
+      icon: Icons.mic_none,
+      permissions: [Permission.microphone],
+    ),
+    _PermissionEntry(
+      title: 'Уведомления',
+      description: 'Предупреждения навигации и сообщения приложения.',
+      icon: Icons.notifications_none,
+      permissions: [Permission.notification],
+    ),
+    _PermissionEntry(
+      title: 'Физическая активность',
+      description: 'Определение движения и режима поездки, если функция будет включена.',
+      icon: Icons.directions_walk,
+      permissions: [Permission.activityRecognition],
+    ),
+    _PermissionEntry(
+      title: 'Камера',
+      description: 'Для будущего сканирования документов или фото автомобиля по запросу.',
+      icon: Icons.camera_alt_outlined,
+      permissions: [Permission.camera],
+    ),
+    _PermissionEntry(
+      title: 'Контакты',
+      description: 'Для выбора контакта при отправке местоположения, только по запросу.',
+      icon: Icons.contacts_outlined,
+      permissions: [Permission.contacts],
+    ),
+    _PermissionEntry(
+      title: 'Телефон',
+      description: 'Для сведений о состоянии телефона; доступ к журналу звонков не запрашивается.',
+      icon: Icons.phone_outlined,
+      permissions: [Permission.phone],
+    ),
+    _PermissionEntry(
+      title: 'Устройства поблизости',
+      description: 'Bluetooth для будущего подключения к автомобильным устройствам.',
+      icon: Icons.bluetooth,
+      permissions: [Permission.bluetoothScan, Permission.bluetoothConnect],
+    ),
+    _PermissionEntry(
+      title: 'Фото и видео',
+      description: 'Для выбора фото профиля или изображения автомобиля.',
+      icon: Icons.photo_library_outlined,
+      permissions: [Permission.photos, Permission.videos],
+    ),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    _vehicleMake.text = prefs.getString('vehicle_make') ?? '';
+    _vehicleModel.text = prefs.getString('vehicle_model') ?? '';
+    _vehicleColor.text = prefs.getString('vehicle_color') ?? '';
+    _vehiclePlate.text = prefs.getString('vehicle_plate') ?? '';
+    await _refreshStatuses();
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _refreshStatuses() async {
+    final next = <String, List<PermissionStatus>>{};
+    for (final entry in _entries) {
+      next[entry.title] = await Future.wait(
+        entry.permissions.map((permission) => permission.status),
+      );
+    }
+    if (mounted) setState(() => _statuses
+      ..clear()
+      ..addAll(next));
+  }
+
+  String _statusLabel(_PermissionEntry entry) {
+    final values = _statuses[entry.title] ?? const <PermissionStatus>[];
+    if (values.isEmpty) return 'Проверяем…';
+    if (values.every((status) => status.isGranted || status.isLimited)) {
+      return values.any((status) => status.isLimited) ? 'Разрешено частично' : 'Разрешено';
+    }
+    if (values.any((status) => status.isPermanentlyDenied)) {
+      return 'Запрещено в настройках телефона';
+    }
+    if (values.any((status) => status.isRestricted)) return 'Ограничено системой';
+    return 'Не разрешено';
+  }
+
+  Future<void> _requestEntry(_PermissionEntry entry) async {
+    for (final permission in entry.permissions) {
+      final status = await permission.status;
+      if (status.isPermanentlyDenied || status.isRestricted) {
+        await openAppSettings();
+        break;
+      }
+      if (!status.isGranted && !status.isLimited) {
+        await permission.request();
+      }
+    }
+    await _refreshStatuses();
+  }
+
+  Future<void> _saveVehicle() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('vehicle_make', _vehicleMake.text.trim());
+    await prefs.setString('vehicle_model', _vehicleModel.text.trim());
+    await prefs.setString('vehicle_color', _vehicleColor.text.trim());
+    await prefs.setString('vehicle_plate', _vehiclePlate.text.trim());
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Данные автомобиля сохранены на этом телефоне.')),
+    );
+  }
+
+  @override
+  void dispose() {
+    _vehicleMake.dispose();
+    _vehicleModel.dispose();
+    _vehicleColor.dispose();
+    _vehiclePlate.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Настройки навигатора')),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                const Text(
+                  'Разрешения телефона',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Каждое разрешение включается отдельно. Навигатор не получает доступ к данным без вашего согласия.',
+                  style: TextStyle(color: Colors.black54),
+                ),
+                const SizedBox(height: 12),
+                for (final entry in _entries)
+                  Card(
+                    child: ListTile(
+                      leading: Icon(entry.icon, color: const Color(0xFF1769AA)),
+                      title: Text(entry.title),
+                      subtitle: Text('${_statusLabel(entry)}\n${entry.description}'),
+                      isThreeLine: true,
+                      trailing: IconButton(
+                        tooltip: 'Изменить разрешение',
+                        icon: const Icon(Icons.tune),
+                        onPressed: () => _requestEntry(entry),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Данные автомобиля',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Эти сведения сохраняются локально. Пока они не отправляются на сервер.',
+                  style: TextStyle(color: Colors.black54),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _vehicleMake,
+                  decoration: const InputDecoration(labelText: 'Марка автомобиля'),
+                ),
+                TextField(
+                  controller: _vehicleModel,
+                  decoration: const InputDecoration(labelText: 'Модель'),
+                ),
+                TextField(
+                  controller: _vehicleColor,
+                  decoration: const InputDecoration(labelText: 'Цвет'),
+                ),
+                TextField(
+                  controller: _vehiclePlate,
+                  decoration: const InputDecoration(labelText: 'Государственный номер'),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _saveVehicle,
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Сохранить данные автомобиля'),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'Офлайн-карты',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                const Card(
+                  child: ListTile(
+                    leading: Icon(Icons.map_outlined),
+                    title: Text('Карты Шымкента и Казахстана'),
+                    subtitle: Text(
+                      'Раздел подготовлен. Загрузка областей и работа без интернета ещё разрабатываются. Для офлайн-карт выберем источник данных с разрешённым кешированием и загрузкой.',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
