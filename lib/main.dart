@@ -1034,11 +1034,6 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
 
   Future<void> _removeOfflineMap() async {
     final prefs = await SharedPreferences.getInstance();
-    final oldPath = prefs.getString('offline_map_path');
-    if (oldPath != null) {
-      final oldFile = File(oldPath);
-      if (await oldFile.exists()) await oldFile.delete();
-    }
     await prefs.remove('offline_map_path');
     if (!mounted) return;
     setState(() => _offlineMapPath = null);
