@@ -1019,62 +1019,6 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   String? _offlineMapPath;
   bool _importingOfflineMap = false;
 
-  static const _entries = <_PermissionEntry>[
-    _PermissionEntry(
-      title: 'Местоположение',
-      description: 'GPS для карты и маршрута. Во время навигации Android показывает постоянное уведомление о работе GPS в фоне.',
-      icon: Icons.location_on_outlined,
-      permissions: [Permission.locationWhenInUse],
-    ),
-    _PermissionEntry(
-      title: 'Микрофон',
-      description: 'Для будущего голосового управления и голосового поиска.',
-      icon: Icons.mic_none,
-      permissions: [Permission.microphone],
-    ),
-    _PermissionEntry(
-      title: 'Уведомления',
-      description: 'Предупреждения навигации и сообщения приложения.',
-      icon: Icons.notifications_none,
-      permissions: [Permission.notification],
-    ),
-    _PermissionEntry(
-      title: 'Физическая активность',
-      description: 'Определение движения и режима поездки, если функция будет включена.',
-      icon: Icons.directions_walk,
-      permissions: [Permission.activityRecognition],
-    ),
-    _PermissionEntry(
-      title: 'Камера',
-      description: 'Для будущего сканирования документов или фото автомобиля по запросу.',
-      icon: Icons.camera_alt_outlined,
-      permissions: [Permission.camera],
-    ),
-    _PermissionEntry(
-      title: 'Контакты',
-      description: 'Для выбора контакта при отправке местоположения, только по запросу.',
-      icon: Icons.contacts_outlined,
-      permissions: [Permission.contacts],
-    ),
-    _PermissionEntry(
-      title: 'Телефон',
-      description: 'Для сведений о состоянии телефона; доступ к журналу звонков не запрашивается.',
-      icon: Icons.phone_outlined,
-      permissions: [Permission.phone],
-    ),
-    _PermissionEntry(
-      title: 'Устройства поблизости',
-      description: 'Bluetooth для будущего подключения к автомобильным устройствам.',
-      icon: Icons.bluetooth,
-      permissions: [Permission.bluetoothScan, Permission.bluetoothConnect],
-    ),
-    _PermissionEntry(
-      title: 'Фото и видео',
-      description: 'Для выбора фото профиля или изображения автомобиля.',
-      icon: Icons.photo_library_outlined,
-      permissions: [Permission.photos, Permission.videos],
-    ),
-  ];
 
   @override
   void initState() {
