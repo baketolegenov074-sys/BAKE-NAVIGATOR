@@ -1135,6 +1135,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           ],
                         ],
                       ),
+                      const SizedBox(height: 8),
+                      const Divider(height: 1),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _bottomAction(Icons.map_outlined, 'Карта', () {}),
+                          _bottomAction(Icons.search, 'Поиск', () => FocusScope.of(context).requestFocus(FocusNode())),
+                          _bottomAction(Icons.alt_route, 'Маршрут', _openRouteMenu),
+                          _bottomAction(Icons.bookmark_border, 'Закладки', _openBookmarks),
+                          _bottomAction(Icons.person_outline, 'Профиль', _openProfileMenu),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -1142,6 +1154,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _bottomAction(IconData icon, String label, VoidCallback onTap) {
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 21, color: const Color(0xFF4B5662)),
+            const SizedBox(height: 3),
+            Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF4B5662))),
+          ]),
+        ),
       ),
     );
   }
