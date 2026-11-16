@@ -31,6 +31,8 @@ jobs:
           cp pubspec.yaml /tmp/bake-pubspec.yaml
           cp lib/main.dart /tmp/bake-main.dart
           flutter create --platforms=android --org kz.bake --project-name bake_navigator --no-pub .
+          # flutter create adds a sample test for MyApp, but this app entry point is BakeNavigatorApp.
+          rm -f test/widget_test.dart
           cp /tmp/bake-pubspec.yaml pubspec.yaml
           cp /tmp/bake-main.dart lib/main.dart
 
