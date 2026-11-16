@@ -283,11 +283,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final east = (anchor.longitude + 0.45).toStringAsFixed(6);
       final south = (anchor.latitude - 0.45).toStringAsFixed(6);
 
-      Future<List<dynamic>> requestSearch({required bool bounded}) async {
+      Future<List<dynamic>> requestSearch({required bool bounded, String limit = '12'}) async {
         final params = <String, String>{
           'q': query,
           'format': 'jsonv2',
-          'limit': '12',
+          'limit': limit,
           'countrycodes': 'kz',
           'accept-language': 'ru,kk',
           'addressdetails': '1',
@@ -314,7 +314,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       var results = await requestSearch(bounded: true);
       if (!mounted) return;
       if (results.isEmpty) {
-        setState(() => _message = 'Рядом с вами объект не найден. Уточните название или выберите точку на карте — далёкие города не будем подставлять вместо местного адреса.');
+        final searchNationwide = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Рядом не найдено'),
+            content: const Text('Поблизости такого объекта нет в карте. Искать его по всему Казахстану?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Не сейчас'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('По всему Казахстану'),
+              ),
+            ],
+          ),
+        );
+        if (searchNationwide != true || !mounted) {
+          setState(() => _message = 'Рядом объект не найден. Попробуйте уточнить название или выбрать точку на карте.');
+          return;
+        }
+        results = await requestSearch(bounded: false, limit: '40');
+        if (!mounted) return;
+      }
+      if (results.isEmpty) {
+        setState(() => _message = 'Такой объект не найден в Казахстане. Проверьте название.');
         return;
       }
 
