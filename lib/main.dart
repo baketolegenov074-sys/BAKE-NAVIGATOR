@@ -104,9 +104,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _configureVoice() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final volume = prefs.getDouble('voice_volume') ?? 1.0;
+      final rate = prefs.getDouble('voice_rate') ?? 0.48;
       await _tts.setLanguage('ru-RU');
-      await _tts.setSpeechRate(0.48);
-      await _tts.setVolume(1.0);
+      await _tts.setSpeechRate(rate);
+      await _tts.setVolume(volume);
     } catch (_) {
       // Voice support depends on the speech engine installed on the phone.
     }
@@ -895,6 +898,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.add_location_alt_outlined),
+              title: const Text('Добавить как промежуточную остановку'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _addRouteStop(point);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.bookmark_border),
               title: const Text('Сохранить в закладки'),
               onTap: () async {
@@ -965,6 +976,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             const Align(alignment: Alignment.centerLeft, child: Text('Маршрут', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
             _menuTile(sheetContext, Icons.edit_road_outlined, 'Изменить маршрут', () { Navigator.pop(sheetContext); setState(() => _message = 'Выберите новую точку на карте или воспользуйтесь поиском.'); }),
             _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Добавить точку', () { Navigator.pop(sheetContext); setState(() => _message = 'Удерживайте карту в месте промежуточной остановки.'); }),
+            _menuTile(sheetContext, Icons.alt_route, 'Варианты маршрута', () { Navigator.pop(sheetContext); _openRouteAlternatives(); }),
             _menuTile(sheetContext, Icons.tune, 'Параметры маршрута', () { Navigator.pop(sheetContext); _openSettings(); }),
             _menuTile(sheetContext, Icons.share_outlined, 'Поделиться маршрутом', () { Navigator.pop(sheetContext); setState(() => _message = 'Поделиться маршрутом можно после его построения.'); }),
             _menuTile(sheetContext, Icons.flag_outlined, 'Сообщить об ошибке', () { Navigator.pop(sheetContext); setState(() => _message = 'Отправка ошибок маршрута пока не подключена.'); }),
@@ -1168,6 +1180,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             ),
                         ],
                       ),
+                      if (_routeStops.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text('Промежуточных остановок: ${_routeStops.length}', style: const TextStyle(fontSize: 12, color: Color(0xFF2468A0))),
+                        ),
                       Text(
                         _routeSummary(),
                         maxLines: 1,
