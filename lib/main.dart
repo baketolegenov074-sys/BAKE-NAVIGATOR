@@ -87,6 +87,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _isSearching = false;
   bool _isBuildingRoute = false;
   bool _carPaymentOnly = false;
+  int _voiceMode = 3;
   double? _gpsAccuracyMeters;
   double? _gpsHeadingDegrees;
   int _offRouteSamples = 0;
@@ -165,6 +166,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final prefs = await SharedPreferences.getInstance();
       final volume = prefs.getDouble('voice_volume') ?? 1.0;
       final rate = prefs.getDouble('voice_rate') ?? 0.48;
+      _voiceMode = prefs.getInt('voice_mode') ?? 3;
       await _tts.setLanguage('ru-RU');
       await _tts.setSpeechRate(rate);
       await _tts.setVolume(volume);
@@ -242,31 +244,80 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _openSoundSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    var mode = prefs.getInt('voice_mode') ?? _voiceMode;
     var volume = prefs.getDouble('voice_volume') ?? 1.0;
     var rate = prefs.getDouble('voice_rate') ?? 0.48;
+    const modes = <String>['Выкл.', 'Важные', 'Подсказки', 'Все'];
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, refresh) => SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Align(alignment: Alignment.centerLeft, child: Text('Звуковое сопровождение', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
-              const SizedBox(height: 10),
-              Row(children: [
-                const Icon(Icons.volume_down),
-                Expanded(child: Slider(value: volume, min: 0, max: 1, divisions: 10, label: '${(volume * 100).round()}%', onChanged: (value) async { volume = value; refresh(() {}); await prefs.setDouble('voice_volume', value); await _tts.setVolume(value); })),
-                const Icon(Icons.volume_up),
-              ]),
-              Align(alignment: Alignment.centerLeft, child: Text('Громкость голосовых подсказок · ${(volume * 100).round()}%')),
-              const SizedBox(height: 8),
-              Align(alignment: Alignment.centerLeft, child: Text('Скорость речи · ${rate.toStringAsFixed(2)}')),
-              Slider(value: rate, min: 0.25, max: 0.75, divisions: 10, label: rate.toStringAsFixed(2), onChanged: (value) async { rate = value; refresh(() {}); await prefs.setDouble('voice_rate', value); await _tts.setSpeechRate(value); }),
-              const Text('Настраиваются голосовые подсказки навигации. Отдельные звуковые сигналы пока не подключены.', style: TextStyle(fontSize: 12, color: Colors.black54)),
-              Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(sheetContext), child: const Text('Готово'))),
-            ]),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Звуковое сопровождение', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: List<Widget>.generate(modes.length, (index) => ChoiceChip(
+                    label: Text(modes[index]),
+                    selected: mode == index,
+                    onSelected: (_) async {
+                      mode = index;
+                      _voiceMode = index;
+                      refresh(() {});
+                      await prefs.setInt('voice_mode', index);
+                      if (index == 0) await _tts.stop();
+                    },
+                  )),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  mode == 0 ? 'Голосовые подсказки выключены.'
+                    : mode == 1 ? 'Озвучиваются прибытие и важные предупреждения.'
+                    : mode == 2 ? 'Озвучиваются дорожные манёвры и предупреждения.'
+                    : 'Озвучиваются манёвры, предупреждения и информация о маршруте.',
+                  style: const TextStyle(color: Color(0xFF555B63)),
+                ),
+                const Divider(height: 28),
+                Text('Громкость · ${(volume * 100).round()}%', style: const TextStyle(fontWeight: FontWeight.w700)),
+                Slider(
+                  value: volume,
+                  min: 0,
+                  max: 1,
+                  divisions: 10,
+                  onChanged: (value) async {
+                    volume = value;
+                    refresh(() {});
+                    await prefs.setDouble('voice_volume', value);
+                    await _tts.setVolume(value);
+                  },
+                ),
+                Text('Скорость речи · ${rate.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                Slider(
+                  value: rate,
+                  min: 0.25,
+                  max: 0.75,
+                  divisions: 10,
+                  onChanged: (value) async {
+                    rate = value;
+                    refresh(() {});
+                    await prefs.setDouble('voice_rate', value);
+                    await _tts.setSpeechRate(value);
+                  },
+                ),
+                const Text('Настраиваются голосовые подсказки BAKE. Отдельные звуковые сигналы и музыка не подключены.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                const SizedBox(height: 12),
+                Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(sheetContext), child: const Text('Готово'))),
+              ],
+            ),
           ),
         ),
       ),
@@ -692,7 +743,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final distanceText = meters >= 1000
         ? '${(meters / 1000).toStringAsFixed(1)} километра'
         : '${meters.round()} метров';
-    await _tts.speak('${instruction.text} через $distanceText.');
+    if (_voiceMode >= 2) await _tts.speak('${instruction.text} через $distanceText.');
   }
 
   void _updateNavigationProgress(LatLng position) {
@@ -710,7 +761,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           _navigationActive = false;
           _message = 'Вы прибыли в пункт назначения.';
         });
-        _tts.speak('Вы прибыли в пункт назначения.');
+        if (_voiceMode >= 1) _tts.speak('Вы прибыли в пункт назначения.');
         unawaited(_startLiveLocationUpdates());
         return;
       }
@@ -867,12 +918,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ));
       }
       if (automaticReroute && resumeNavigation) {
-        await _tts.speak('Вы отклонились от маршрута. Маршрут перестроен.');
+        if (_voiceMode >= 1) await _tts.speak('Вы отклонились от маршрута. Маршрут перестроен.');
         await _speakCurrentInstruction();
       } else {
         final distanceKm = (distance / 1000).toStringAsFixed(1);
         final minutes = (duration / 60).round();
-        await _tts.speak('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.');
+        if (_voiceMode >= 3) await _tts.speak('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.');
         if (validRoutes.length > 1) unawaited(_openRouteAlternatives());
       }
     } catch (error) {
