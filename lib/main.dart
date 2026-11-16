@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -51,6 +52,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   List<LatLng> _routePoints = [];
   double? _routeDistanceMeters;
   double? _routeDurationSeconds;
+  StreamSubscription<Position>? _positionSubscription;
   bool _isLocating = false;
   bool _isBuildingRoute = false;
   String _message = 'Нажмите «Моё местоположение» или удерживайте точку на карте';
@@ -73,6 +75,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   @override
   void dispose() {
+    _positionSubscription?.cancel();
     _tts.stop();
     super.dispose();
   }
@@ -112,15 +115,40 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (!mounted) return;
       setState(() {
         _currentLocation = point;
-        _message = 'GPS определён. Удерживайте карту, чтобы выбрать пункт назначения.';
+        _message = 'GPS определён. Положение будет обновляться в реальном времени.';
       });
       _mapController.move(point, 15);
+      _startLiveLocationUpdates();
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isLocating = false);
     }
+  }
+
+
+  void _startLiveLocationUpdates() {
+    _positionSubscription?.cancel();
+    _positionSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 5,
+      ),
+    ).listen(
+      (position) {
+        if (!mounted) return;
+        setState(() {
+          _currentLocation = LatLng(position.latitude, position.longitude);
+        });
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+        setState(() {
+          _message = 'Потеряна связь с GPS. Проверьте геолокацию телефона.';
+        });
+      },
+    );
   }
 
   void _selectDestination(LatLng point) {
