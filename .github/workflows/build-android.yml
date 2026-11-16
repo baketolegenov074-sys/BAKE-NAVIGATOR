@@ -1,0 +1,67 @@
+name: Build BAKE Navigator APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform files
+        run: |
+          cp pubspec.yaml /tmp/bake-pubspec.yaml
+          cp lib/main.dart /tmp/bake-main.dart
+          flutter create --platforms=android --org kz.bake --project-name bake_navigator --no-pub .
+          cp /tmp/bake-pubspec.yaml pubspec.yaml
+          cp /tmp/bake-main.dart lib/main.dart
+
+      - name: Add Android permissions and app label
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("android/app/src/main/AndroidManifest.xml")
+          manifest = path.read_text()
+          permissions = (
+              '    <uses-permission android:name="android.permission.INTERNET" />\\n'
+              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\\n'
+              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\\n'
+          )
+          manifest = manifest.replace("    <application", permissions + "    <application", 1)
+          manifest = manifest.replace('android:label="bake_navigator"', 'android:label="BAKE Navigator"')
+          path.write_text(manifest)
+          PY
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter code
+        run: flutter analyze
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BAKE-NAVIGATOR-APK
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
