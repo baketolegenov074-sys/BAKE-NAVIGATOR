@@ -1107,6 +1107,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Future<void> _openRoutePreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    var avoidTolls = prefs.getBool('avoid_tolls') ?? false;
+    var avoidUnpaved = prefs.getBool('avoid_unpaved') ?? false;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1120,15 +1123,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               const Align(alignment: Alignment.centerLeft, child: Text('Параметры маршрута', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                value: _avoidTolls,
+                value: avoidTolls,
                 title: const Text('Избегать платных дорог'),
-                onChanged: (value) { setState(() => _avoidTolls = value); refresh(() {}); _saveNavigationPreferences(); },
+                onChanged: (value) async { avoidTolls = value; refresh(() {}); await prefs.setBool('avoid_tolls', value); },
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                value: _avoidUnpaved,
+                value: avoidUnpaved,
                 title: const Text('Избегать плохих и грунтовых дорог'),
-                onChanged: (value) { setState(() => _avoidUnpaved = value); refresh(() {}); _saveNavigationPreferences(); },
+                onChanged: (value) async { avoidUnpaved = value; refresh(() {}); await prefs.setBool('avoid_unpaved', value); },
               ),
               const Text('Эти параметры сохраняются на телефоне. Текущий тестовый сервис OSRM пока не применяет их при расчёте.', style: TextStyle(fontSize: 12, color: Colors.black54)),
               Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(sheetContext), child: const Text('Готово'))),
@@ -1152,9 +1155,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ListTile(leading: const Icon(Icons.map_outlined), title: const Text('Схема'), subtitle: const Text('Карта OpenStreetMap'), trailing: const Icon(Icons.check, color: Color(0xFF269B68))),
             ListTile(leading: const Icon(Icons.bookmark_border), title: const Text('Закладки'), onTap: () { Navigator.pop(sheetContext); _openBookmarks(); }),
             ListTile(leading: const Icon(Icons.local_parking_outlined), title: const Text('Парковки'), onTap: () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
-            ListTile(leading: const Icon(Icons.traffic_outlined), title: const Text('Пробки'), subtitle: const Text('Источник данных о пробках пока не подключён'), enabled: false),
-            ListTile(leading: const Icon(Icons.panorama_outlined), title: const Text('Панорамы'), subtitle: const Text('Панорамный сервис пока не подключён'), enabled: false),
-            ListTile(leading: const Icon(Icons.satellite_alt_outlined), title: const Text('Спутник и гибрид'), subtitle: const Text('Поставщик спутниковых тайлов пока не подключён'), enabled: false),
+            ListTile(leading: const Icon(Icons.traffic), title: const Text('Пробки'), subtitle: const Text('Источник данных о пробках пока не подключён'), enabled: false),
+            ListTile(leading: const Icon(Icons.panorama), title: const Text('Панорамы'), subtitle: const Text('Панорамный сервис пока не подключён'), enabled: false),
+            ListTile(leading: const Icon(Icons.satellite_alt), title: const Text('Спутник и гибрид'), subtitle: const Text('Поставщик спутниковых тайлов пока не подключён'), enabled: false),
           ]),
         ),
       ),
