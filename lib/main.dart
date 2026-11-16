@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_mbtiles/flutter_map_mbtiles.dart';
@@ -185,7 +186,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       }
 
       final position = await Geolocator.getCurrentPosition(
-        locationSettings: LocationSettings(
+        locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.bestForNavigation,
           timeLimit: const Duration(seconds: 20),
         ),
@@ -491,7 +492,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   double _distanceToRouteMeters(LatLng position) {
     if (_routePoints.length < 2) return double.infinity;
-    final latScale = 110540.0;
+    const latScale = 110540.0;
     final lonScale = 111320.0 * math.cos(position.latitude * math.pi / 180);
     final px = position.longitude * lonScale;
     final py = position.latitude * latScale;
@@ -1029,9 +1030,11 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> with 
         entry.permissions.map((permission) => permission.status),
       );
     }
-    if (mounted) setState(() => _statuses
-      ..clear()
-      ..addAll(next));
+    if (mounted) {
+      setState(() => _statuses
+        ..clear()
+        ..addAll(next));
+    }
   }
 
   String _statusLabel(_PermissionEntry entry) {
