@@ -279,12 +279,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     ) / 1000;
   }
 
-  Future<void> _searchAddress() async {
+  Future<void> _searchAddress({bool selectAsOrigin = false}) async {
     final query = _searchController.text.trim();
     if (query.isEmpty || _isSearching) return;
     setState(() {
       _isSearching = true;
-      _message = 'Ищем рядом с вами…';
+      _message = selectAsOrigin ? 'Ищем начальную точку…' : 'Ищем пункт назначения…';
     });
     try {
       // Prefer the live GPS position; use Shymkent only before GPS is available.
@@ -381,7 +381,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final selected = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Ближайшие результаты'),
+          title: Text(selectAsOrigin ? 'Выберите начальную точку' : 'Выберите пункт назначения'),
           content: SizedBox(
             width: double.maxFinite,
             child: ListView.separated(
@@ -396,8 +396,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 );
                 final distance = _distanceKm(anchor, point);
                 final distanceLabel = distance < 1
-                    ? '${(distance * 1000).round()} м от вас'
-                    : '${distance.toStringAsFixed(1)} км от вас';
+                    ? '${(distance * 1000).round()} м от точки поиска'
+                    : '${distance.toStringAsFixed(1)} км от точки поиска';
                 return ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.location_on_outlined, color: Color(0xFF2468A0)),
@@ -434,9 +434,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         return;
       }
       final point = LatLng(lat, lon);
-      _selectDestination(point);
+      if (selectAsOrigin) {
+        _selectRouteOrigin(point);
+      } else {
+        _selectDestination(point);
+      }
       _mapController.move(point, 16);
-      setState(() => _message = 'Точка выбрана. Проверьте её на карте и постройте маршрут.');
+      setState(() => _message = selectAsOrigin
+          ? 'Начальная точка выбрана поиском. Теперь выберите пункт назначения.'
+          : 'Точка назначения выбрана. Проверьте её на карте и постройте маршрут.');
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
@@ -1013,7 +1019,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _openRoutePlanner() async {
     final destinationController = TextEditingController();
+    final originController = TextEditingController();
     var searchAfterClose = false;
+    var searchOriginAfterClose = false;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1042,7 +1050,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           ? '${_routeOrigin!.latitude.toStringAsFixed(5)}, ${_routeOrigin!.longitude.toStringAsFixed(5)}'
                           : (_currentLocation == null ? 'Моё местоположение (ожидаем GPS)' : '${_currentLocation!.latitude.toStringAsFixed(5)}, ${_currentLocation!.longitude.toStringAsFixed(5)}'),
                         style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                      Text(_routeOrigin == null ? 'Начальная точка определяется по GPS' : 'Начальная точка выбрана на карте', style: const TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
+                      Text(_routeOrigin == null ? 'Начальная точка определяется по GPS' : 'Начальная точка выбрана вручную', style: const TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: originController,
+                        textInputAction: TextInputAction.search,
+                        onSubmitted: (_) { searchOriginAfterClose = originController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
+                        decoration: const InputDecoration(
+                          labelText: 'Найти адрес отправления',
+                          hintText: 'Улица, дом или место',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
                     ])),
                     if (_routeOrigin != null)
                       TextButton(onPressed: () { _resetRouteOrigin(); refreshSheet(() {}); }, child: const Text('Сбросить')),
@@ -1139,10 +1160,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ),
       ),
     );
-    final query = destinationController.text.trim();
+    final destinationQuery = destinationController.text.trim();
+    final originQuery = originController.text.trim();
     destinationController.dispose();
-    if (searchAfterClose && query.isNotEmpty && mounted) {
-      _searchController.text = query;
+    originController.dispose();
+    if (searchOriginAfterClose && originQuery.isNotEmpty && mounted) {
+      _searchController.text = originQuery;
+      await _searchAddress(selectAsOrigin: true);
+    } else if (searchAfterClose && destinationQuery.isNotEmpty && mounted) {
+      _searchController.text = destinationQuery;
       await _searchAddress();
     }
   }
