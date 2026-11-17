@@ -2939,32 +2939,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 }
 
-class _MapActionButton extends StatelessWidget {
-  const _MapActionButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      elevation: 5,
-      borderRadius: BorderRadius.circular(16),
-      child: IconButton(
-        tooltip: tooltip,
-        onPressed: onPressed,
-        icon: Icon(icon, color: const Color(0xFF343434)),
-      ),
-    );
-  }
-}
-
 class NavigatorPreferencesScreen extends StatefulWidget {
   const NavigatorPreferencesScreen({
     super.key,
