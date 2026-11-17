@@ -637,13 +637,25 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       locale.toLowerCase().replaceAll('_', '-').split('-').first;
 
   Future<bool> _prepareSpeechVoice() async {
+    // Voice enumeration is not reliable on every Android TTS engine. In
+    // particular, some engines can synthesize a locale even when getVoices
+    // returns an empty list. Check locale support, then set the locale directly.
+    final languageAvailable = await _tts.isLanguageAvailable(_navigationLanguage);
+    if (languageAvailable != true) return false;
+
     await _tts.setLanguage(_navigationLanguage);
     final requiredLanguage = _voiceLanguageCode(_navigationLanguage);
     final matchingVoices = _availableVoices
         .where((voice) => _voiceLanguageCode(voice['locale'] ?? '') == requiredLanguage)
         .toList();
-    // Never let Android silently read Kazakh street names with a Russian voice.
-    if (matchingVoices.isEmpty) return false;
+
+    // No enumerated voices is not a reason to silence navigation. Keep the
+    // requested locale and let Android's TTS engine use its locale default.
+    if (matchingVoices.isEmpty) {
+      _selectedVoiceName = null;
+      _selectedVoiceLocale = null;
+      return true;
+    }
 
     final selected = matchingVoices.where((voice) =>
       voice['name'] == _selectedVoiceName &&
@@ -849,7 +861,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   Text(AppLocale.tr('Голос телефона'), style: TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
                   if (voices.isEmpty)
-                    Text(AppLocale.tr('Для выбранного языка голоса не найдены. Установите голосовые данные в настройках преобразования текста в речь Android.'), style: const TextStyle(color: Color(0xFF9A5B00)))
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Text(
+                        AppLocale.tr('Список голосов Android пуст. Если выбранный язык поддерживается движком, BAKE всё равно попробует его озвучить. Встроенные казахские голоса добавим отдельным офлайн-пакетом.'),
+                        style: const TextStyle(color: Color(0xFF9A5B00)),
+                      ),
+                    )
                   else
                     DropdownButtonFormField<String>(
                       value: selectedExists ? selectedKey : '',
@@ -880,22 +898,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         refresh(() {});
                       },
                     ),
-                  if (voices.isNotEmpty)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: () async {
-                          await _applySelectedVoice();
-                          await _speakText(language == 'kk-KZ'
-                              ? 'Дауысты тексеру. Бағыт бойынша жүре беріңіз.'
-                              : language == 'en-US'
-                                  ? 'Voice test. Continue on the route.'
-                                  : 'Проверка голоса. Продолжайте движение по маршруту.');
-                        },
-                        icon: const Icon(Icons.play_arrow),
-                        label: Text(AppLocale.tr('Прослушать голос')),
-                      ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () async {
+                        await _applySelectedVoice();
+                        await _speakText(language == 'kk-KZ'
+                            ? 'Дауысты тексеру. Бағыт бойынша жүре беріңіз.'
+                            : language == 'en-US'
+                                ? 'Voice test. Continue on the route.'
+                                : 'Проверка голоса. Продолжайте движение по маршруту.');
+                      },
+                      icon: const Icon(Icons.play_arrow),
+                      label: Text(AppLocale.tr('Прослушать голос')),
                     ),
+                  ),
                   const Divider(height: 24),
                   Wrap(
                     spacing: 8,
