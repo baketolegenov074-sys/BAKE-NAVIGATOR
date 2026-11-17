@@ -1047,9 +1047,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           offlineVoiceReady = true;
           offlineVoiceStatus = 'Қазақша офлайн дауыс дайын.';
         }
-      } catch (_) {
+      } catch (error) {
         offlineVoiceFailed = true;
-        offlineVoiceStatus = 'Архивті ашу мүмкін болмады. .tar.bz2 файлын таңдаңыз.';
+        // Keep the real failure visible: import, extraction and TTS startup
+        // are different stages and must not all be reported as a bad archive.
+        final detail = error.toString().replaceFirst('Exception: ', '').trim();
+        offlineVoiceStatus = detail.isEmpty
+            ? 'Архивті өңдеу кезінде қате болды. Файлды қайта таңдаңыз.'
+            : (detail.length > 220 ? '${detail.substring(0, 220)}…' : detail);
       } finally {
         offlineVoiceBusy = false;
         refreshSheet(() {});
