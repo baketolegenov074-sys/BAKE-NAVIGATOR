@@ -959,7 +959,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (pageContext) => Scaffold(
+        builder: (pageContext) => StatefulBuilder(
+          builder: (pageContext, refreshPage) => Scaffold(
           backgroundColor: const Color(0xFFF7F8FA),
           appBar: AppBar(
             title: const Text('Построение маршрута'),
@@ -1061,10 +1062,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             trailing: selected ? const Icon(Icons.check_circle, color: Color(0xFF269B68)) : null,
                             onTap: () {
                               _selectRouteAlternative(index);
-                              if (mounted) {
-                                // The route page remains open while the selected path is updated.
-                                (pageContext as Element).markNeedsBuild();
-                              }
+                              refreshPage(() {});
                             },
                           ),
                         );
@@ -1096,6 +1094,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ),
               ],
             ),
+          ),
+        ),
           ),
         ),
       ),
