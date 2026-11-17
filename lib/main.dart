@@ -518,6 +518,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   int _instructionIndex = 0;
   bool _navigationActive = false;
   bool _routeReady = false;
+  bool _routeActionDismissed = false;
   double _currentSpeedKmh = 0;
   double? _routeDistanceMeters;
   double? _routeDurationSeconds;
@@ -1688,6 +1689,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (!mounted) return;
     setState(() {
       _navigationActive = false;
+      _routeActionDismissed = true;
       _message = AppLocale.tr('Навигация завершена.');
     });
     await _tts.stop();
@@ -1766,6 +1768,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (_instructionIndex + 1 >= _instructions.length) {
         setState(() {
           _navigationActive = false;
+          _routeActionDismissed = true;
           _message = AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.');
         });
         if (_voiceMode >= 1) _speakText(AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.'));
@@ -1906,6 +1909,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _selectedRouteIndex = 0;
         _routePoints = points;
         _routeReady = points.length >= 2;
+        _routeActionDismissed = false;
         _instructions = instructions;
         _navigationActive = resumeNavigation;
         _instructionIndex = resumeNavigation && instructions.length > 1 ? 1 : 0;
@@ -3870,6 +3874,34 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         child: Text(_message, maxLines: 2, overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (_routeReady && (_navigationActive || !_routeActionDismissed))
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: _navigationActive ? 20 : 76,
+              child: SafeArea(
+                top: false,
+                child: Center(
+                  child: SizedBox(
+                    height: 38,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFFFCC00),
+                        foregroundColor: const Color(0xFF171717),
+                        elevation: 5,
+                        padding: const EdgeInsets.symmetric(horizontal: 28),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                      ),
+                      onPressed: _navigationActive ? _finishNavigation : _startNavigation,
+                      child: Text(
+                        AppLocale.tr(_navigationActive ? 'Завершить' : 'Поехали'),
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
                       ),
                     ),
                   ),
