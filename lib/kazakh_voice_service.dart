@@ -235,7 +235,7 @@ class KazakhVoiceService {
           final contentRange = response.headers.value('content-range');
           final match = contentRange == null
               ? null
-              : RegExp(r'^bytes (\\d+)-(\\d+)/(\\d+)$').firstMatch(contentRange);
+              : RegExp(r'^bytes (\d+)-(\d+)/(\d+)$').firstMatch(contentRange);
           final rangeStart = int.tryParse(match?.group(1) ?? '');
           if (offset == 0 || rangeStart != offset) {
             // A partial response that does not begin exactly where our local
