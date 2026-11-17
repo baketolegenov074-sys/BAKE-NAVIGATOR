@@ -2046,8 +2046,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     await saveLayer('layer_satellite', value);
                   },
                 ),
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 18),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
                   child: Text(
                     AppLocale.pick('Переключатели пока сохраняют выбор. Пробки, парковки, спутниковые снимки и общий слой дорожных событий ещё не подключены к источникам данных и не отображаются на карте.', 'Ауыстырғыштар әзірге таңдауды ғана сақтайды. Кептелістер, тұрақтар, спутниктік суреттер және жол оқиғалары қабаты деректер көздеріне қосылмаған, сондықтан картада көрсетілмейді.', 'These switches currently only save your selection. Traffic, parking, satellite imagery, and the road events layer are not connected to data sources and are not displayed on the map.'),
                     style: TextStyle(fontSize: 12, color: Colors.black54),
@@ -2498,8 +2498,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ),
                 const SizedBox(height: 6),
                 if (customPlaces.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 14),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                     child: Text(AppLocale.tr('Сохранённых пользовательских мест пока нет.')),
                   )
                 else
@@ -2653,9 +2653,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             surfaceTintColor: Colors.white,
           ),
           body: reports.isEmpty
-              ? const Center(
+              ? Center(
                   child: Padding(
-                    padding: EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(24),
                     child: Text(
                       AppLocale.tr('Пока нет сохранённых сообщений о дорожных событиях.'),
                       textAlign: TextAlign.center,
@@ -3848,8 +3848,8 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                         _saveNavigationPreferences();
                       },
                     ),
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 0, 16, 14),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
                       child: Text(AppLocale.tr('Фильтры сохраняются, но текущий тестовый сервис маршрутов OSRM пока не применяет их при расчёте.'), style: TextStyle(fontSize: 12, color: Colors.black54)),
                     ),
                   ]),
