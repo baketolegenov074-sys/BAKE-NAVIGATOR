@@ -1573,7 +1573,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _reportMapItem(LatLng point, String title) async {
     final controller = TextEditingController();
-    const eventTypes = ['ДТП', 'Ремонт дороги', 'Камера', 'Другое'];
+    const eventTypes = ['ДТП', 'Ремонт дороги', 'Камера', 'Опасность', 'Другое'];
     var selectedType = eventTypes.first;
     final accepted = await showDialog<bool>(
       context: context,
@@ -1718,56 +1718,109 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final prefs = await SharedPreferences.getInstance();
     final reports = prefs.getStringList('road_event_reports') ?? <String>[];
     if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 20),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            const Text('События на дороге', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            const Text('Сообщения сохраняются на этом устройстве. Они пока не передаются другим водителям.'),
-            const SizedBox(height: 12),
-            if (reports.isEmpty)
-              const Padding(padding: EdgeInsets.symmetric(vertical: 18), child: Text('Пока нет добавленных событий.', textAlign: TextAlign.center))
-            else
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 280),
-                child: ListView(
-                  shrinkWrap: true,
-                  children: reports.reversed.map((raw) {
-                    final item = jsonDecode(raw) as Map<String, dynamic>;
+
+    IconData iconFor(String kind) {
+      switch (kind) {
+        case 'ДТП':
+          return Icons.warning_rounded;
+        case 'Ремонт дороги':
+          return Icons.construction_rounded;
+        case 'Камера':
+          return Icons.camera_alt_rounded;
+        case 'Опасность':
+          return Icons.error_rounded;
+        default:
+          return Icons.report_problem_outlined;
+      }
+    }
+
+    Color colorFor(String kind) {
+      switch (kind) {
+        case 'ДТП':
+          return const Color(0xFFE53935);
+        case 'Ремонт дороги':
+          return const Color(0xFFFFC107);
+        case 'Камера':
+          return const Color(0xFF1976D2);
+        case 'Опасность':
+          return const Color(0xFFFF8A00);
+        default:
+          return const Color(0xFF777777);
+      }
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            title: const Text('События на дороге'),
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+          ),
+          body: reports.isEmpty
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Пока нет сохранённых сообщений о дорожных событиях.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                  itemCount: reports.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final item = jsonDecode(reports[reports.length - 1 - index])
+                        as Map<String, dynamic>;
                     final kind = item['kind']?.toString() ?? 'Дорожное событие';
                     final detail = item['detail']?.toString() ?? '';
                     final date = item['date']?.toString() ?? '';
-                    final icon = kind == 'ДТП' ? Icons.car_crash_outlined : kind == 'Ремонт дороги' ? Icons.construction : kind == 'Камера' ? Icons.camera_alt_outlined : Icons.warning_amber_outlined;
+                    final lat = item['lat'];
+                    final lon = item['lon'];
+                    final hasPoint = lat is num && lon is num;
+                    final coordinateText = hasPoint
+                        ? 'Координаты: ${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}'
+                        : '';
+                    final subtitle = [detail, coordinateText, date]
+                        .where((value) => value.isNotEmpty)
+                        .join(' · ');
                     return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(icon, color: const Color(0xFFB88A00)),
-                      title: Text(kind),
-                      subtitle: Text([detail, date].where((v) => v.isNotEmpty).join(' · ')),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      leading: Icon(
+                        iconFor(kind),
+                        color: colorFor(kind),
+                        size: 30,
+                      ),
+                      title: Text(
+                        kind,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      subtitle: subtitle.isEmpty ? null : Text(subtitle),
                     );
-                  }).toList(),
+                  },
                 ),
-              ),
-            const SizedBox(height: 10),
-            FilledButton.icon(
+          bottomNavigationBar: SafeArea(
+            minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: FilledButton.icon(
               onPressed: () {
-                Navigator.pop(sheetContext);
+                Navigator.pop(pageContext);
                 final point = _currentLocation;
                 if (point == null) {
-                  _showUnavailableFeature('Геопозиция', 'Сначала дождитесь определения GPS или выберите точку долгим нажатием на карте.');
+                  _showUnavailableFeature(
+                    'Геопозиция',
+                    'Сначала дождитесь определения GPS или выберите точку долгим нажатием на карте.',
+                  );
                 } else {
                   _reportMapItem(point, 'Дорожное событие');
                 }
               },
-              icon: const Icon(Icons.add_alert_outlined),
+              icon: const Icon(Icons.campaign_outlined),
               label: const Text('Сообщить о событии'),
             ),
-          ]),
+          ),
         ),
       ),
     );
