@@ -964,6 +964,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     var offlineVoiceBusy = false;
     var offlineVoiceReady = await _kazakhVoiceService.isInstalled;
     var offlineVoiceStatus = '';
+    var offlineVoiceFailed = false;
+    var progressReceived = 0;
+    var progressTotal = -1;
     var selectedKey = (_selectedVoiceName == null || _selectedVoiceLocale == null)
         ? ''
         : '$_selectedVoiceName|$_selectedVoiceLocale';
@@ -976,18 +979,92 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     List<Map<String, String>> voicesFor(String lang) => _availableVoices
         .where((v) => (v['locale'] ?? '').toLowerCase().replaceAll('_', '-').startsWith(lang.substring(0, 2).toLowerCase()))
         .toList();
+    Future<void> loadAndPreviewVoice() async {
+      if (offlineVoiceBusy) return;
+      offlineVoiceBusy = true;
+      offlineVoiceFailed = false;
+      offlineVoiceStatus = AppLocale.pick(
+        'Қазақша дауыс дайындалып жатыр…',
+        'Қазақша дауыс дайындалып жатыр…',
+        'Preparing Kazakh voice…',
+      );
+      progressReceived = 0;
+      progressTotal = -1;
+      refreshSheet(() {});
+      try {
+        await _kazakhVoiceService.speak(
+          text: 'Дауысты тексеру. Бағыт бойынша жүре беріңіз.',
+          speakerId: kazakhVoiceId,
+          speed: 1.0,
+          onDownloadProgress: (received, total) {
+            progressReceived = received;
+            progressTotal = total;
+            final receivedMb = (received / (1024 * 1024)).toStringAsFixed(0);
+            if (total > 0) {
+              final totalMb = (total / (1024 * 1024)).toStringAsFixed(0);
+              final percent = (received * 100 / total).clamp(0, 100).round();
+              offlineVoiceStatus = 'Жүктелуде: $percent% ($receivedMb / $totalMb МБ)';
+            } else {
+              offlineVoiceStatus = 'Жүктелуде: $receivedMb МБ';
+            }
+            refreshSheet(() {});
+          },
+        );
+        offlineVoiceReady = true;
+        offlineVoiceFailed = false;
+        offlineVoiceStatus = AppLocale.pick(
+          'Қазақша офлайн дауыс дайын.',
+          'Қазақша офлайн дауыс дайын.',
+          'Kazakh offline voice is ready.',
+        );
+      } catch (_) {
+        offlineVoiceFailed = true;
+        offlineVoiceStatus = 'Жүктеу үзілді, интернетті тексеріңіз.';
+      } finally {
+        offlineVoiceBusy = false;
+        refreshSheet(() {});
+      }
+    }
+
+    Future<void> importVoiceArchive() async {
+      if (offlineVoiceBusy) return;
+      offlineVoiceBusy = true;
+      offlineVoiceFailed = false;
+      offlineVoiceStatus = 'Архив тексеріліп, орнатылуда…';
+      refreshSheet(() {});
+      try {
+        final directory = await _kazakhVoiceService.importModelArchive();
+        if (directory == null) {
+          offlineVoiceStatus = '';
+        } else {
+          await _kazakhVoiceService.speak(
+            text: 'Дауысты тексеру. Бағыт бойынша жүре беріңіз.',
+            speakerId: kazakhVoiceId,
+            speed: 1.0,
+          );
+          offlineVoiceReady = true;
+          offlineVoiceStatus = 'Қазақша офлайн дауыс дайын.';
+        }
+      } catch (_) {
+        offlineVoiceFailed = true;
+        offlineVoiceStatus = 'Архивті ашу мүмкін болмады. .tar.bz2 файлын таңдаңыз.';
+      } finally {
+        offlineVoiceBusy = false;
+        refreshSheet(() {});
+      }
+    }
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (sheetContext) => Transform.translate(
-        offset: const Offset(0, -24),
-        child: StatefulBuilder(
-        builder: (sheetContext, refresh) {
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, refreshSheet) {
           final voices = voicesFor(language);
           final selectedExists = voices.any((v) => '${v['name']}|${v['locale']}' == selectedKey);
           return SafeArea(
+            top: true,
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
               child: Column(
@@ -1046,27 +1123,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     ),
                     const SizedBox(height: 8),
                     FilledButton.icon(
-                      onPressed: offlineVoiceBusy ? null : () async {
-                        offlineVoiceBusy = true;
-                        offlineVoiceStatus = offlineVoiceReady
-                            ? AppLocale.pick('Готовим выбранный голос…', 'Таңдалған дауыс дайындалып жатыр…', 'Preparing the selected voice…')
-                            : AppLocale.pick('Загружаем казахский голосовой пакет…', 'Қазақша дауыс пакеті жүктеліп жатыр…', 'Downloading Kazakh voice pack…');
-                        refresh(() {});
-                        try {
-                          await _kazakhVoiceService.speak(
-                            text: 'Дауысты тексеру. Бағыт бойынша жүре беріңіз.',
-                            speakerId: kazakhVoiceId,
-                            speed: 1.0,
-                          );
-                          offlineVoiceReady = true;
-                          offlineVoiceStatus = AppLocale.pick('Казахский офлайн-голос готов.', 'Қазақша офлайн дауыс дайын.', 'Kazakh offline voice is ready.');
-                        } catch (error) {
-                          offlineVoiceStatus = error.toString().replaceFirst('Exception: ', '');
-                        } finally {
-                          offlineVoiceBusy = false;
-                          refresh(() {});
-                        }
-                      },
+                      onPressed: offlineVoiceBusy ? null : loadAndPreviewVoice,
                       icon: offlineVoiceBusy
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.download_for_offline_outlined),
@@ -1076,6 +1133,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               ? AppLocale.pick('Прослушать выбранный голос', 'Таңдалған дауысты тыңдау', 'Preview selected voice')
                               : AppLocale.pick('Загрузить и прослушать голос', 'Жүктеу және дауысты тыңдау', 'Download and preview voice')),
                     ),
+                    OutlinedButton.icon(
+                      onPressed: offlineVoiceBusy ? null : importVoiceArchive,
+                      icon: const Icon(Icons.folder_open_outlined),
+                      label: const Text('Файлдан таңдау (Выбрать архив с телефона)'),
+                    ),
+                    if (offlineVoiceFailed)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: offlineVoiceBusy ? null : loadAndPreviewVoice,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Қайталау'),
+                        ),
+                      ),
                     if (offlineVoiceStatus.isNotEmpty)
                       Text(offlineVoiceStatus, style: const TextStyle(fontSize: 12, color: Color(0xFF62666D))),
                   ],
@@ -1180,7 +1251,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           );
         },
-        ),
       ),
     );
   }
