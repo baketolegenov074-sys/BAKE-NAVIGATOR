@@ -1440,10 +1440,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Future<void> _startNavigation() async {
-    if (_instructions.isEmpty || _currentLocation == null) return;
+    if (_routePoints.length < 2 || _destination == null) {
+      if (mounted) setState(() => _message = AppLocale.pick('Сначала постройте маршрут до пункта назначения.', 'Алдымен межелі орынға маршрут құрыңыз.', 'Build a route to the destination first.'));
+      return;
+    }
+
+    // A manually selected route origin does not guarantee that GPS is ready.
+    if (_currentLocation == null) {
+      await _locateMe();
+    }
+    if (!mounted) return;
+    if (_currentLocation == null) {
+      setState(() => _message = AppLocale.pick('Не удалось получить GPS. Включите геолокацию и нажмите «Поехали» ещё раз.', 'GPS алынбады. Геолокацияны қосып, «Жолға шығу» түймесін қайта басыңыз.', 'GPS location is unavailable. Enable location and tap “Go” again.'));
+      return;
+    }
+
     setState(() {
       _navigationActive = true;
-      _instructionIndex = _instructions.length > 1 ? 1 : 0;
+      _instructionIndex = _instructions.isNotEmpty && _instructions.length > 1 ? 1 : 0;
       _message = AppLocale.pick('Включаем фоновый GPS и голосовые подсказки…', 'Фондық GPS пен дауыстық нұсқаулар қосылуда…', 'Enabling background GPS and voice guidance…');
     });
     try {
@@ -1461,6 +1475,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _message = AppLocale.pick('Навигация началась. GPS продолжит работать при свёрнутом приложении.', 'Навигация басталды. Қолданба кішірейтілгенде де GPS жұмысын жалғастырады.', 'Navigation started. GPS will keep running when the app is minimized.');
     });
     await _speakCurrentInstruction();
+  }
+
+  Future<void> _finishNavigation() async {
+    if (!mounted) return;
+    setState(() {
+      _navigationActive = false;
+      _message = AppLocale.tr('Навигация завершена.');
+    });
+    await _tts.stop();
+    await _startLiveLocationUpdates();
   }
 
   Future<void> _speakCurrentInstruction() async {
@@ -3506,14 +3530,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           ),
                           IconButton(
                             tooltip: AppLocale.tr('Завершить навигацию'),
-                            onPressed: () async {
-                              setState(() {
-                                _navigationActive = false;
-                                _message = AppLocale.tr('Навигация завершена.');
-                              });
-                              await _tts.stop();
-                              await _startLiveLocationUpdates();
-                            },
+                            onPressed: _finishNavigation,
                             icon: const Icon(Icons.close),
                           ),
                         ],
@@ -3590,14 +3607,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                           ),
-                          onPressed: () async {
-                            setState(() {
-                              _navigationActive = false;
-                              _message = AppLocale.tr('Навигация завершена.');
-                            });
-                            await _tts.stop();
-                            await _startLiveLocationUpdates();
-                          },
+                          onPressed: _finishNavigation,
                           child: Text(AppLocale.tr('Завершить'), style: const TextStyle(fontWeight: FontWeight.w800)),
                         ),
                       ],
@@ -3670,6 +3680,29 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                       ),
                     ),
+                  ),
+                ),
+              ),
+            ),
+          if (!_navigationActive && _routePoints.length >= 2 && _destination != null)
+            Positioned(
+              left: 18,
+              right: 18,
+              bottom: 88,
+              child: SafeArea(
+                top: false,
+                child: SizedBox(
+                  height: 54,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFCC00),
+                      foregroundColor: const Color(0xFF171717),
+                      elevation: 7,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                    ),
+                    onPressed: _isBuildingRoute ? null : _startNavigation,
+                    icon: const Icon(Icons.navigation),
+                    label: Text(AppLocale.tr('Поехали'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
                   ),
                 ),
               ),
