@@ -3646,36 +3646,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           icon: const Icon(Icons.person_outline, color: Color(0xFF343434)),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Material(
-                          color: Colors.white,
-                          elevation: 5,
-                          borderRadius: BorderRadius.circular(22),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(22),
-                            onTap: _openSearchPanel,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.search, color: Color(0xFF343434), size: 23),
-                                  const SizedBox(width: 9),
-                                  Expanded(
-                                    child: Text(
-                                      AppLocale.tr('Куда едем?'),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 15, color: Color(0xFF626A73)),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
+                      const Spacer(),
                       Material(
                         color: Colors.white,
                         elevation: 5,
