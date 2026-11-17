@@ -3574,7 +3574,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                 style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
                               ),
                               Text(
-                                _routeDurationSeconds == null ? 'Время прибытия —' : 'Прибытие · ${TimeOfDay.fromDateTime(DateTime.now().add(Duration(seconds: _routeDurationSeconds!))).format(context)}',
+                                _routeDurationSeconds == null ? 'Время прибытия —' : 'Прибытие · ${TimeOfDay.fromDateTime(DateTime.now().add(Duration(seconds: _routeDurationSeconds!.round()))).format(context)}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 12, color: Color(0xFF626A73)),
