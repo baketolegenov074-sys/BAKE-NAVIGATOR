@@ -2545,7 +2545,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           children: [
                             TextField(
                               controller: nameController,
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 labelText: AppLocale.tr('Название'),
                                 hintText: AppLocale.tr('Например, спортзал'),
                               ),
@@ -2553,7 +2553,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             const SizedBox(height: 10),
                             TextField(
                               controller: addressController,
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 labelText: AppLocale.tr('Адрес'),
                                 hintText: AppLocale.tr('Улица, дом или место'),
                               ),
