@@ -980,7 +980,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               return Card(
                 color: index == _selectedRouteIndex ? const Color(0xFFFFF4CC) : Colors.white,
                 child: ListTile(
-                  leading: Icon(index == _selectedRouteIndex ? Icons.radio_button_checked : Icons.alt_route, color: const Color(0xFF2468A0)),
+                  leading: Icon(index == _selectedRouteIndex ? Icons.radio_button_checked : Icons.alt_route, color: const Color(0xFF343434)),
                   title: Text('$minutes мин · $km км', style: const TextStyle(fontWeight: FontWeight.w800)),
                   subtitle: Text('Вариант ${index + 1}'),
                   onTap: () {
@@ -1139,7 +1139,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                       backgroundColor: const Color(0xFFF1F3F5),
                                       child: Icon(
                                         icon,
-                                        color: const Color(0xFF2468A0),
+                                        color: const Color(0xFF343434),
                                       ),
                                     ),
                                     const SizedBox(height: 8),
@@ -1329,7 +1329,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8))),
             const SizedBox(height: 18),
             Row(children: [
-              const CircleAvatar(radius: 27, backgroundColor: Color(0xFFFFF5D6), child: Icon(Icons.person_outline, size: 31, color: Color(0xFF2468A0))),
+              const CircleAvatar(radius: 27, backgroundColor: Color(0xFFFFF5D6), child: Icon(Icons.person_outline, size: 31, color: Color(0xFF343434))),
               const SizedBox(width: 14),
               const Expanded(child: Text('Профиль BAKE', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
               IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
@@ -1366,10 +1366,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (pageContext) => Scaffold(
-          backgroundColor: const Color(0xFFF5F7FA),
+          backgroundColor: const Color(0xFFFFFFFF),
           appBar: AppBar(
             title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-            backgroundColor: const Color(0xFFF5F7FA),
+            backgroundColor: const Color(0xFFFFFFFF),
           ),
           body: SafeArea(
             child: ListView(
@@ -1386,8 +1386,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     children: [
                       CircleAvatar(
                         radius: 28,
-                        backgroundColor: const Color(0xFFEAF2FA),
-                        child: Icon(icon, size: 30, color: const Color(0xFF2468A0)),
+                        backgroundColor: const Color(0xFFFFF5D6),
+                        child: Icon(icon, size: 30, color: const Color(0xFF343434)),
                       ),
                       const SizedBox(height: 18),
                       Text(title, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
@@ -1787,7 +1787,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     IconButton(
                       tooltip: 'Найти место',
                       onPressed: () { searchAfterClose = destinationController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
-                      icon: const Icon(Icons.search, color: Color(0xFF2468A0)),
+                      icon: const Icon(Icons.search, color: Color(0xFF343434)),
                     ),
                   ]),
                   if (_destination != null)
@@ -1797,7 +1797,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     ),
                   const Divider(height: 18),
                   Row(children: [
-                    const Icon(Icons.more_horiz, color: Color(0xFF2468A0)),
+                    const Icon(Icons.more_horiz, color: Color(0xFF343434)),
                     const SizedBox(width: 12),
                     const Expanded(child: Text('Промежуточные остановки', style: TextStyle(fontWeight: FontWeight.w700))),
                     Text('${_routeStops.length}/5', style: const TextStyle(color: Color(0xFF687786))),
@@ -1825,7 +1825,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   const Divider(height: 20),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.schedule, color: Color(0xFF2468A0)),
+                    leading: const Icon(Icons.schedule, color: Color(0xFF343434)),
                     title: const Text('Время выезда', style: TextStyle(fontWeight: FontWeight.w700)),
                     subtitle: Text(_plannedDeparture == null ? 'Сейчас' : _formatDeparture(_plannedDeparture!)),
                     trailing: TextButton(
@@ -1931,10 +1931,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       MaterialPageRoute(
         builder: (pageContext) => StatefulBuilder(
           builder: (pageContext, refresh) => Scaffold(
-            backgroundColor: const Color(0xFFF5F7FA),
+            backgroundColor: const Color(0xFFFFFFFF),
             appBar: AppBar(
               title: const Text('Сети АЗС'),
-              backgroundColor: const Color(0xFFF5F7FA),
+              backgroundColor: const Color(0xFFFFFFFF),
               actions: [
                 TextButton(
                   onPressed: () async {
@@ -1965,7 +1965,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   child: CheckboxListTile(
                     value: initial.contains(network),
                     controlAffinity: ListTileControlAffinity.leading,
-                    secondary: const Icon(Icons.local_gas_station_outlined, color: Color(0xFF2468A0)),
+                    secondary: const Icon(Icons.local_gas_station_outlined, color: Color(0xFF343434)),
                     title: Text(network),
                     onChanged: (checked) => refresh(() {
                       if (checked == true) {
@@ -2021,6 +2021,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Widget _mapBottomItem(IconData icon, String label, VoidCallback onTap, {bool selected = false}) {
+    final color = selected ? const Color(0xFFB88A00) : const Color(0xFF4B4E52);
     return Expanded(
       child: Tooltip(
         message: label,
@@ -2028,13 +2029,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           borderRadius: BorderRadius.circular(18),
           onTap: onTap,
           child: SizedBox(
-            height: 54,
-            child: Center(
-              child: Icon(
-                icon,
-                size: 27,
-                color: selected ? const Color(0xFF2468A0) : const Color(0xFF4B4E52),
-              ),
+            height: 58,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 23, color: color),
+                const SizedBox(height: 3),
+                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w800 : FontWeight.w500, color: color)),
+              ],
             ),
           ),
         ),
@@ -2066,7 +2070,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         width: 38,
         height: 38,
         child: CircleAvatar(
-          backgroundColor: const Color(0xFF2468A0),
+          backgroundColor: const Color(0xFF343434),
           child: Text('${entry.key + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
         ),
       )),
@@ -2146,7 +2150,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(14, 3, 5, 3),
                         child: Row(children: [
-                          const Icon(Icons.search, color: Color(0xFF2468A0), size: 24),
+                          const Icon(Icons.search, color: Color(0xFF343434), size: 24),
                           const SizedBox(width: 8),
                           Expanded(child: TextField(
                             controller: _searchController,
@@ -2159,7 +2163,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             onPressed: _isSearching ? null : _searchAddress,
                             icon: _isSearching
                                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                                : const Icon(Icons.arrow_forward, color: Color(0xFF2468A0)),
+                                : const Icon(Icons.arrow_forward, color: Color(0xFF343434)),
                           ),
                         ]),
                       ),
@@ -2212,7 +2216,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             child: _roundMapButton(
               icon: Icons.my_location,
               tooltip: 'Моё местоположение',
-              iconColor: const Color(0xFF2468A0),
+              iconColor: const Color(0xFF343434),
               onPressed: _isLocating ? null : _locateMe,
             ),
           ),
@@ -2229,11 +2233,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
                   child: Row(children: [
+                    _mapBottomItem(Icons.map_outlined, 'Карта', () {
+                      final camera = _mapController.camera;
+                      _mapController.move(camera.center, camera.zoom);
+                    }, selected: true),
                     _mapBottomItem(Icons.search, 'Поиск', _openSearchPanel),
                     _mapBottomItem(Icons.alt_route, 'Маршрут', _openRouteMenu),
-                    _mapBottomItem(Icons.local_gas_station, 'АЗС', _openStationNetworks),
-                    _mapBottomItem(Icons.bookmark_border, 'Закладки', _openBookmarks),
-                    _mapBottomItem(Icons.settings, 'Настройки', _openSettings),
+                    _mapBottomItem(Icons.bookmark_border, 'Избранное', _openBookmarks),
+                    _mapBottomItem(Icons.person_outline, 'Профиль', _openProfileMenu),
                   ]),
                 ),
               ),
@@ -2271,7 +2278,7 @@ class _MapActionButton extends StatelessWidget {
         onPressed: onPressed,
         icon: loading
             ? const SizedBox(width: 19, height: 19, child: CircularProgressIndicator(strokeWidth: 2))
-            : Icon(icon, color: const Color(0xFF2468A0)),
+            : Icon(icon, color: const Color(0xFF343434)),
       ),
     );
   }
