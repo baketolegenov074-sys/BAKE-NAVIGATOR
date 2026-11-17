@@ -196,15 +196,15 @@ class KazakhVoiceService {
     final partial = File('${support.path}/$_kazakhModelName.tar.bz2.part');
     final archiveFile = File('${support.path}/$_kazakhModelName.tar.bz2');
 
-    // Reuse a previously completed archive. A failed TTS initialization must
-    // never force the user to download the 129 MB package again.
+    // A completed archive is promoted from .part only after the HTTP response
+    // length has been checked below. Keep it for retries of extraction/init.
     if (await archiveFile.exists() && await archiveFile.length() > 1024) {
       onStage?.call('extracting');
       return _extractArchive(archiveFile);
     }
 
     for (var attempt = 0; attempt < 5; attempt++) {
-      var offset = await partial.exists() ? await partial.length() : 0;
+      final offset = await partial.exists() ? await partial.length() : 0;
       try {
         final response = await _dio.download(
           _kazakhModelUrl,
@@ -222,34 +222,79 @@ class KazakhVoiceService {
         );
 
         if (offset > 0 && response.statusCode == 200) {
-          // The server ignored Range; the response was appended, so restart cleanly.
-          await partial.delete();
+          // The server ignored Range. Do not combine a full response with the
+          // old partial file: discard it and retry once from byte zero.
+          if (await partial.exists()) await partial.delete();
           if (attempt == 4) {
-            throw Exception('Сервер не қолдайды жалғастырып жүктеуді.');
+            throw Exception('Сервер не поддержал докачку; повторите загрузку.');
           }
           continue;
         }
-        if (response.statusCode != 200 && response.statusCode != 206) {
+
+        if (response.statusCode == 206) {
+          final contentRange = response.headers.value(Headers.contentRangeHeader);
+          final match = contentRange == null
+              ? null
+              : RegExp(r'^bytes (\\d+)-(\\d+)/(\\d+)$').firstMatch(contentRange);
+          final rangeStart = int.tryParse(match?.group(1) ?? '');
+          if (offset == 0 || rangeStart != offset) {
+            // A partial response that does not begin exactly where our local
+            // file ends would corrupt the archive if appended.
+            if (await partial.exists()) await partial.delete();
+            throw Exception('Сервер вернул неверный диапазон докачки.');
+          }
+          final expectedTotal = int.tryParse(match?.group(3) ?? '');
+          final actualLength = await partial.length();
+          if (expectedTotal != null && actualLength < expectedTotal) {
+            throw Exception('Загрузка ещё не завершена: получено $actualLength из $expectedTotal байт.');
+          }
+          if (expectedTotal != null && actualLength > expectedTotal) {
+            await partial.delete();
+            throw Exception('Размер загруженного архива превышает ожидаемый.');
+          }
+          if (expectedTotal == null) {
+            throw Exception('Сервер не сообщил полный размер архива; файл не будет принят.');
+          }
+        } else if (response.statusCode == 200) {
+          final expectedLength = int.tryParse(
+            response.headers.value(Headers.contentLengthHeader) ?? '',
+          );
+          final actualLength = await partial.length();
+          if (expectedLength == null || actualLength != expectedLength) {
+            throw Exception(
+              'Размер архива не подтверждён: получено $actualLength байт, '
+              'ожидалось ${expectedLength ?? 'неизвестно'}.',
+            );
+          }
+        } else {
           throw Exception('Жүктеу серверінен қате жауап алынды.');
+        }
+
+        final finalLength = await partial.length();
+        if (finalLength < 1024) {
+          throw Exception('Сервер вернул пустой или слишком маленький архив ($finalLength байт).');
         }
 
         if (await archiveFile.exists()) await archiveFile.delete();
         await partial.rename(archiveFile.path);
-        // Keep the completed archive if extraction or model validation fails.
-        // The next retry can inspect/re-extract it without another network download.
         onStage?.call('extracting');
         return await _extractArchive(archiveFile);
       } catch (error) {
         if (attempt == 4) {
           if (error is DioException) {
-            throw Exception('Жүктеу үзілді, интернетті тексеріңіз.');
+            final status = error.response?.statusCode;
+            throw Exception(
+              status == null
+                  ? 'Загрузка прервалась из-за сети. Частичный файл сохранён для продолжения.'
+                  : 'Сервер загрузки вернул HTTP $status. Частичный файл сохранён.',
+            );
           }
           rethrow;
         }
         await Future<void>.delayed(Duration(seconds: 2 << attempt));
       }
     }
-    throw Exception('Жүктеу үзілді, интернетті тексеріңіз.');
+    throw Exception('Загрузка не завершена. Частичный файл сохранён для повторной попытки.');
   }
 
   Future<void> ensureReady({
