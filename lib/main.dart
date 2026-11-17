@@ -1533,7 +1533,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _instructionIndex = 0;
       _routeDistanceMeters = null;
       _routeDurationSeconds = null;
-      _message = AppLocale.pick('Начальная точка выбрана на карте. Выберите пункт назначения.', 'Бастапқы нүкте картадан таңдалды. Межелі орынды таңдаңыз.', 'Starting point selected on the map. Choose a destination.');
+      _message = '';
     });
     unawaited(_syncMapLibreAnnotations());
     unawaited(_saveRoutePoint(_savedRouteOriginKey, point));
@@ -1565,7 +1565,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _instructionIndex = 0;
       _routeDistanceMeters = null;
       _routeDurationSeconds = null;
-      _message = _localized('Точка назначения выбрана. Нажмите «Построить маршрут».', 'Межелі нүкте таңдалды. «Маршрут құру» түймесін басыңыз.', 'Destination selected. Tap “Build route”.');
+      _message = '';
     });
     unawaited(_syncMapLibreAnnotations());
     unawaited(_saveRoutePoint(_savedRouteDestinationKey, point));
