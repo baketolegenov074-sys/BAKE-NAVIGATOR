@@ -1265,78 +1265,134 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Future<void> _openMapLayers() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Align(alignment: Alignment.centerLeft, child: Text('Карта и слои', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
-              const SizedBox(height: 8),
-              ListTile(
-                leading: const Icon(Icons.map_outlined),
-                title: const Text('Схема'),
-                subtitle: Text(_offlineTileProvider == null ? 'OpenStreetMap · онлайн' : 'Подключена офлайн-карта'),
-                trailing: const Icon(Icons.check_circle, color: Color(0xFF269B68)),
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  if (_offlineTileProvider != null) _openOfflineAndVehicleSettings();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.download_for_offline_outlined),
-                title: const Text('Офлайн-карты'),
-                subtitle: const Text('Выбрать файл карты или вернуться к онлайн-карте'),
-                onTap: () { Navigator.pop(sheetContext); _openOfflineAndVehicleSettings(); },
-              ),
-              ListTile(
-                leading: const Icon(Icons.bookmark_border),
-                title: const Text('Избранные точки'),
-                subtitle: const Text('Открыть сохранённые места'),
-                onTap: () { Navigator.pop(sheetContext); _openBookmarks(); },
-              ),
-              ListTile(
-                leading: const Icon(Icons.place_outlined),
-                title: const Text('Мои места'),
-                subtitle: const Text('Дом и работа'),
-                onTap: () { Navigator.pop(sheetContext); _openMyPlaces(); },
-              ),
-              ListTile(
-                leading: const Icon(Icons.local_parking_outlined),
-                title: const Text('Парковки'),
-                subtitle: const Text('Найти парковки через поиск карты'),
-                onTap: () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); },
-              ),
-              ListTile(
-                leading: const Icon(Icons.warning_amber_outlined),
-                title: const Text('События на дороге'),
-                subtitle: const Text('Локальные сообщения на этом устройстве'),
-                onTap: () { Navigator.pop(sheetContext); _openRoadEvents(); },
-              ),
-              const Divider(),
-              const ListTile(
-                leading: Icon(Icons.traffic),
-                title: Text('Пробки'),
-                subtitle: Text('Пока нет подключённого источника данных'),
-                enabled: false,
-              ),
-              const ListTile(
-                leading: Icon(Icons.panorama),
-                title: Text('Панорамы'),
-                subtitle: Text('Панорамный сервис пока не подключён'),
-                enabled: false,
-              ),
-              const ListTile(
-                leading: Icon(Icons.satellite_alt),
-                title: Text('Спутник и гибрид'),
-                subtitle: Text('Поставщик спутниковых снимков пока не подключён'),
-                enabled: false,
-              ),
-            ]),
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    var traffic = prefs.getBool('layer_traffic') ?? false;
+    var roadEvents = prefs.getBool('layer_road_events') ?? true;
+    var parking = prefs.getBool('layer_parking') ?? false;
+    var satellite = prefs.getBool('layer_satellite') ?? false;
+
+    Future<void> saveLayer(String key, bool value) async {
+      await prefs.setBool(key, value);
+      if (!mounted) return;
+      setState(() {
+        _message = 'Настройка сохранена. Для отображения этого слоя нужен подключённый источник данных.';
+      });
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => StatefulBuilder(
+          builder: (pageContext, refresh) => Scaffold(
+            backgroundColor: Colors.white,
+            appBar: AppBar(
+              title: const Text('Слои и офлайн-карты'),
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
+            ),
+            body: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+              children: [
+                const Text(
+                  'Слои карты',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.traffic_outlined),
+                  title: const Text('Пробки'),
+                  value: traffic,
+                  onChanged: (value) async {
+                    refresh(() => traffic = value);
+                    await saveLayer('layer_traffic', value);
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.warning_amber_outlined),
+                  title: const Text('Дорожные события'),
+                  value: roadEvents,
+                  onChanged: (value) async {
+                    refresh(() => roadEvents = value);
+                    await saveLayer('layer_road_events', value);
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.local_parking_outlined),
+                  title: const Text('Парковки'),
+                  value: parking,
+                  onChanged: (value) async {
+                    refresh(() => parking = value);
+                    await saveLayer('layer_parking', value);
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.satellite_alt_outlined),
+                  title: const Text('Спутниковая карта'),
+                  value: satellite,
+                  onChanged: (value) async {
+                    refresh(() => satellite = value);
+                    await saveLayer('layer_satellite', value);
+                  },
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 18),
+                  child: Text(
+                    'Переключатели пока сохраняют выбор. Пробки, парковки, спутниковые снимки и общий слой дорожных событий ещё не подключены к источникам данных и не отображаются на карте.',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ),
+                const Divider(),
+                const SizedBox(height: 10),
+                const Text(
+                  'Офлайн-карты',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.map_outlined),
+                  title: const Text('Карта Казахстана'),
+                  subtitle: const Text('Импортировать MBTiles-файл с телефона'),
+                  trailing: const Icon(Icons.download_for_offline_outlined),
+                  onTap: () {
+                    Navigator.pop(pageContext);
+                    _openOfflineAndVehicleSettings();
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.location_city_outlined),
+                  title: const Text('Шымкент и область'),
+                  subtitle: const Text('Импортировать MBTiles-файл с телефона'),
+                  trailing: const Icon(Icons.download_for_offline_outlined),
+                  onTap: () {
+                    Navigator.pop(pageContext);
+                    _openOfflineAndVehicleSettings();
+                  },
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _offlineTileProvider == null
+                      ? 'Офлайн-карта не подключена. Размер и покрытие файла проверяются после выбора; готовые пакеты для скачивания пока не предоставляются.'
+                      : 'Офлайн-карта подключена. Для построения маршрута пока нужен интернет.',
+                  style: const TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(pageContext);
+                    _openOfflineAndVehicleSettings();
+                  },
+                  icon: const Icon(Icons.folder_open_outlined),
+                  label: const Text('Выбрать MBTiles-файл'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
