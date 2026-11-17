@@ -2681,20 +2681,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                 child: Row(children: [
-                  Material(
-                    color: Colors.white,
-                    elevation: 4,
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: _openProfileMenu,
-                      child: const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Icon(Icons.person_outline, size: 25, color: Color(0xFF30343A)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
                   Expanded(
                     child: Material(
                       color: Colors.white,
@@ -2709,7 +2695,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             controller: _searchController,
                             textInputAction: TextInputAction.search,
                             onSubmitted: (_) => _searchAddress(),
-                            decoration: const InputDecoration(hintText: 'Поиск мест и адресов', border: InputBorder.none, isDense: true),
+                            decoration: const InputDecoration(hintText: 'Куда едем?', border: InputBorder.none, isDense: true),
                           )),
                           IconButton(
                             tooltip: 'Найти',
@@ -2722,8 +2708,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  _MapActionButton(icon: Icons.more_horiz, tooltip: 'Меню маршрута', onPressed: _openRouteMenu),
                 ]),
               ),
             ),
@@ -2876,30 +2860,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _roundMapButton(
-                  icon: Icons.local_parking,
-                  tooltip: 'Парковки',
-                  onPressed: () {
-                    _searchController.text = 'парковка';
-                    _searchAddress();
-                  },
+                  icon: Icons.layers_outlined,
+                  tooltip: 'Слои карты',
+                  onPressed: _openMapLayers,
                 ),
                 const SizedBox(height: 10),
                 _roundMapButton(
-                  icon: Icons.add,
-                  tooltip: 'Приблизить',
-                  onPressed: () {
-                    final camera = _mapController.camera;
-                    _mapController.move(camera.center, (camera.zoom + 1).clamp(3.0, 19.0));
-                  },
-                ),
-                const SizedBox(height: 10),
-                _roundMapButton(
-                  icon: Icons.remove,
-                  tooltip: 'Отдалить',
-                  onPressed: () {
-                    final camera = _mapController.camera;
-                    _mapController.move(camera.center, (camera.zoom - 1).clamp(3.0, 19.0));
-                  },
+                  icon: Icons.explore_outlined,
+                  tooltip: 'На север',
+                  onPressed: () => _mapController.rotate(0),
                 ),
               ],
             ),
