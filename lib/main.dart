@@ -853,10 +853,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       }
       if (_currentLocation != null) {
         await controller.addSymbol(ml.SymbolOptions(
-          geometry: _toMapLibrePoint(_currentLocation!), textField: '▲',
-          textSize: 25, textColor: '#1769AA',
-          textRotate: _navigationActive ? 0 : (_gpsHeadingDegrees ?? 0),
-          textHaloColor: '#FFFFFF', textHaloWidth: 2,
+          // Use a simple filled dot instead of a font-dependent arrow glyph.
+          // This keeps the current-position marker visible across map styles.
+          geometry: _toMapLibrePoint(_currentLocation!), textField: '●',
+          textSize: 22, textColor: '#1769AA',
+          textHaloColor: '#FFFFFF', textHaloWidth: 4,
         ));
       }
       for (var i = 0; i < _routeStops.length; i++) {
@@ -1314,6 +1315,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         }
         _message = AppLocale.pick('GPS определён. Положение будет обновляться в реальном времени.', 'GPS анықталды. Орналасқан жер нақты уақытта жаңартылып отырады.', 'GPS located. Your position will update in real time.');
       });
+      // Render the first GPS fix immediately, without waiting for the next stream event.
+      unawaited(_syncMapLibreAnnotations());
       _moveMapCamera(point, 15);
       await _startLiveLocationUpdates();
     } catch (error) {
