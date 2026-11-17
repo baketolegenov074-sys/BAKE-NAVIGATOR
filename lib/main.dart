@@ -1099,6 +1099,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       ),
     ),
   );
+  }
 
   Future<void> _addRouteStop(LatLng point) async {
     if (_routeStops.length >= 5) {
@@ -2935,9 +2936,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ],
       ),
     );
-  }
-
-
   }
 }
 
