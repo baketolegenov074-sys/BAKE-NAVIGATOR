@@ -509,9 +509,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   List<Map<String, dynamic>> _routeAlternatives = <Map<String, dynamic>>[];
   int _selectedRouteIndex = 0;
   List<LatLng> _routePoints = [];
+      _routeReady = false;
   List<RouteInstruction> _instructions = [];
   int _instructionIndex = 0;
   bool _navigationActive = false;
+  bool _routeReady = false;
   double _currentSpeedKmh = 0;
   double? _routeDistanceMeters;
   double? _routeDurationSeconds;
@@ -1345,6 +1347,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     setState(() {
       _routeOrigin = point;
       _routePoints = [];
+      _routeReady = false;
       _instructions = [];
       _navigationActive = false;
       _instructionIndex = 0;
@@ -1360,6 +1363,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     setState(() {
       _routeOrigin = null;
       _routePoints = [];
+      _routeReady = false;
       _instructions = [];
       _routeDistanceMeters = null;
       _routeDurationSeconds = null;
@@ -1373,6 +1377,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     setState(() {
       _destination = point;
       _routePoints = [];
+      _routeReady = false;
       _instructions = [];
       _navigationActive = false;
       _instructionIndex = 0;
@@ -1649,6 +1654,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _routeAlternatives = validRoutes;
         _selectedRouteIndex = 0;
         _routePoints = points;
+        _routeReady = points.length >= 2;
         _instructions = instructions;
         _navigationActive = resumeNavigation;
         _instructionIndex = resumeNavigation && instructions.length > 1 ? 1 : 0;
@@ -1672,9 +1678,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         final distanceKm = (distance / 1000).toStringAsFixed(1);
         final minutes = (duration / 60).round();
         if (_voiceMode >= 3) await _speakText(AppLocale.pick('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.', 'Маршрут құрылды. Қашықтық $distanceKm километр. Жол уақыты шамамен $minutes минут.', 'Route built. Distance $distanceKm kilometers. Estimated travel time $minutes minutes.'));
-        // Always show the route summary, including the «Поехали» action,
-        // even when the routing service returns only one valid route.
-        unawaited(_openRouteAlternatives());
+        // Stay on the map: its persistent «Поехали» button starts navigation.
+        // Route alternatives remain available from the Route menu.
       }
     } catch (error) {
       if (!mounted) return;
@@ -1697,6 +1702,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     setState(() {
       _selectedRouteIndex = index;
       _routePoints = points;
+        _routeReady = points.length >= 2;
       _instructions = instructions;
       _instructionIndex = 0;
       _routeDistanceMeters = (route['distance'] as num).toDouble();
@@ -3106,7 +3112,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       trailing: IconButton(
                         tooltip: AppLocale.tr('Удалить остановку'),
                         icon: const Icon(Icons.close, size: 19),
-                        onPressed: () { setState(() { _routeStops.removeAt(entry.key); _routePoints = []; _instructions = []; }); refreshSheet(() {}); },
+                        onPressed: () { setState(() { _routeStops.removeAt(entry.key); _routePoints = []; _routeReady = false; _instructions = []; }); refreshSheet(() {}); },
                       ),
                     )),
                   const SizedBox(height: 8),
@@ -3684,7 +3690,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ),
               ),
             ),
-          if (!_navigationActive && _routePoints.length >= 2 && _destination != null)
+          if (!_navigationActive && _routeReady)
             Positioned(
               left: 18,
               right: 18,
