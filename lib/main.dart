@@ -85,6 +85,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   List<RouteInstruction> _instructions = [];
   int _instructionIndex = 0;
   bool _navigationActive = false;
+  double _currentSpeedKmh = 0;
   double? _routeDistanceMeters;
   double? _routeDurationSeconds;
   StreamSubscription<Position>? _positionSubscription;
@@ -360,6 +361,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (!mounted) return;
       setState(() {
         _currentLocation = point;
+        _currentSpeedKmh = math.max(0, position.speed * 3.6);
         if (position.speed >= 0.8 && position.heading.isFinite) {
           _gpsHeadingDegrees = position.heading;
         }
@@ -407,6 +409,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         if (!mounted) return;
         setState(() {
           _currentLocation = LatLng(position.latitude, position.longitude);
+          _currentSpeedKmh = math.max(0, position.speed * 3.6);
           // Ignore unstable compass headings while stopped or moving very slowly.
           if (position.speed >= 0.8 && position.heading.isFinite) {
             _gpsHeadingDegrees = position.heading;
@@ -2583,6 +2586,147 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               ),
             ),
           ),
+          if (_navigationActive)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 74, 14, 0),
+                  child: Material(
+                    color: Colors.white,
+                    elevation: 5,
+                    borderRadius: BorderRadius.circular(16),
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.turn_right, size: 34, color: Color(0xFF343434)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _instructionIndex < _instructions.length
+                                      ? _instructions[_instructionIndex].text
+                                      : 'Продолжайте по маршруту',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                                ),
+                                if (_instructionIndex < _instructions.length)
+                                  Text(
+                                    'Следующий манёвр · ${_instructions[_instructionIndex].distanceMeters.round()} м',
+                                    style: const TextStyle(fontSize: 12, color: Color(0xFF626A73)),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Завершить навигацию',
+                            onPressed: () async {
+                              setState(() {
+                                _navigationActive = false;
+                                _message = 'Навигация завершена.';
+                              });
+                              await _tts.stop();
+                              await _startLiveLocationUpdates();
+                            },
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (_navigationActive)
+            Positioned(
+              left: 14,
+              bottom: 100,
+              child: Material(
+                color: Colors.white,
+                elevation: 5,
+                borderRadius: BorderRadius.circular(14),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _currentSpeedKmh.round().toString(),
+                        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
+                      ),
+                      const Text('км/ч', style: TextStyle(fontSize: 11)),
+                      const Divider(height: 10),
+                      const Text('60', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                      const Text('лимит', style: TextStyle(fontSize: 10)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_navigationActive)
+            Positioned(
+              left: 14,
+              right: 14,
+              bottom: 12,
+              child: SafeArea(
+                top: false,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 7,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _routeDurationSeconds == null
+                                    ? '—'
+                                    : '${(_routeDurationSeconds! / 60).round()} мин',
+                                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                              ),
+                              Text(
+                                _routeDistanceMeters == null
+                                    ? 'Расстояние неизвестно'
+                                    : '${(_routeDistanceMeters! / 1000).toStringAsFixed(1)} км · осталось по расчёту',
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF626A73)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFFFCC00),
+                            foregroundColor: const Color(0xFF171717),
+                          ),
+                          onPressed: () async {
+                            setState(() {
+                              _navigationActive = false;
+                              _message = 'Навигация завершена.';
+                            });
+                            await _tts.stop();
+                            await _startLiveLocationUpdates();
+                          },
+                          child: const Text('Финиш'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             top: 112,
             right: 14,
