@@ -3818,7 +3818,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               ),
             ),
           Positioned(
-            bottom: 144,
+            bottom: _routeReady ? 250 : 144,
             right: 14,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -3849,7 +3849,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               ],
             ),
           ),
-          if (!_navigationActive)
+          if (!_navigationActive && !_routeReady)
             Positioned(
               left: 14,
               bottom: 92,
@@ -3870,7 +3870,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           Positioned(
             left: _navigationActive ? null : null,
             right: 14,
-            bottom: _navigationActive ? 225 : 92,
+            bottom: _navigationActive ? 225 : (_routeReady ? 230 : 92),
             child: _roundMapButton(
               icon: Icons.my_location,
               tooltip: AppLocale.tr('Моё местоположение'),
@@ -3882,7 +3882,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Positioned(
               left: 16,
               right: 16,
-              bottom: _navigationActive ? 380 : (_routeReady ? 205 : 125),
+              bottom: _navigationActive ? 380 : (_routeReady ? 340 : 125),
               child: IgnorePointer(
                 child: Align(
                   alignment: Alignment.center,
