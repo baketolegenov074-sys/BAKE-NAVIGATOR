@@ -208,11 +208,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Future<void> _openSettings() async {
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            18,
+            14,
+            18,
+            22 + MediaQuery.of(sheetContext).viewInsets.bottom,
+          ),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Align(alignment: Alignment.centerLeft, child: Text('Настройки BAKE', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
             ListTile(leading: const Icon(Icons.volume_up_outlined), title: const Text('Звуковое сопровождение'), onTap: () { Navigator.pop(sheetContext); _openSoundSettings(); }),
