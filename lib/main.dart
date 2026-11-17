@@ -1182,7 +1182,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     });
     var shouldBuildRoute = false;
     try {
-      // Prefer the live GPS position; use Shymkent only before GPS is available.
+      // Acquire a real GPS fix before searching so the nearby search is centered
+      // on the driver's actual position, not the hard-coded Shymkent fallback.
+      if (!selectAsOrigin && _routeOrigin == null && _currentLocation == null) {
+        await _locateMe();
+      }
       final anchor = selectAsOrigin
           ? (_currentLocation ?? _routeOrigin ?? _shymkent)
           : (_routeOrigin ?? _currentLocation ?? _shymkent);
@@ -1218,31 +1222,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         return jsonDecode(response.body) as List<dynamic>;
       }
 
-      // First search strictly around the driver to prevent distant-city matches.
+      // Try nearby first for relevant matches, then automatically broaden to
+      // all Kazakhstan. Do not interrupt the destination -> route flow with
+      // an extra confirmation dialog.
       var results = await requestSearch(bounded: true);
       if (!mounted) return;
       if (results.isEmpty) {
-        final searchNationwide = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            title: Text(AppLocale.tr('Рядом не найдено')),
-            content: Text(AppLocale.tr('Поблизости такого объекта нет в карте. Искать его по всему Казахстану?')),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: Text(AppLocale.tr('Не сейчас')),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: Text(AppLocale.tr('По всему Казахстану')),
-              ),
-            ],
-          ),
-        );
-        if (searchNationwide != true || !mounted) {
-          setState(() => _message = AppLocale.pick('Рядом объект не найден. Попробуйте уточнить название или выбрать точку на карте.', 'Жақын жерден нысан табылмады. Атауын нақтылаңыз немесе картадан нүкте таңдаңыз.', 'No nearby place found. Refine the name or select a point on the map.'));
-          return;
-        }
         results = await requestSearch(bounded: false, limit: '40');
         if (!mounted) return;
       }
@@ -1454,7 +1439,36 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Future<void> _startNavigation() async {
-    if (_instructions.isEmpty || _currentLocation == null) return;
+    if (_destination == null || _routePoints.length < 2 || _instructions.isEmpty) {
+      if (mounted) {
+        setState(() => _message = AppLocale.pick('Сначала укажите адрес и дождитесь построения маршрута.', 'Алдымен мекенжайды енгізіп, маршруттың құрылуын күтіңіз.', 'Enter a destination and wait for the route to be built first.'));
+      }
+      return;
+    }
+    if (_routeOrigin == null) {
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.bestForNavigation,
+            timeLimit: Duration(seconds: 20),
+          ),
+        );
+        if (!mounted) return;
+        setState(() {
+          _currentLocation = LatLng(position.latitude, position.longitude);
+          _currentSpeedKmh = math.max(0, position.speed * 3.6).toDouble();
+        });
+      } catch (error) {
+        if (mounted) {
+          setState(() => _message = AppLocale.pick('Не удалось получить GPS перед стартом: $error', 'Бастау алдында GPS алынбады: $error', 'Could not get GPS before starting: $error'));
+        }
+        return;
+      }
+    }
+    if (_currentLocation == null) {
+      if (mounted) setState(() => _message = AppLocale.tr('Ожидаем GPS-положение. Проверьте разрешение на геолокацию.'));
+      return;
+    }
     setState(() {
       _navigationActive = true;
       _instructionIndex = _instructions.length > 1 ? 1 : 0;
@@ -1577,10 +1591,43 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _buildRoute({bool automaticReroute = false}) async {
     if (_destination == null) {
-      setState(() => _message = AppLocale.pick('Сначала выберите конечную точку на карте.', 'Алдымен картадан соңғы нүктені таңдаңыз.', 'First select the destination point on the map.'));
+      if (mounted) {
+        setState(() => _message = AppLocale.pick('Сначала введите адрес назначения.', 'Алдымен межелі мекенжайды енгізіңіз.', 'Enter a destination address first.'));
+      }
       return;
     }
-    if (_routeOrigin == null && _currentLocation == null) await _locateMe();
+
+    // For the default start point, always obtain a fresh GPS fix immediately
+    // before requesting the route. A stale map center or Shymkent fallback
+    // must never silently become the route origin.
+    if (_routeOrigin == null) {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        throw Exception(AppLocale.pick('Включите GPS на телефоне, чтобы построить маршрут от вашего местоположения.', 'Маршрутты ағымдағы орналасқан жерден құру үшін GPS қосыңыз.', 'Turn on GPS to build a route from your current location.'));
+      }
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        throw Exception(AppLocale.pick('Разрешите BAKE Navigator доступ к местоположению в настройках телефона.', 'Телефон баптауларында BAKE Navigator қолданбасына орналасқан жерге рұқсат беріңіз.', 'Allow BAKE Navigator to access your location in phone settings.'));
+      }
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+          timeLimit: Duration(seconds: 25),
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        _currentLocation = LatLng(position.latitude, position.longitude);
+        _currentSpeedKmh = math.max(0, position.speed * 3.6).toDouble();
+        if (position.speed >= 0.8 && position.heading.isFinite) {
+          _gpsHeadingDegrees = position.heading;
+        }
+      });
+      unawaited(_startLiveLocationUpdates());
+    }
     final routeOrigin = _routeOrigin ?? _currentLocation;
     if (routeOrigin == null || _destination == null) {
       if (mounted) setState(() => _message = AppLocale.pick('Не удалось определить начальную точку. Выберите её на карте или включите GPS.', 'Бастапқы нүктені анықтау мүмкін болмады. Оны картадан таңдаңыз немесе GPS қосыңыз.', 'Could not determine the starting point. Select it on the map or enable GPS.'));
