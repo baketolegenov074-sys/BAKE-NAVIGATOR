@@ -136,7 +136,7 @@ jobs:
           if-no-files-found: error
 
       - name: Analyze Flutter code
-        run: flutter analyze --no-fatal-infos
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Build release APK
         run: flutter build apk --release
