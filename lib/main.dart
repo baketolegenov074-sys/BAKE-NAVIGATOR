@@ -3545,55 +3545,31 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           if (_navigationActive)
             Positioned(
-              left: 14,
-              right: 14,
-              bottom: 120,
+              left: 0,
+              right: 0,
+              bottom: 86,
               child: SafeArea(
                 top: false,
-                child: Material(
-                  color: Colors.white,
-                  elevation: 7,
-                  borderRadius: BorderRadius.circular(20),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                _routeDurationSeconds == null
-                                    ? '—'
-                                    : '${(_routeDurationSeconds! / 60).round()} мин',
-                                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-                              ),
-                              Text(
-                                _routeDistanceMeters == null
-                                    ? AppLocale.tr('Расстояние неизвестно')
-                                    : '${(_routeDistanceMeters! / 1000).toStringAsFixed(1)} км · осталось по расчёту',
-                                style: const TextStyle(fontSize: 12, color: Color(0xFF626A73)),
-                              ),
-                            ],
-                          ),
-                        ),
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFCC00),
-                            foregroundColor: const Color(0xFF171717),
-                          ),
-                          onPressed: () async {
-                            setState(() {
-                              _navigationActive = false;
-                              _message = 'Навигация завершена.';
-                            });
-                            await _tts.stop();
-                            await _startLiveLocationUpdates();
-                          },
-                          child: Text(AppLocale.tr('Завершить маршрут')),
-                        ),
-                      ],
+                child: Center(
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFCC00),
+                      foregroundColor: const Color(0xFF171717),
+                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                      elevation: 6,
+                    ),
+                    onPressed: () async {
+                      setState(() {
+                        _navigationActive = false;
+                        _message = 'Навигация завершена.';
+                      });
+                      await _tts.stop();
+                      await _startLiveLocationUpdates();
+                    },
+                    child: Text(
+                      AppLocale.tr('Завершить маршрут'),
+                      style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                   ),
                 ),
