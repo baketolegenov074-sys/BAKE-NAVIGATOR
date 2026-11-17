@@ -2810,7 +2810,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Positioned(
               left: 14,
               right: 14,
-              bottom: 12,
+              bottom: 44,
               child: SafeArea(
                 top: false,
                 child: Material(
@@ -2854,7 +2854,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             await _tts.stop();
                             await _startLiveLocationUpdates();
                           },
-                          child: const Text('Финиш'),
+                          child: const Text('Завершить маршрут'),
                         ),
                       ],
                     ),
