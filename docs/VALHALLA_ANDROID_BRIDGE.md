@@ -14,7 +14,17 @@
 - `io.github.rallista:valhalla-models:0.6.0` и `io.github.rallista:valhalla-models-config:0.6.0` — model/config artifacts, соответствующие engine 0.6.4 по опубликованным зависимостям.
 - `com.stadiamaps:osrm-openapi:0.0.10` — OSRM response model; bridge сейчас возвращает raw JSON, но зависимость указана в README библиотеки для OSRM typed response.
 
-Engine 0.6.4 публикуется с Kotlin stdlib 2.2.10. Сгенерированный Android-шаблон Flutter 3.27.4 может использовать более старый Kotlin Gradle plugin. Пока точная версия плагина и совместимость Gradle/AGP не подтверждены, зависимости и bridge не добавляются в workflow: иначе можно получить заведомо несовместимую сборку.
+Engine 0.6.4 публикуется с Kotlin stdlib 2.2.10. Шаблон Android для Flutter 3.27.4 использует Kotlin Gradle Plugin 1.8.22, Android Gradle Plugin 8.1.0 и Gradle 8.3. Kotlin 1.8.22 слишком стар для надёжной работы с metadata Kotlin 2.2.
+
+По официальной таблице совместимости Kotlin Gradle Plugin 2.2.10 поддерживает Gradle 7.6.3–8.14 и AGP 7.3.1–8.10.0. Следовательно, текущие AGP 8.1.0 и Gradle 8.3 попадают в поддерживаемый диапазон; для подготовки достаточно поднять только Kotlin Gradle Plugin до 2.2.10, не меняя AGP, Gradle или Java 17. Источники: [Kotlin Gradle compatibility](https://kotlinlang.org/docs/gradle-configure-project.html), [Android Kotlin support](https://developer.android.com/build/kotlin-support).
+
+В отдельной ветке `valhalla-bridge-prep` добавлен подготовительный шаг workflow: после `flutter create` он ищет ровно одну запись Kotlin Android plugin версии 1.8.22 и меняет её на 2.2.10. Если шаблон изменится и точное совпадение не будет найдено, шаг завершится ошибкой вместо незаметного изменения неизвестной конфигурации. Это пока не проверено запуском CI; workflow не запускался.
+
+## Подготовленная настройка Kotlin
+
+В `.github/workflows/build-android.yml` после генерации Android-платформы добавлен отдельный шаг, который обновляет только Kotlin Gradle Plugin с 1.8.22 до 2.2.10. Версии AGP 8.1.0, Gradle 8.3 и Java 17 оставлены без изменений. Скрипт проверяет точное совпадение шаблона и останавливается, если оно отсутствует или встречается не ровно один раз.
+
+Это подготовка конфигурации, а не подтверждение успешной сборки. GitHub Actions и APK не запускались. Следующая проверка возможна только отдельным разрешённым запуском workflow.
 
 ## Что подтверждено документацией
 
