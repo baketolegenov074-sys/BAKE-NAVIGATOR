@@ -1199,6 +1199,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         'талдыкорган': 'Талдыкорган', 'талдықорған': 'Талдыкорган',
         'жезказган': 'Жезказган', 'жезқазған': 'Жезказган',
         'экибастуз': 'Экибастуз', 'екібастұз': 'Экибастуз',
+        'almaty': 'Алматы', 'alma-ata': 'Алматы',
+        'shymkent': 'Шымкент', 'chymkent': 'Шымкент',
+        'astana': 'Астана', 'nur-sultan': 'Астана',
+        'turkistan': 'Туркестан', 'taraz': 'Тараз',
+        'karaganda': 'Караганда', 'kyzylorda': 'Кызылорда',
+        'aktobe': 'Актобе', 'atyrau': 'Атырау', 'aktau': 'Актау',
+        'pavlodar': 'Павлодар', 'kostanay': 'Костанай',
+        'petropavlovsk': 'Петропавловск', 'kokshetau': 'Кокшетау',
+        'semey': 'Семей', 'oskemen': 'Усть-Каменогорск',
+        'ust-kamenogorsk': 'Усть-Каменогорск',
       };
       final lowerQuery = query.toLowerCase();
       final aliasesByLength = cityAliases.keys.toList()
