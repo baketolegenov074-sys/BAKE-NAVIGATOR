@@ -4,7 +4,6 @@ import 'dart:isolate';
 
 import 'package:archive/archive.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
@@ -88,7 +87,7 @@ class KazakhVoiceService {
       final tarArchive = TarDecoder().decodeBytes(tarBytes);
       for (final entry in tarArchive.files) {
         if (!entry.isFile) continue;
-        final relative = entry.name.replaceAll('\\\\', '/');
+        final relative = entry.name.replaceAll(String.fromCharCode(92), '/');
         if (relative.startsWith('/') || relative.split('/').contains('..')) {
           continue;
         }
@@ -176,7 +175,7 @@ class KazakhVoiceService {
       'command': 'speak',
       'id': id,
       'text': text,
-      'speakerId': speakerId.clamp(0, 5),
+      'speakerId': speakerId.clamp(0, 5).toInt(),
       'speed': speed,
       'wavPath': wavPath,
     });
