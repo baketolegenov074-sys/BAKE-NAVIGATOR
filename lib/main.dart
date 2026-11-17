@@ -1508,7 +1508,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         subtitle: Text(
-                          '${item['display_name'] ?? ''}\\n$distanceLabel',
+                          '${item['display_name'] ?? ''}\n$distanceLabel',
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -3755,10 +3755,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                 Text(
                                   _instructionIndex < _instructions.length
                                       ? _instructions[_instructionIndex].text
-                                      : 'Продолжайте по маршруту',
-                                  maxLines: 3,
+                                      : _localized('Продолжайте по маршруту', 'Бағыт бойынша жүре беріңіз', 'Continue on the route'),
                                   softWrap: true,
-                                  overflow: TextOverflow.fade,
                                   style: const TextStyle(fontSize: 15, height: 1.15, fontWeight: FontWeight.w800),
                                 ),
                                 if (_instructionIndex < _instructions.length)
