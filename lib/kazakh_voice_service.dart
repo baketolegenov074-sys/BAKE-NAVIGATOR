@@ -107,8 +107,15 @@ class KazakhVoiceService {
     }
   }
 
-  Future<void> ensureReady() {
-    return _starting ??= _start();
+  Future<void> ensureReady() async {
+    if (_starting != null) return _starting!;
+    _starting = _start();
+    try {
+      await _starting;
+    } catch (_) {
+      _starting = null;
+      rethrow;
+    }
   }
 
   Future<void> _start() async {
@@ -183,6 +190,8 @@ class KazakhVoiceService {
       // Do not block the next navigation event if Android delays completion.
     }
   }
+
+  Future<void> stop() => _player.stop();
 
   Future<void> dispose() async {
     _workerPort?.send({'command': 'dispose'});
