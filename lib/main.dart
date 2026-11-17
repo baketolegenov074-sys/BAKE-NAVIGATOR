@@ -3973,32 +3973,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ),
               ),
             ),
-          if (!_navigationActive)
-            Positioned(
-              left: 12,
-              right: 12,
-              bottom: -10,
-              child: SafeArea(
-                top: false,
-                child: Material(
-                  color: Colors.white,
-                  elevation: 7,
-                  borderRadius: BorderRadius.circular(24),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                    child: Row(
-                      children: [
-                        _mapBottomItem(Icons.search, AppLocale.tr('Поиск'), _openSearchPanel),
-                        _mapBottomItem(Icons.alt_route, AppLocale.tr('Маршрут'), _openRouteMenu),
-                        _mapBottomItem(Icons.local_gas_station_outlined, AppLocale.tr('АЗС'), _openStationNetworks),
-                        _mapBottomItem(Icons.bookmark_border, AppLocale.tr('Избранное'), _openBookmarks),
-                        _mapBottomItem(Icons.settings_outlined, AppLocale.tr('Настройки'), _openSettings),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
 
         ],
       ),
