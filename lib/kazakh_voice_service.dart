@@ -149,7 +149,12 @@ class KazakhVoiceService {
             if (message['ok'] == true) {
               completer.complete();
             } else {
-              completer.completeError(Exception('Не удалось создать аудио казахского голоса.'));
+              final details = message['message']?.toString();
+              completer.completeError(
+                Exception(details?.isNotEmpty == true
+                    ? details
+                    : 'Не удалось создать аудио казахского голоса.'),
+              );
             }
           }
         }
@@ -288,12 +293,45 @@ void _kazakhTtsWorker(SendPort mainPort) {
             silenceScale: 0.2,
           ),
         );
+        final samples = audio.samples;
+        final sampleRate = audio.sampleRate;
+        final speakerCount = engine!.numSpeakers;
+        var peakAmplitude = 0.0;
+        for (final sample in samples) {
+          final amplitude = sample.abs();
+          if (amplitude > peakAmplitude) peakAmplitude = amplitude;
+        }
+
+        // Check generated samples, not only whether a WAV header was written.
+        if (samples.isEmpty || sampleRate <= 0 || peakAmplitude == 0.0) {
+          mainPort.send({
+            'type': 'done',
+            'id': id,
+            'ok': false,
+            'message':
+                'Диагностика TTS: пустой или нулевой звук. '
+                'Отсчётов: ${samples.length}; частота: $sampleRate Гц; '
+                'пиковый уровень: $peakAmplitude; голосов модели: $speakerCount.',
+          });
+          return;
+        }
+
         final ok = sherpa.writeWave(
           filename: message['wavPath'] as String,
-          samples: audio.samples,
-          sampleRate: audio.sampleRate,
+          samples: samples,
+          sampleRate: sampleRate,
         );
-        mainPort.send({'type': 'done', 'id': id, 'ok': ok});
+        mainPort.send({
+          'type': 'done',
+          'id': id,
+          'ok': ok,
+          'message': ok
+              ? 'Создано отсчётов: ${samples.length}; частота: $sampleRate Гц; '
+                  'пиковый уровень: $peakAmplitude; голосов модели: $speakerCount.'
+              : 'Sherpa-ONNX не смог записать WAV. Отсчётов: ${samples.length}; '
+                  'частота: $sampleRate Гц; пиковый уровень: $peakAmplitude; '
+                  'голосов модели: $speakerCount.',
+        });
       } catch (error) {
         mainPort.send({'type': 'error', 'id': id, 'message': error.toString()});
       }
