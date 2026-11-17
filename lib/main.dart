@@ -139,6 +139,32 @@ class AppLocale {
       'Системный голос по умолчанию': 'Әдепкі жүйелік дауыс',
       'Громкость': 'Дыбыс деңгейі',
       'Скорость речи': 'Сөйлеу жылдамдығы',
+      'Здесь будет раздел помощи по поиску, маршрутам, GPS и офлайн-картам. Можно подготовить обращение и скопировать его, чтобы отправить удобным способом.': 'Мұнда іздеу, маршруттар, GPS және офлайн карталар бойынша көмек бөлімі болады. Өтініш дайындап, оны жіберу үшін көшіруге болады.',
+      'Канал отправки обращений на сервер ещё не подключён. Эта страница не отправляет сообщения автоматически.': 'Өтініштерді серверге жіберу арнасы әлі қосылмаған. Бұл бет хабарламаларды автоматты түрде жібермейді.',
+      'Подготовить обращение': 'Өтініш дайындау',
+      'Обращение в поддержку BAKE Navigator. Опишите проблему и приложите скриншот.': 'BAKE Navigator қолдау қызметіне өтініш. Мәселені сипаттап, скриншот тіркеңіз.',
+      'Шаблон обращения скопирован.': 'Өтініш үлгісі көшірілді.',
+      'Раздел предназначен для подготовки карточки нового места: название, категория, адрес и координаты. Для добавления объекта на общую карту потребуется серверная проверка.': 'Бұл бөлім жаңа орын карточкасын дайындауға арналған: атауы, санаты, мекенжайы және координаттары. Нысанды ортақ картаға қосу үшін серверлік тексеру қажет.',
+      'Публикация объектов пока не подключена. Ничего не будет отправлено без сервера.': 'Нысандарды жариялау әлі қосылмаған. Серверсіз ештеңе жіберілмейді.',
+      'Здесь будет история поездок и сохранённые бронирования BAKE, когда приложение получит соответствующий сервис.': 'Қолданба тиісті қызметке қосылған кезде мұнда сапарлар тарихы мен BAKE брондаулары сақталады.',
+      'История пока пуста: сервис бронирований и учёт поездок ещё не подключены.': 'Тарих әзірге бос: брондау қызметі мен сапарларды есепке алу қосылмаған.',
+      'Раздел для просмотра сообщений об ошибках карты и предложенных исправлений.': 'Карта қателері туралы хабарламалар мен ұсынылған түзетулерді көруге арналған бөлім.',
+      'Лента пока недоступна: серверный источник отзывов и модерация ещё не подключены.': 'Таспа әзірге қолжетімсіз: пікірлердің серверлік көзі мен модерация қосылмаған.',
+      'Отдельная музыкальная панель должна показывать только реально доступное управление воспроизведением на телефоне или подключённом музыкальном сервисе. В ней будут текущий трек и доступные системные действия, если Android предоставит их.': 'Музыка панелі телефондағы немесе қосылған музыкалық қызметтегі қолжетімді ойнату басқаруын ғана көрсетеді. Android ұсынса, онда ағымдағы трек пен жүйелік әрекеттер көрсетіледі.',
+      'Музыкальный провайдер и управление медиасессией пока не подключены. BAKE не показывает вымышленные треки, исполнителей и обложки.': 'Музыкалық провайдер мен медиа сеансын басқару әлі қосылмаған. BAKE ойдан шығарылған тректерді, орындаушыларды немесе мұқабаларды көрсетпейді.',
+      'Будущий раздел дополнительных возможностей BAKE Navigator. Здесь будут описаны условия, если будет создана собственная подписка.': 'BAKE Navigator қосымша мүмкіндіктерінің болашақ бөлімі. Жеке жазылым жасалған жағдайда шарттары осында көрсетіледі.',
+      'Подписка BAKE Plus пока не создана. Оплата и платные функции не включены.': 'BAKE Plus жазылымы әлі жасалмаған. Төлем және ақылы функциялар қосылмаған.',
+      'Добавьте домашний адрес': 'Үй мекенжайын қосыңыз',
+      'Добавьте адрес работы': 'Жұмыс мекенжайын қосыңыз',
+      'Начальная точка определяется по GPS': 'Бастапқы нүкте GPS арқылы анықталады',
+      'Начальная точка выбрана вручную': 'Бастапқы нүкте қолмен таңдалды',
+      'Моё местоположение (ожидаем GPS)': 'Менің орналасқан жерім (GPS күтілуде)',
+      'Удерживайте нужную точку карты и выберите «Добавить как промежуточную остановку».': 'Картадағы қажетті нүктені басып тұрып, «Аралық аялдама ретінде қосу» таңдаңыз.',
+      'Выбранное время сохраняется как план. Оно пока не учитывается тестовым сервисом расчёта маршрута и пробок.': 'Таңдалған уақыт жоспар ретінде сақталады. Әзірге ол маршрут пен кептелісті есептейтін сынақ қызметінде ескерілмейді.',
+      'Снять все отметки': 'Барлық белгіні алып тастау',
+      'Выбрать все сети': 'Барлық желіні таңдау',
+      'Импортируем…': 'Импортталуда…',
+      'Импортировать MBTiles-карту': 'MBTiles картасын импорттау',
       'Настройки': 'Баптаулар',
       'Разместить объект': 'Нысанды орналастыру',
       'Закладки': 'Бетбелгілер',
@@ -319,6 +345,32 @@ class AppLocale {
       'Системный голос по умолчанию': 'System default voice',
       'Громкость': 'Volume',
       'Скорость речи': 'Speech rate',
+      'Здесь будет раздел помощи по поиску, маршрутам, GPS и офлайн-картам. Можно подготовить обращение и скопировать его, чтобы отправить удобным способом.': 'This section will provide help with search, routes, GPS, and offline maps. You can prepare and copy a support request to send it yourself.',
+      'Канал отправки обращений на сервер ещё не подключён. Эта страница не отправляет сообщения автоматически.': 'The server support channel is not connected yet. This page does not send messages automatically.',
+      'Подготовить обращение': 'Prepare a request',
+      'Обращение в поддержку BAKE Navigator. Опишите проблему и приложите скриншот.': 'BAKE Navigator support request. Describe the issue and attach a screenshot.',
+      'Шаблон обращения скопирован.': 'Request template copied.',
+      'Раздел предназначен для подготовки карточки нового места: название, категория, адрес и координаты. Для добавления объекта на общую карту потребуется серверная проверка.': 'This section is for preparing a new place listing: name, category, address, and coordinates. Server review will be required to add it to the shared map.',
+      'Публикация объектов пока не подключена. Ничего не будет отправлено без сервера.': 'Place publishing is not connected yet. Nothing will be submitted without a server.',
+      'Здесь будет история поездок и сохранённые бронирования BAKE, когда приложение получит соответствующий сервис.': 'Your trip history and saved BAKE bookings will appear here when the relevant service is connected.',
+      'История пока пуста: сервис бронирований и учёт поездок ещё не подключены.': 'History is empty: bookings and trip tracking are not connected yet.',
+      'Раздел для просмотра сообщений об ошибках карты и предложенных исправлений.': 'View map error reports and suggested corrections here.',
+      'Лента пока недоступна: серверный источник отзывов и модерация ещё не подключены.': 'The feed is unavailable: server reviews and moderation are not connected yet.',
+      'Отдельная музыкальная панель должна показывать только реально доступное управление воспроизведением на телефоне или подключённом музыкальном сервисе. В ней будут текущий трек и доступные системные действия, если Android предоставит их.': 'The music panel will show only playback controls actually available on your phone or connected music service. It will show the current track and system actions if Android provides them.',
+      'Музыкальный провайдер и управление медиасессией пока не подключены. BAKE не показывает вымышленные треки, исполнителей и обложки.': 'The music provider and media session controls are not connected yet. BAKE does not display fictional tracks, artists, or cover art.',
+      'Будущий раздел дополнительных возможностей BAKE Navigator. Здесь будут описаны условия, если будет создана собственная подписка.': 'A future section for additional BAKE Navigator features. Terms will appear here if a subscription is created.',
+      'Подписка BAKE Plus пока не создана. Оплата и платные функции не включены.': 'BAKE Plus subscription has not been created. Payments and paid features are not enabled.',
+      'Добавьте домашний адрес': 'Add your home address',
+      'Добавьте адрес работы': 'Add your work address',
+      'Начальная точка определяется по GPS': 'Starting point is detected by GPS',
+      'Начальная точка выбрана вручную': 'Starting point selected manually',
+      'Моё местоположение (ожидаем GPS)': 'My location (waiting for GPS)',
+      'Удерживайте нужную точку карты и выберите «Добавить как промежуточную остановку».': 'Long-press the desired map point and choose “Add as an intermediate stop”.',
+      'Выбранное время сохраняется как план. Оно пока не учитывается тестовым сервисом расчёта маршрута и пробок.': 'The selected time is saved as a plan. It is not yet used by the test route and traffic service.',
+      'Снять все отметки': 'Clear all selections',
+      'Выбрать все сети': 'Select all networks',
+      'Импортируем…': 'Importing…',
+      'Импортировать MBTiles-карту': 'Import MBTiles map',
       'Настройки': 'Settings',
       'Разместить объект': 'Add a place',
       'Закладки': 'Bookmarks',
@@ -2109,7 +2161,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         builder: (pageContext) => Scaffold(
           backgroundColor: const Color(0xFFFFFFFF),
           appBar: AppBar(
-            title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            title: Text(AppLocale.tr(title), maxLines: 1, overflow: TextOverflow.ellipsis),
             backgroundColor: const Color(0xFFFFFFFF),
           ),
           body: SafeArea(
@@ -2133,7 +2185,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       const SizedBox(height: 18),
                       Text(title, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 10),
-                      Text(description, style: const TextStyle(fontSize: 16, height: 1.45)),
+                      Text(AppLocale.tr(description), style: const TextStyle(fontSize: 16, height: 1.45)),
                       const SizedBox(height: 18),
                       Container(
                         width: double.infinity,
@@ -2142,7 +2194,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           color: const Color(0xFFF1F4F7),
                           borderRadius: BorderRadius.circular(14),
                         ),
-                        child: Text(status, style: const TextStyle(fontSize: 14, color: Color(0xFF555B63))),
+                        child: Text(AppLocale.tr(status), style: const TextStyle(fontSize: 14, color: Color(0xFF555B63))),
                       ),
                     ],
                   ),
@@ -2155,7 +2207,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       if (pageContext.mounted) Navigator.pop(pageContext);
                     },
                     icon: const Icon(Icons.copy),
-                    label: Text(actionLabel),
+                    label: Text(AppLocale.tr(actionLabel)),
                   ),
                 ],
               ],
@@ -2403,11 +2455,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     child: Icon(Icons.home_outlined, color: Color(0xFF343434)),
                   ),
                   title: Text(AppLocale.tr('Дом'), style: TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: Text(home.isEmpty ? 'Добавьте домашний адрес' : home),
+                  subtitle: Text(home.isEmpty ? AppLocale.tr('Добавьте домашний адрес') : home),
                   trailing: const Icon(Icons.edit_outlined),
                   onTap: () async {
                     await editAddress(
-                      title: 'Адрес дома',
+                      title: AppLocale.tr('Адрес дома'),
                       currentValue: home,
                       onSave: (value) async {
                         home = value;
@@ -2425,11 +2477,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     child: Icon(Icons.work_outline, color: Color(0xFF343434)),
                   ),
                   title: Text(AppLocale.tr('Работа'), style: TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: Text(work.isEmpty ? 'Добавьте адрес работы' : work),
+                  subtitle: Text(work.isEmpty ? AppLocale.tr('Добавьте адрес работы') : work),
                   trailing: const Icon(Icons.edit_outlined),
                   onTap: () async {
                     await editAddress(
-                      title: 'Адрес работы',
+                      title: AppLocale.tr('Адрес работы'),
                       currentValue: work,
                       onSave: (value) async {
                         work = value;
@@ -2793,15 +2845,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       const SizedBox(height: 3),
                       Text(_routeOrigin != null
                           ? '${_routeOrigin!.latitude.toStringAsFixed(5)}, ${_routeOrigin!.longitude.toStringAsFixed(5)}'
-                          : (_currentLocation == null ? 'Моё местоположение (ожидаем GPS)' : '${_currentLocation!.latitude.toStringAsFixed(5)}, ${_currentLocation!.longitude.toStringAsFixed(5)}'),
+                          : (_currentLocation == null ? AppLocale.tr('Моё местоположение (ожидаем GPS)') : '${_currentLocation!.latitude.toStringAsFixed(5)}, ${_currentLocation!.longitude.toStringAsFixed(5)}'),
                         style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                      Text(_routeOrigin == null ? 'Начальная точка определяется по GPS' : 'Начальная точка выбрана вручную', style: const TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
+                      Text(_routeOrigin == null ? AppLocale.tr('Начальная точка определяется по GPS') : AppLocale.tr('Начальная точка выбрана вручную'), style: const TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
                       const SizedBox(height: 8),
                       TextField(
                         controller: originController,
                         textInputAction: TextInputAction.search,
                         onSubmitted: (_) { searchOriginAfterClose = originController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           labelText: AppLocale.tr('Найти адрес отправления'),
                           hintText: AppLocale.tr('Улица, дом или место'),
                           prefixIcon: Icon(Icons.search),
@@ -2858,7 +2910,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     )),
                   const SizedBox(height: 8),
                   OutlinedButton.icon(
-                    onPressed: _routeStops.length >= 5 ? null : () { Navigator.pop(sheetContext); setState(() => _message = 'Удерживайте нужную точку карты и выберите «Добавить как промежуточную остановку».'); },
+                    onPressed: _routeStops.length >= 5 ? null : () { Navigator.pop(sheetContext); setState(() => _message = AppLocale.tr('Удерживайте нужную точку карты и выберите «Добавить как промежуточную остановку».')); },
                     icon: const Icon(Icons.add_location_alt_outlined),
                     label: Text(AppLocale.tr('Добавить остановку на карте')),
                   ),
@@ -2867,7 +2919,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.schedule, color: Color(0xFF343434)),
                     title: Text(AppLocale.tr('Время выезда'), style: TextStyle(fontWeight: FontWeight.w700)),
-                    subtitle: Text(_plannedDeparture == null ? 'Сейчас' : _formatDeparture(_plannedDeparture!)),
+                    subtitle: Text(_plannedDeparture == null ? AppLocale.tr('Сейчас') : _formatDeparture(_plannedDeparture!)),
                     trailing: TextButton(
                       onPressed: () => _openDepartureTime(refreshSheet),
                       child: Text(AppLocale.tr('Изменить')),
@@ -3050,7 +3102,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         ..addAll(networks);
                     }
                   }),
-                  child: Text(initial.length == networks.length ? 'Снять все отметки' : 'Выбрать все сети'),
+                  child: Text(AppLocale.tr(initial.length == networks.length ? 'Снять все отметки' : 'Выбрать все сети')),
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -3826,7 +3878,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                             icon: _importingOfflineMap
                                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                                 : const Icon(Icons.file_open_outlined),
-                            label: Text(_importingOfflineMap ? 'Импортируем…' : 'Импортировать MBTiles-карту'),
+                            label: Text(AppLocale.tr(_importingOfflineMap ? 'Импортируем…' : 'Импортировать MBTiles-карту')),
                           ),
                         ),
                         if (_offlineMapPath != null)
