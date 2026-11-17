@@ -979,6 +979,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     List<Map<String, String>> voicesFor(String lang) => _availableVoices
         .where((v) => (v['locale'] ?? '').toLowerCase().replaceAll('_', '-').startsWith(lang.substring(0, 2).toLowerCase()))
         .toList();
+    StateSetter refreshSheet = (_) {};
+
     Future<void> loadAndPreviewVoice() async {
       if (offlineVoiceBusy) return;
       offlineVoiceBusy = true;
@@ -1060,7 +1062,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (sheetContext) => StatefulBuilder(
-        builder: (sheetContext, refreshSheet) {
+        builder: (sheetContext, refresh) {
+          refreshSheet = refresh;
           final voices = voicesFor(language);
           final selectedExists = voices.any((v) => '${v['name']}|${v['locale']}' == selectedKey);
           return SafeArea(
