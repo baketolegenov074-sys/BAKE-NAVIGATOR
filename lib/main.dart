@@ -2625,7 +2625,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   Row(children: [
                     const Icon(Icons.more_horiz, color: Color(0xFF343434)),
                     const SizedBox(width: 12),
-                    const Expanded(child: Text(AppLocale.tr('Промежуточные остановки'), style: TextStyle(fontWeight: FontWeight.w700))),
+                    Expanded(child: Text(AppLocale.tr('Промежуточные остановки'), style: TextStyle(fontWeight: FontWeight.w700))),
                     Text('${_routeStops.length}/5', style: const TextStyle(color: Color(0xFF687786))),
                   ]),
                   if (_routeStops.isEmpty)
@@ -2723,7 +2723,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8))),
             const SizedBox(height: 12),
-            const Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Маршрут'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+            Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Маршрут'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
             _menuTile(sheetContext, Icons.edit_road_outlined, 'Планирование маршрута', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
             _menuTile(sheetContext, Icons.edit_location_alt_outlined, 'Изменить маршрут', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
             _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Добавить точку', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
