@@ -906,34 +906,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
-  Future<void> _chooseAppLanguage() async {
-    final selected = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: Text(AppLocale.tr('Язык приложения')),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialogContext, 'ru'),
-            child: const Text('Русский'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialogContext, 'kk'),
-            child: const Text('Қазақша'),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialogContext, 'en'),
-            child: const Text('English'),
-          ),
-        ],
-      ),
-    );
-    if (selected == null) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('app_language', selected);
-    AppLocale.language = selected;
-    if (mounted) setState(() {});
-  }
-
   Future<void> _openSettings() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
