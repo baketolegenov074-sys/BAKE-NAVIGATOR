@@ -20,15 +20,18 @@ import 'kazakh_voice_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
-  // One-time migration: make Kazakh the default app and navigation language.
-  if (!(prefs.getBool('kazakh_primary_language_v1') ?? false)) {
-    await prefs.setString('app_language', 'kk');
-    await prefs.setString('navigation_language', 'kk-KZ');
-    await prefs.remove('voice_name');
-    await prefs.remove('voice_locale');
-    await prefs.setBool('kazakh_primary_language_v1', true);
+  // Restore a usable Russian navigation voice after the earlier forced-Kazakh
+  // migration. Keep any language the user selected manually after that.
+  if (!(prefs.getBool('voice_language_restore_v1') ?? false)) {
+    final previousForcedKazakh = prefs.getBool('kazakh_primary_language_v1') ?? false;
+    final savedNavigationLanguage = prefs.getString('navigation_language');
+    if (savedNavigationLanguage == null ||
+        (previousForcedKazakh && savedNavigationLanguage == 'kk-KZ')) {
+      await prefs.setString('navigation_language', 'ru-RU');
+    }
+    await prefs.setBool('voice_language_restore_v1', true);
   }
-  AppLocale.language = prefs.getString('app_language') ?? 'kk';
+  AppLocale.language = prefs.getString('app_language') ?? 'ru';
   runApp(const BakeNavigatorApp());
 }
 
@@ -593,7 +596,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
-  String _navigationLanguage = 'kk-KZ';
+  String _navigationLanguage = 'ru-RU';
   String? _selectedVoiceName;
   String? _selectedVoiceLocale;
   List<Map<String, String>> _availableVoices = <Map<String, String>>[];
@@ -604,13 +607,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final volume = prefs.getDouble('voice_volume') ?? 1.0;
       final rate = prefs.getDouble('voice_rate') ?? 0.48;
       _voiceMode = prefs.getInt('voice_mode') ?? 3;
-      _navigationLanguage = prefs.getString('navigation_language') ?? 'kk-KZ';
+      _navigationLanguage = prefs.getString('navigation_language') ?? 'ru-RU';
       _selectedVoiceName = prefs.getString('voice_name');
       _selectedVoiceLocale = prefs.getString('voice_locale');
       _kazakhVoiceId = (prefs.getInt('kazakh_voice_sid') ?? 0).clamp(0, 5).toInt();
       await _tts.setLanguage(_navigationLanguage);
       await _tts.setSpeechRate(rate);
       await _tts.setVolume(volume);
+      await _tts.setAudioAttributesForNavigation();
+      await _tts.awaitSpeakCompletion(true);
       await _refreshAvailableVoices();
       await _applySelectedVoice();
     } catch (_) {
@@ -645,7 +650,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     // particular, some engines can synthesize a locale even when getVoices
     // returns an empty list. Check locale support, then set the locale directly.
     final languageAvailable = await _tts.isLanguageAvailable(_navigationLanguage);
-    if (languageAvailable != true) return false;
+    if (languageAvailable != true) {
+      final languageName = _navigationLanguage == 'ru-RU'
+          ? 'русский'
+          : _navigationLanguage == 'en-US'
+              ? 'английский'
+              : 'казахский';
+      throw Exception(
+        'На телефоне не установлен $languageName голос. Откройте настройки Android → Преобразование текста в речь и установите голосовые данные для выбранного языка.',
+      );
+    }
 
     await _tts.setLanguage(_navigationLanguage);
     final requiredLanguage = _voiceLanguageCode(_navigationLanguage);
