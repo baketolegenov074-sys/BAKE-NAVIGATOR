@@ -509,7 +509,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   List<Map<String, dynamic>> _routeAlternatives = <Map<String, dynamic>>[];
   int _selectedRouteIndex = 0;
   List<LatLng> _routePoints = [];
-      _routeReady = false;
   List<RouteInstruction> _instructions = [];
   int _instructionIndex = 0;
   bool _navigationActive = false;
