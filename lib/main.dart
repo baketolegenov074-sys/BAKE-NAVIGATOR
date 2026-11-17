@@ -15,6 +15,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'kazakh_voice_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -495,6 +496,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   final MapController _mapController = MapController();
   final FlutterTts _tts = FlutterTts();
+  final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
+  int _kazakhVoiceId = 0;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   MbTilesTileProvider? _offlineTileProvider;
@@ -604,6 +607,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _navigationLanguage = prefs.getString('navigation_language') ?? 'kk-KZ';
       _selectedVoiceName = prefs.getString('voice_name');
       _selectedVoiceLocale = prefs.getString('voice_locale');
+      _kazakhVoiceId = prefs.getInt('kazakh_voice_sid') ?? 0;
       await _tts.setLanguage(_navigationLanguage);
       await _tts.setSpeechRate(rate);
       await _tts.setVolume(volume);
@@ -677,6 +681,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _speakText(String text) async {
     try {
+      if (_navigationLanguage == 'kk-KZ' && await _kazakhVoiceService.isInstalled) {
+        await _kazakhVoiceService.speak(
+          text: text,
+          speakerId: _kazakhVoiceId,
+          speed: 1.0,
+        );
+        return;
+      }
       if (!await _prepareSpeechVoice()) {
         if (mounted) {
           setState(() => _message = AppLocale.pick(
@@ -712,6 +724,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _tts.stop();
+    unawaited(_kazakhVoiceService.dispose());
     super.dispose();
   }
 
@@ -805,6 +818,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     var volume = prefs.getDouble('voice_volume') ?? 1.0;
     var rate = prefs.getDouble('voice_rate') ?? 0.48;
     var language = prefs.getString('navigation_language') ?? _navigationLanguage;
+    var kazakhVoiceId = prefs.getInt('kazakh_voice_sid') ?? _kazakhVoiceId;
+    var offlineVoiceBusy = false;
+    var offlineVoiceReady = await _kazakhVoiceService.isInstalled;
+    var offlineVoiceStatus = '';
     var selectedKey = (_selectedVoiceName == null || _selectedVoiceLocale == null)
         ? ''
         : '$_selectedVoiceName|$_selectedVoiceLocale';
@@ -857,6 +874,67 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       refresh(() {});
                     },
                   ),
+                  if (language == 'kk-KZ') ...[
+                    const SizedBox(height: 14),
+                    Text('Қазақша офлайн дауысы · ISSAI', style: const TextStyle(fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<int>(
+                      value: kazakhVoiceId,
+                      isExpanded: true,
+                      items: KazakhVoiceService.voices.map((voice) =>
+                        DropdownMenuItem<int>(
+                          value: voice.id,
+                          child: Text(voice.label, overflow: TextOverflow.ellipsis),
+                        ),
+                      ).toList(),
+                      onChanged: (value) async {
+                        if (value == null) return;
+                        kazakhVoiceId = value;
+                        _kazakhVoiceId = value;
+                        await prefs.setInt('kazakh_voice_sid', value);
+                        refresh(() {});
+                      },
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Бір пакетте 2 ер және 4 әйел дауысы бар. Алғашқы жүктеу шамамен 129 МБ, кейін интернетсіз жұмыс істейді.',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF62666D)),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton.icon(
+                      onPressed: offlineVoiceBusy ? null : () async {
+                        offlineVoiceBusy = true;
+                        offlineVoiceStatus = offlineVoiceReady
+                            ? 'Таңдалған дауыс дайындалып жатыр…'
+                            : 'Қазақша дауыс пакеті жүктеліп жатыр…';
+                        refresh(() {});
+                        try {
+                          await _kazakhVoiceService.speak(
+                            text: 'Дауысты тексеру. Бағыт бойынша жүре беріңіз.',
+                            speakerId: kazakhVoiceId,
+                            speed: 1.0,
+                          );
+                          offlineVoiceReady = true;
+                          offlineVoiceStatus = 'Қазақша офлайн дауыс дайын.';
+                        } catch (error) {
+                          offlineVoiceStatus = error.toString().replaceFirst('Exception: ', '');
+                        } finally {
+                          offlineVoiceBusy = false;
+                          refresh(() {});
+                        }
+                      },
+                      icon: offlineVoiceBusy
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.download_for_offline_outlined),
+                      label: Text(offlineVoiceBusy
+                          ? 'Күте тұрыңыз…'
+                          : offlineVoiceReady
+                              ? 'Таңдалған дауысты тыңдау'
+                              : 'Жүктеу және дауысты тыңдау'),
+                    ),
+                    if (offlineVoiceStatus.isNotEmpty)
+                      Text(offlineVoiceStatus, style: const TextStyle(fontSize: 12, color: Color(0xFF62666D))),
+                  ],
                   const SizedBox(height: 12),
                   Text(AppLocale.tr('Голос телефона'), style: TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
@@ -864,7 +942,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       child: Text(
-                        AppLocale.tr('Список голосов Android пуст. Если выбранный язык поддерживается движком, BAKE всё равно попробует его озвучить. Встроенные казахские голоса добавим отдельным офлайн-пакетом.'),
+                        AppLocale.tr('Список голосов Android пуст. Для казахского языка можно загрузить встроенный офлайн-пакет ISSAI выше.'),
                         style: const TextStyle(color: Color(0xFF9A5B00)),
                       ),
                     )
@@ -925,7 +1003,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         _voiceMode = index;
                         refresh(() {});
                         await prefs.setInt('voice_mode', index);
-                        if (index == 0) await _tts.stop();
+                        if (index == 0) {
+                          await _tts.stop();
+                          await _kazakhVoiceService.stop();
+                        }
                       },
                     )),
                   ),
