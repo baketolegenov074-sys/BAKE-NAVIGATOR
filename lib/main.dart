@@ -4001,7 +4001,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Positioned(
               left: 12,
               right: 12,
-              bottom: 8,
+              bottom: -10,
               child: SafeArea(
                 top: false,
                 child: Material(
