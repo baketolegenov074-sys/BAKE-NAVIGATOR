@@ -838,6 +838,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
         await controller.clearLines();
         await controller.clearSymbols();
+        await controller.clearCircles();
         if (_routePoints.length > 1) {
         await controller.addLine(ml.LineOptions(
           geometry: _routePoints.map(_toMapLibrePoint).toList(),
@@ -852,12 +853,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ));
       }
       if (_currentLocation != null) {
-        await controller.addSymbol(ml.SymbolOptions(
-          // Use a simple filled dot instead of a font-dependent arrow glyph.
-          // This keeps the current-position marker visible across map styles.
-          geometry: _toMapLibrePoint(_currentLocation!), textField: '●',
-          textSize: 22, textColor: '#1769AA',
-          textHaloColor: '#FFFFFF', textHaloWidth: 4,
+        // Draw GPS position as a native MapLibre circle, not a text glyph.
+        // Text symbols depend on font glyph availability in the active map style.
+        await controller.addCircle(ml.CircleOptions(
+          geometry: _toMapLibrePoint(_currentLocation!),
+          circleRadius: 9,
+          circleColor: '#1769AA',
+          circleOpacity: 1,
+          circleStrokeColor: '#FFFFFF',
+          circleStrokeWidth: 3,
+          circleStrokeOpacity: 1,
         ));
       }
       for (var i = 0; i < _routeStops.length; i++) {
