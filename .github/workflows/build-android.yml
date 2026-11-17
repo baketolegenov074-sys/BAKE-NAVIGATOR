@@ -40,28 +40,68 @@ jobs:
           cp /tmp/bake-pubspec.yaml pubspec.yaml
           cp /tmp/bake-main.dart lib/main.dart
 
-      - name: Set Kotlin Gradle Plugin version for Valhalla
+      - name: Set Android Gradle, Kotlin and NDK versions for MapLibre and Valhalla
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
 
-          path = Path("android/settings.gradle")
-          if not path.exists():
-              path = Path("android/settings.gradle.kts")
-          if not path.exists():
+          settings = Path("android/settings.gradle")
+          if not settings.exists():
+              settings = Path("android/settings.gradle.kts")
+          if not settings.exists():
               raise SystemExit("Generated Android settings.gradle(.kts) was not found")
 
-          content = path.read_text()
-          pattern = r'(id\s*\(?\s*["\']org\.jetbrains\.kotlin\.android["\']\s*\)?\s+version\s+["\'])1\.8\.22(["\'])'
-          updated, count = re.subn(pattern, lambda match: match.group(1) + "2.2.10" + match.group(2), content)
+          content = settings.read_text()
+          updates = [
+              (
+                  r'(id\\s*\\(?\\s*["\\']com\\.android\\.application["\\']\\s*\\)?\\s+version\\s+["\\'])8\\.1\\.0(["\\'])',
+                  "8.6.1",
+                  "Android Gradle Plugin",
+              ),
+              (
+                  r'(id\\s*\\(?\\s*["\\']org\\.jetbrains\\.kotlin\\.android["\\']\\s*\\)?\\s+version\\s+["\\'])1\\.8\\.22(["\\'])',
+                  "2.2.10",
+                  "Kotlin Gradle Plugin",
+              ),
+          ]
+          for pattern, version, label in updates:
+              content, count = re.subn(pattern, lambda m: m.group(1) + version + m.group(2), content)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one supported {label} version to update; found {count}")
+              print(f"{label} updated to {version}")
+          settings.write_text(content)
+
+          wrapper = Path("android/gradle/wrapper/gradle-wrapper.properties")
+          if not wrapper.exists():
+              raise SystemExit("Gradle wrapper properties were not generated")
+          wrapper_content = wrapper.read_text()
+          wrapper_content, count = re.subn(
+              r"gradle-[0-9.]+-(?:all|bin)\\.zip",
+              "gradle-8.7-all.zip",
+              wrapper_content,
+          )
           if count != 1:
-              raise SystemExit(
-                  f"Expected exactly one Kotlin Android plugin at 1.8.22, found {count}; "
-                  "stop rather than silently changing an unknown template"
-              )
-          path.write_text(updated)
-          print("Kotlin Gradle Plugin: 1.8.22 -> 2.2.10")
+              raise SystemExit(f"Expected one Gradle distribution URL, found {count}")
+          wrapper.write_text(wrapper_content)
+          print("Gradle wrapper updated to 8.7")
+
+          app_gradle = Path("android/app/build.gradle")
+          if not app_gradle.exists():
+              app_gradle = Path("android/app/build.gradle.kts")
+          if not app_gradle.exists():
+              raise SystemExit("Generated app Gradle file was not found")
+          app_content = app_gradle.read_text()
+          app_content, count = re.subn(
+              r"ndkVersion\\s*=\\s*flutter\\.ndkVersion",
+              'ndkVersion = "28.1.13356709"',
+              app_content,
+          )
+          if count != 1:
+              raise SystemExit(f"Expected one Flutter NDK version declaration, found {count}")
+          app_gradle.write_text(app_content)
+          print("Android NDK pinned to 28.1.13356709")
+          PY
           PY
 
       - name: Add required Android permissions and app label
