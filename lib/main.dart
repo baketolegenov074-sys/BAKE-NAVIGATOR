@@ -1601,6 +1601,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     // before requesting the route. A stale map center or Shymkent fallback
     // must never silently become the route origin.
     if (_routeOrigin == null) {
+      try {
       if (!await Geolocator.isLocationServiceEnabled()) {
         throw Exception(AppLocale.pick('Включите GPS на телефоне, чтобы построить маршрут от вашего местоположения.', 'Маршрутты ағымдағы орналасқан жерден құру үшін GPS қосыңыз.', 'Turn on GPS to build a route from your current location.'));
       }
@@ -1627,6 +1628,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         }
       });
       unawaited(_startLiveLocationUpdates());
+      } catch (error) {
+        if (mounted) {
+          setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
+        }
+        return;
+      }
     }
     final routeOrigin = _routeOrigin ?? _currentLocation;
     if (routeOrigin == null || _destination == null) {
