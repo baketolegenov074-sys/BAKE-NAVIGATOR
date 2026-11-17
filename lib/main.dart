@@ -3212,49 +3212,51 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   const SizedBox(height: 14),
                   Text(AppLocale.tr('Планирование маршрута'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 16),
-                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Padding(padding: EdgeInsets.only(top: 12), child: Icon(Icons.my_location, color: Color(0xFF269B68))),
-                    const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(AppLocale.tr('ОТКУДА'), style: TextStyle(fontSize: 10, color: Color(0xFF78838D), fontWeight: FontWeight.w800, letterSpacing: 0.8)),
-                      const SizedBox(height: 3),
-                      Text(_routeOrigin != null
-                          ? '${_routeOrigin!.latitude.toStringAsFixed(5)}, ${_routeOrigin!.longitude.toStringAsFixed(5)}'
-                          : (_currentLocation == null ? AppLocale.tr('Моё местоположение (ожидаем GPS)') : '${_currentLocation!.latitude.toStringAsFixed(5)}, ${_currentLocation!.longitude.toStringAsFixed(5)}'),
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                      Text(_routeOrigin == null ? AppLocale.tr('Начальная точка определяется по GPS') : AppLocale.tr('Начальная точка выбрана вручную'), style: const TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: originController,
-                        textInputAction: TextInputAction.search,
-                        onSubmitted: (_) { searchOriginAfterClose = originController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
-                        decoration: InputDecoration(
-                          labelText: AppLocale.tr('Найти адрес отправления'),
-                          hintText: AppLocale.tr('Улица, дом или место'),
-                          prefixIcon: Icon(Icons.search),
-                          border: OutlineInputBorder(),
-                          isDense: true,
+                  Row(
+                    children: [
+                      const Icon(Icons.my_location, color: Color(0xFF269B68), size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: originController,
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: (_) { searchOriginAfterClose = originController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
+                          decoration: InputDecoration(
+                            hintText: AppLocale.tr('Откуда'),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
                         ),
                       ),
-                    ])),
-                    if (_routeOrigin != null)
-                      TextButton(onPressed: () { _resetRouteOrigin(); refreshSheet(() {}); }, child: Text(AppLocale.tr('Сбросить'))),
-                    TextButton(onPressed: () { Navigator.pop(sheetContext); unawaited(_locateMe()); }, child: Text(AppLocale.tr('GPS'))),
-                  ]),
+                      IconButton(
+                        tooltip: AppLocale.tr('Моё местоположение'),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () { Navigator.pop(sheetContext); unawaited(_locateMe()); },
+                        icon: const Icon(Icons.gps_fixed, size: 20),
+                      ),
+                    ],
+                  ),
                   const Divider(height: 22),
                   Row(children: [
-                    const Icon(Icons.location_on, color: Color(0xFFE45D52)),
-                    const SizedBox(width: 12),
+                    const Icon(Icons.location_on, color: Color(0xFFE45D52), size: 20),
+                    const SizedBox(width: 10),
                     Expanded(child: TextField(
                       controller: destinationController,
                       textInputAction: TextInputAction.search,
                       onSubmitted: (_) { searchAfterClose = true; Navigator.pop(sheetContext); },
-                      decoration: InputDecoration(labelText: AppLocale.tr('Куда'), hintText: AppLocale.tr('Введите адрес или место'), border: InputBorder.none),
+                      decoration: InputDecoration(
+                        hintText: AppLocale.tr('Куда'),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
                     )),
                     IconButton(
                       tooltip: AppLocale.tr('Найти место'),
+                      visualDensity: VisualDensity.compact,
                       onPressed: () { searchAfterClose = destinationController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
-                      icon: const Icon(Icons.search, color: Color(0xFF343434)),
+                      icon: const Icon(Icons.search, color: Color(0xFF343434), size: 21),
                     ),
                   ]),
                   if (_destination != null)
@@ -3852,7 +3854,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           if (!_navigationActive && !_routeReady)
             Positioned(
               left: 14,
-              top: 146,
+              top: 124,
               child: Material(
                 color: Colors.white,
                 elevation: 4,
@@ -3869,7 +3871,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           Positioned(
             left: 14,
-            top: 84,
+            top: 68,
             child: _roundMapButton(
               icon: Icons.my_location,
               tooltip: AppLocale.tr('Моё местоположение'),
@@ -3922,45 +3924,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         _mapBottomItem(Icons.local_gas_station_outlined, AppLocale.tr('АЗС'), _openStationNetworks),
                         _mapBottomItem(Icons.bookmark_border, AppLocale.tr('Избранное'), _openBookmarks),
                         _mapBottomItem(Icons.settings_outlined, AppLocale.tr('Настройки'), _openSettings),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          if (!_navigationActive && _routeReady)
-            Positioned(
-              left: 12,
-              right: 12,
-              bottom: 76,
-              child: SafeArea(
-                top: false,
-                child: Material(
-                  color: Colors.white,
-                  elevation: 8,
-                  borderRadius: BorderRadius.circular(20),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: double.infinity,
-                          height: 46,
-                          child: FilledButton.icon(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFFFFCC00),
-                              foregroundColor: const Color(0xFF171717),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            ),
-                            onPressed: _isBuildingRoute || !_routeReady ? null : _startNavigation,
-                            icon: const Icon(Icons.navigation, size: 20),
-                            label: Text(
-                              AppLocale.tr('Поехали'),
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),
