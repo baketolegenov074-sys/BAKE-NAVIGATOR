@@ -467,7 +467,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
-  String AppLocale.pick(String ru, String kk, String en) {
+  String _localized(String ru, String kk, String en) {
     if (_navigationLanguage == 'kk-KZ') return kk;
     if (_navigationLanguage == 'en-US') return en;
     return ru;
