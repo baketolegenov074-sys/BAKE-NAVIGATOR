@@ -953,43 +953,150 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Future<void> _openRouteAlternatives() async {
-    if (_routeAlternatives.isEmpty) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Align(alignment: Alignment.centerLeft, child: Text('Варианты маршрута', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
-            const SizedBox(height: 8),
-            ...List.generate(_routeAlternatives.length, (index) {
-              final route = _routeAlternatives[index];
-              final km = ((route['distance'] as num).toDouble() / 1000).toStringAsFixed(1);
-              final minutes = (((route['duration'] as num).toDouble()) / 60).round();
-              return Card(
-                color: index == _selectedRouteIndex ? const Color(0xFFFFF4CC) : Colors.white,
-                child: ListTile(
-                  leading: Icon(index == _selectedRouteIndex ? Icons.radio_button_checked : Icons.alt_route, color: const Color(0xFF343434)),
-                  title: Text('$minutes мин · $km км', style: const TextStyle(fontWeight: FontWeight.w800)),
-                  subtitle: Text('Вариант ${index + 1}'),
-                  onTap: () {
-                    _selectRouteAlternative(index);
-                    Navigator.pop(sheetContext);
-                  },
+    if (_routeAlternatives.isEmpty) {
+      await _openRoutePlanner();
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => Scaffold(
+          backgroundColor: const Color(0xFFF7F8FA),
+          appBar: AppBar(
+            title: const Text('Построение маршрута'),
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            actions: [
+              IconButton(
+                tooltip: 'Изменить точки',
+                onPressed: () {
+                  Navigator.pop(pageContext);
+                  _openRoutePlanner();
+                },
+                icon: const Icon(Icons.edit_location_alt_outlined),
+              ),
+            ],
+          ),
+          body: SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                    children: [
+                      Card(
+                        color: Colors.white,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.trip_origin, color: Color(0xFF269B68)),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      _routeOrigin == null
+                                          ? (_currentLocation == null ? 'Моё местоположение' : 'Текущее местоположение')
+                                          : '${_routeOrigin!.latitude.toStringAsFixed(5)}, ${_routeOrigin!.longitude.toStringAsFixed(5)}',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const Padding(
+                                padding: EdgeInsets.only(left: 11),
+                                child: SizedBox(height: 18, child: VerticalDivider(width: 1, thickness: 1)),
+                              ),
+                              Row(
+                                children: [
+                                  const Icon(Icons.location_on, color: Color(0xFFE45D52)),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      _destination == null
+                                          ? 'Пункт назначения не выбран'
+                                          : '${_destination!.latitude.toStringAsFixed(5)}, ${_destination!.longitude.toStringAsFixed(5)}',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_routeStops.isNotEmpty) ...[
+                                const Divider(height: 22),
+                                Text('Промежуточные остановки: ${_routeStops.length}'),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Варианты маршрута',
+                        style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 8),
+                      ...List.generate(_routeAlternatives.length, (index) {
+                        final route = _routeAlternatives[index];
+                        final km = ((route['distance'] as num).toDouble() / 1000).toStringAsFixed(1);
+                        final minutes = (((route['duration'] as num).toDouble()) / 60).round();
+                        final selected = index == _selectedRouteIndex;
+                        return Card(
+                          color: selected ? const Color(0xFFFFF4CC) : Colors.white,
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                            leading: Icon(
+                              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                              color: const Color(0xFF343434),
+                            ),
+                            title: Text(
+                              '$minutes мин · $km км',
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                            ),
+                            subtitle: Text('Вариант ${index + 1}'),
+                            trailing: selected ? const Icon(Icons.check_circle, color: Color(0xFF269B68)) : null,
+                            onTap: () {
+                              _selectRouteAlternative(index);
+                              if (mounted) {
+                                // The route page remains open while the selected path is updated.
+                                (pageContext as Element).markNeedsBuild();
+                              }
+                            },
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
                 ),
-              );
-            }),
-            const SizedBox(height: 6),
-            SizedBox(width: double.infinity, child: FilledButton(
-              onPressed: () {
-                Navigator.pop(sheetContext);
-                _startNavigation();
-              },
-              child: const Text('Поехали'),
-            )),
-          ]),
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  child: SafeArea(
+                    top: false,
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 54,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFFFCC00),
+                          foregroundColor: const Color(0xFF171717),
+                        ),
+                        onPressed: _navigationActive ? null : () {
+                          Navigator.pop(pageContext);
+                          _startNavigation();
+                        },
+                        child: const Text('Поехали', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
