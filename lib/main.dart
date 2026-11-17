@@ -139,6 +139,55 @@ class AppLocale {
       'Системный голос по умолчанию': 'Әдепкі жүйелік дауыс',
       'Громкость': 'Дыбыс деңгейі',
       'Скорость речи': 'Сөйлеу жылдамдығы',
+      'Выберите начальную точку': 'Бастапқы нүктені таңдаңыз',
+      'Выберите пункт назначения': 'Межелі орынды таңдаңыз',
+      'Варианты маршрута': 'Маршрут нұсқалары',
+      'Пункт назначения не выбран': 'Межелі орын таңдалмаған',
+      'Текущее местоположение': 'Ағымдағы орналасқан жер',
+      'Текущая геопозиция': 'Ағымдағы геопозиция',
+      'Можно добавить не более пяти промежуточных остановок.': 'Бес аралық аялдамадан артық қосуға болмайды.',
+      'Промежуточная остановка добавлена. Перестройте маршрут.': 'Аралық аялдама қосылды. Маршрутты қайта құрыңыз.',
+      'АЗС': 'ЖҚС',
+      'Рестораны': 'Мейрамханалар',
+      'Магазины': 'Дүкендер',
+      'Гостиницы': 'Қонақүйлер',
+      'Аптеки': 'Дәріханалар',
+      'Ещё': 'Тағы',
+      'Кафе': 'Кафелер',
+      'Банкоматы': 'Банкоматтар',
+      'Автомойки': 'Автожуу орындары',
+      'Автосервисы': 'Автосервистер',
+      'Больницы': 'Ауруханалар',
+      'Кинотеатры': 'Кинотеатрлар',
+      'Недавние запросы': 'Соңғы іздеулер',
+      'Здесь появятся адреса и места, которые вы искали.': 'Мұнда іздеген мекенжайлар мен орындар көрсетіледі.',
+      'Категории': 'Санаттар',
+      'Пока нет сохранённых сообщений о дорожных событиях.': 'Әзірге жол оқиғалары туралы сақталған хабарламалар жоқ.',
+      'Дорожное событие': 'Жол оқиғасы',
+      'Геопозиция': 'Геолокация',
+      'Планирование маршрута': 'Маршрутты жоспарлау',
+      'Изменить маршрут': 'Маршрутты өзгерту',
+      'Добавить точку': 'Нүкте қосу',
+      'Параметры маршрута': 'Маршрут параметрлері',
+      'Поделиться маршрутом': 'Маршрутпен бөлісу',
+      'Сообщить об ошибке': 'Қате туралы хабарлау',
+      'Слои и офлайн-карты': 'Қабаттар және офлайн карталар',
+      'Заправки': 'Жанармай құю станциялары',
+      'Поддержка': 'Қолдау',
+      'Загрузка карт': 'Карталарды жүктеу',
+      'Изменить карту и слои': 'Карта мен қабаттарды өзгерту',
+      'Поделиться геопозицией': 'Геолокациямен бөлісу',
+      'Парковки': 'Тұрақ орындары',
+      'Бронирования и история заказов': 'Брондаулар және тапсырыстар тарихы',
+      'Лента отзывов и исправлений': 'Пікірлер мен түзетулер таспасы',
+      'Музыка': 'Музыка',
+      'Маршрут ещё не построен': 'Маршрут әлі құрылмаған',
+      'Следующий манёвр': 'Келесі маневр',
+      'Навигация завершена.': 'Навигация аяқталды.',
+      'Расстояние неизвестно': 'Қашықтық белгісіз',
+      'Выбери сети, которые нужно учитывать при поиске заправок.': 'Жанармай іздеу кезінде ескерілетін желілерді таңдаңыз.',
+      'Снять все отметки': 'Барлық белгіні алып тастау',
+      'Выбрать все сети': 'Барлық желіні таңдау',
       'Для выбранного языка голоса не найдены. Установите голосовые данные в настройках преобразования текста в речь Android.': 'Таңдалған тілге арналған дауыс табылмады. Android мәтінді сөйлеуге түрлендіру баптауларынан дауыс деректерін орнатыңыз.',
       'Изменить точки': 'Нүктелерді өзгерту',
       'Промежуточные остановки: ': 'Аралық аялдамалар: ',
@@ -254,6 +303,55 @@ class AppLocale {
       'Системный голос по умолчанию': 'System default voice',
       'Громкость': 'Volume',
       'Скорость речи': 'Speech rate',
+      'Выберите начальную точку': 'Select starting point',
+      'Выберите пункт назначения': 'Select destination',
+      'Варианты маршрута': 'Route options',
+      'Пункт назначения не выбран': 'No destination selected',
+      'Текущее местоположение': 'Current location',
+      'Текущая геопозиция': 'Current location',
+      'Можно добавить не более пяти промежуточных остановок.': 'You can add up to five intermediate stops.',
+      'Промежуточная остановка добавлена. Перестройте маршрут.': 'Intermediate stop added. Recalculate the route.',
+      'АЗС': 'Gas stations',
+      'Рестораны': 'Restaurants',
+      'Магазины': 'Shops',
+      'Гостиницы': 'Hotels',
+      'Аптеки': 'Pharmacies',
+      'Ещё': 'More',
+      'Кафе': 'Cafes',
+      'Банкоматы': 'ATMs',
+      'Автомойки': 'Car washes',
+      'Автосервисы': 'Auto services',
+      'Больницы': 'Hospitals',
+      'Кинотеатры': 'Cinemas',
+      'Недавние запросы': 'Recent searches',
+      'Здесь появятся адреса и места, которые вы искали.': 'Addresses and places you search for will appear here.',
+      'Категории': 'Categories',
+      'Пока нет сохранённых сообщений о дорожных событиях.': 'No saved road event reports yet.',
+      'Дорожное событие': 'Road event',
+      'Геопозиция': 'Location',
+      'Планирование маршрута': 'Route planning',
+      'Изменить маршрут': 'Edit route',
+      'Добавить точку': 'Add point',
+      'Параметры маршрута': 'Route settings',
+      'Поделиться маршрутом': 'Share route',
+      'Сообщить об ошибке': 'Report an issue',
+      'Слои и офлайн-карты': 'Layers and offline maps',
+      'Заправки': 'Gas stations',
+      'Поддержка': 'Support',
+      'Загрузка карт': 'Download maps',
+      'Изменить карту и слои': 'Change map and layers',
+      'Поделиться геопозицией': 'Share location',
+      'Парковки': 'Parking',
+      'Бронирования и история заказов': 'Bookings and order history',
+      'Лента отзывов и исправлений': 'Feedback and corrections feed',
+      'Музыка': 'Music',
+      'Маршрут ещё не построен': 'Route has not been built yet',
+      'Следующий манёвр': 'Next maneuver',
+      'Навигация завершена.': 'Navigation ended.',
+      'Расстояние неизвестно': 'Distance unknown',
+      'Выбери сети, которые нужно учитывать при поиске заправок.': 'Choose which fuel station networks to include in search.',
+      'Снять все отметки': 'Clear all selections',
+      'Выбрать все сети': 'Select all networks',
       'Для выбранного языка голоса не найдены. Установите голосовые данные в настройках преобразования текста в речь Android.': 'No voices found for the selected language. Install voice data in Android text-to-speech settings.',
       'Изменить точки': 'Edit stops',
       'Промежуточные остановки: ': 'Intermediate stops: ',
@@ -911,7 +1009,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final selected = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: Text(selectAsOrigin ? 'Выберите начальную точку' : 'Выберите пункт назначения'),
+          title: Text(selectAsOrigin ? AppLocale.tr('Выберите начальную точку') : AppLocale.tr('Выберите пункт назначения')),
           content: SizedBox(
             width: double.maxFinite,
             child: ListView.separated(
@@ -1485,12 +1583,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _addRouteStop(LatLng point) async {
     if (_routeStops.length >= 5) {
-      setState(() => _message = 'Можно добавить не более пяти промежуточных остановок.');
+      setState(() => _message = AppLocale.tr('Можно добавить не более пяти промежуточных остановок.'));
       return;
     }
     setState(() {
       _routeStops.add(point);
-      _message = 'Промежуточная остановка добавлена. Перестройте маршрут.';
+      _message = AppLocale.tr('Промежуточная остановка добавлена. Перестройте маршрут.');
     });
   }
 
@@ -1679,7 +1777,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         child: Icon(icon, color: const Color(0xFF343434)),
                       ),
                       const SizedBox(height: 8),
-                      Text(name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      Text(AppLocale.tr(name), textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),
@@ -1944,21 +2042,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
             ]),
             const SizedBox(height: 10),
-            _menuTile(sheetContext, Icons.download_for_offline_outlined, 'Загрузка карт', () { Navigator.pop(sheetContext); _openOfflineAndVehicleSettings(); }),
-            _menuTile(sheetContext, Icons.support_agent_outlined, 'Поддержка', () { Navigator.pop(sheetContext); _openSupportPage(); }),
-            _menuTile(sheetContext, Icons.map_outlined, 'Изменить карту и слои', () { Navigator.pop(sheetContext); _openMapLayers(); }),
+            _menuTile(sheetContext, Icons.download_for_offline_outlined, AppLocale.tr('Загрузка карт'), () { Navigator.pop(sheetContext); _openOfflineAndVehicleSettings(); }),
+            _menuTile(sheetContext, Icons.support_agent_outlined, AppLocale.tr('Поддержка'), () { Navigator.pop(sheetContext); _openSupportPage(); }),
+            _menuTile(sheetContext, Icons.map_outlined, AppLocale.tr('Изменить карту и слои'), () { Navigator.pop(sheetContext); _openMapLayers(); }),
             _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Разместить объект', () { Navigator.pop(sheetContext); _openPlaceSubmissionPage(); }),
-            _menuTile(sheetContext, Icons.share_location_outlined, 'Поделиться геопозицией', () { Navigator.pop(sheetContext); _shareCurrentLocation(); }),
+            _menuTile(sheetContext, Icons.share_location_outlined, AppLocale.tr('Поделиться геопозицией'), () { Navigator.pop(sheetContext); _shareCurrentLocation(); }),
             _menuTile(sheetContext, Icons.bookmark_border, 'Закладки', () { Navigator.pop(sheetContext); _openBookmarks(); }),
             _menuTile(sheetContext, Icons.place_outlined, 'Мои места', () { Navigator.pop(sheetContext); _openMyPlaces(); }),
             _menuTile(sheetContext, Icons.warning_amber_outlined, 'События на дороге', () { Navigator.pop(sheetContext); _openRoadEvents(); }),
-            _menuTile(sheetContext, Icons.local_gas_station_outlined, 'Заправки', () { Navigator.pop(sheetContext); _openStationNetworks(); }),
-            _menuTile(sheetContext, Icons.local_parking_outlined, 'Парковки', () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
+            _menuTile(sheetContext, Icons.local_gas_station_outlined, AppLocale.tr('Заправки'), () { Navigator.pop(sheetContext); _openStationNetworks(); }),
+            _menuTile(sheetContext, Icons.local_parking_outlined, AppLocale.tr('Парковки'), () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
             _menuTile(sheetContext, Icons.settings_outlined, 'Настройки', () { Navigator.pop(sheetContext); _openSettings(); }),
-            _menuTile(sheetContext, Icons.history, 'Бронирования и история заказов', () { Navigator.pop(sheetContext); _openBookingsPage(); }),
-            _menuTile(sheetContext, Icons.rate_review_outlined, 'Лента отзывов и исправлений', () { Navigator.pop(sheetContext); _openFeedbackPage(); }),
+            _menuTile(sheetContext, Icons.history, AppLocale.tr('Бронирования и история заказов'), () { Navigator.pop(sheetContext); _openBookingsPage(); }),
+            _menuTile(sheetContext, Icons.rate_review_outlined, AppLocale.tr('Лента отзывов и исправлений'), () { Navigator.pop(sheetContext); _openFeedbackPage(); }),
             _menuTile(sheetContext, Icons.workspace_premium_outlined, 'BAKE Plus', () { Navigator.pop(sheetContext); _openBakePlusPage(); }),
-            _menuTile(sheetContext, Icons.music_note_outlined, 'Музыка', () { Navigator.pop(sheetContext); _openMusicPage(); }),
+            _menuTile(sheetContext, Icons.music_note_outlined, AppLocale.tr('Музыка'), () { Navigator.pop(sheetContext); _openMusicPage(); }),
           ]),
         ),
       ),
@@ -2475,7 +2573,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   child: Padding(
                     padding: EdgeInsets.all(24),
                     child: Text(
-                      'Пока нет сохранённых сообщений о дорожных событиях.',
+                      AppLocale.tr('Пока нет сохранённых сообщений о дорожных событиях.'),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -2808,16 +2906,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8))),
             const SizedBox(height: 12),
             Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Маршрут'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
-            _menuTile(sheetContext, Icons.edit_road_outlined, 'Планирование маршрута', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
-            _menuTile(sheetContext, Icons.edit_location_alt_outlined, 'Изменить маршрут', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
-            _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Добавить точку', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
-            _menuTile(sheetContext, Icons.alt_route, 'Варианты маршрута', () { Navigator.pop(sheetContext); _openRouteAlternatives(); }),
-            _menuTile(sheetContext, Icons.tune, 'Параметры маршрута', () { Navigator.pop(sheetContext); _openRoutePreferences(); }),
-            _menuTile(sheetContext, Icons.share_outlined, 'Поделиться маршрутом', () { Navigator.pop(sheetContext); _shareRoute(); }),
-            _menuTile(sheetContext, Icons.flag_outlined, 'Сообщить об ошибке', () { Navigator.pop(sheetContext); _reportRouteIssue(); }),
+            _menuTile(sheetContext, Icons.edit_road_outlined, AppLocale.tr('Планирование маршрута'), () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
+            _menuTile(sheetContext, Icons.edit_location_alt_outlined, AppLocale.tr('Изменить маршрут'), () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
+            _menuTile(sheetContext, Icons.add_location_alt_outlined, AppLocale.tr('Добавить точку'), () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
+            _menuTile(sheetContext, Icons.alt_route, AppLocale.tr('Варианты маршрута'), () { Navigator.pop(sheetContext); _openRouteAlternatives(); }),
+            _menuTile(sheetContext, Icons.tune, AppLocale.tr('Параметры маршрута'), () { Navigator.pop(sheetContext); _openRoutePreferences(); }),
+            _menuTile(sheetContext, Icons.share_outlined, AppLocale.tr('Поделиться маршрутом'), () { Navigator.pop(sheetContext); _shareRoute(); }),
+            _menuTile(sheetContext, Icons.flag_outlined, AppLocale.tr('Сообщить об ошибке'), () { Navigator.pop(sheetContext); _reportRouteIssue(); }),
             const Divider(height: 18),
             _menuTile(sheetContext, Icons.place_outlined, 'Мои места', () { Navigator.pop(sheetContext); _openMyPlaces(); }),
-            _menuTile(sheetContext, Icons.layers_outlined, 'Слои и офлайн-карты', () { Navigator.pop(sheetContext); _openMapLayers(); }),
+            _menuTile(sheetContext, Icons.layers_outlined, AppLocale.tr('Слои и офлайн-карты'), () { Navigator.pop(sheetContext); _openMapLayers(); }),
             _menuTile(sheetContext, Icons.warning_amber_outlined, 'События на дороге', () { Navigator.pop(sheetContext); _openRoadEvents(); }),
             _menuTile(sheetContext, Icons.settings_outlined, 'Настройки', () { Navigator.pop(sheetContext); _openSettings(); }),
           ]),
@@ -2837,7 +2935,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   String _routeSummary() {
     if (_routeDistanceMeters == null || _routeDurationSeconds == null) {
-      return 'Маршрут ещё не построен';
+      return AppLocale.tr('Маршрут ещё не построен');
     }
     final km = (_routeDistanceMeters! / 1000).toStringAsFixed(1);
     final minutes = (_routeDurationSeconds! / 60).round();
@@ -3138,7 +3236,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             onPressed: () async {
                               setState(() {
                                 _navigationActive = false;
-                                _message = 'Навигация завершена.';
+                                _message = AppLocale.tr('Навигация завершена.');
                               });
                               await _tts.stop();
                               await _startLiveLocationUpdates();
@@ -3206,7 +3304,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               ),
                               Text(
                                 _routeDistanceMeters == null
-                                    ? 'Расстояние неизвестно'
+                                    ? AppLocale.tr('Расстояние неизвестно')
                                     : '${(_routeDistanceMeters! / 1000).toStringAsFixed(1)} км · осталось по расчёту',
                                 style: const TextStyle(fontSize: 12, color: Color(0xFF626A73)),
                               ),
