@@ -1687,82 +1687,212 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final prefs = await SharedPreferences.getInstance();
     var home = prefs.getString('my_place_home') ?? '';
     var work = prefs.getString('my_place_work') ?? '';
+    var customPlaces = prefs.getStringList('my_custom_places') ?? <String>[];
     if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (sheetContext, refresh) => SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(18, 16, 18, 18 + MediaQuery.of(sheetContext).viewInsets.bottom),
-            child: SingleChildScrollView(
-              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Text('Мои места', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 12),
+
+    Future<void> editAddress({
+      required String title,
+      required String currentValue,
+      required Future<void> Function(String) onSave,
+    }) async {
+      final controller = TextEditingController(text: currentValue);
+      final value = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              hintText: 'Введите адрес',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('Сохранить'),
+            ),
+          ],
+        ),
+      );
+      controller.dispose();
+      if (value == null) return;
+      await onSave(value);
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => StatefulBuilder(
+          builder: (pageContext, refresh) => Scaffold(
+            backgroundColor: Colors.white,
+            appBar: AppBar(
+              title: const Text('Мои места'),
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
+            ),
+            body: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+              children: [
                 ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(backgroundColor: Color(0xFFFFF3C4), child: Icon(Icons.home_outlined, color: Color(0xFF343434))),
-                  title: const Text('Дом'),
-                  subtitle: Text(home.isEmpty ? 'Адрес не задан' : home, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFFFF3C4),
+                    child: Icon(Icons.home_outlined, color: Color(0xFF343434)),
+                  ),
+                  title: const Text('Дом', style: TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(home.isEmpty ? 'Добавьте домашний адрес' : home),
                   trailing: const Icon(Icons.edit_outlined),
                   onTap: () async {
-                    final controller = TextEditingController(text: home);
-                    final value = await showDialog<String>(
-                      context: sheetContext,
+                    await editAddress(
+                      title: 'Адрес дома',
+                      currentValue: home,
+                      onSave: (value) async {
+                        home = value;
+                        await prefs.setString('my_place_home', value);
+                        refresh(() {});
+                      },
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFEAF4FF),
+                    child: Icon(Icons.work_outline, color: Color(0xFF343434)),
+                  ),
+                  title: const Text('Работа', style: TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(work.isEmpty ? 'Добавьте адрес работы' : work),
+                  trailing: const Icon(Icons.edit_outlined),
+                  onTap: () async {
+                    await editAddress(
+                      title: 'Адрес работы',
+                      currentValue: work,
+                      onSave: (value) async {
+                        work = value;
+                        await prefs.setString('my_place_work', value);
+                        refresh(() {});
+                      },
+                    );
+                  },
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Избранное',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                if (customPlaces.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 14),
+                    child: Text('Сохранённых пользовательских мест пока нет.'),
+                  )
+                else
+                  ...customPlaces.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final parts = entry.value.split('|');
+                    final name = parts.isNotEmpty ? parts.first : 'Место';
+                    final address = parts.length > 1 ? parts.sublist(1).join('|') : '';
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.favorite_outline, color: Color(0xFFE45D52)),
+                      title: Text(name),
+                      subtitle: Text(address),
+                      onTap: address.isEmpty
+                          ? null
+                          : () {
+                              Navigator.pop(pageContext);
+                              _searchController.text = address;
+                              _searchAddress();
+                            },
+                      trailing: IconButton(
+                        tooltip: 'Удалить место',
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () async {
+                          customPlaces.removeAt(index);
+                          await prefs.setStringList('my_custom_places', customPlaces);
+                          refresh(() {});
+                        },
+                      ),
+                    );
+                  }),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final nameController = TextEditingController();
+                    final addressController = TextEditingController();
+                    final accepted = await showDialog<bool>(
+                      context: pageContext,
                       builder: (dialogContext) => AlertDialog(
-                        title: const Text('Адрес дома'),
-                        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(hintText: 'Введите адрес')),
+                        title: const Text('Добавить место'),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextField(
+                              controller: nameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Название',
+                                hintText: 'Например, спортзал',
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: addressController,
+                              decoration: const InputDecoration(
+                                labelText: 'Адрес',
+                                hintText: 'Улица, дом или место',
+                              ),
+                            ),
+                          ],
+                        ),
                         actions: [
-                          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
-                          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Сохранить')),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, false),
+                            child: const Text('Отмена'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(
+                              dialogContext,
+                              nameController.text.trim().isNotEmpty &&
+                                  addressController.text.trim().isNotEmpty,
+                            ),
+                            child: const Text('Сохранить'),
+                          ),
                         ],
                       ),
                     );
-                    controller.dispose();
-                    if (value == null) return;
-                    home = value;
-                    await prefs.setString('my_place_home', home);
+                    final name = nameController.text.trim();
+                    final address = addressController.text.trim();
+                    nameController.dispose();
+                    addressController.dispose();
+                    if (accepted != true || name.isEmpty || address.isEmpty) return;
+                    customPlaces = [...customPlaces, '$name|$address'];
+                    await prefs.setStringList('my_custom_places', customPlaces);
                     refresh(() {});
                   },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Добавить место'),
                 ),
+                const SizedBox(height: 16),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(backgroundColor: Color(0xFFEAF4FF), child: Icon(Icons.work_outline, color: Color(0xFF343434))),
-                  title: const Text('Работа'),
-                  subtitle: Text(work.isEmpty ? 'Адрес не задан' : work, maxLines: 2, overflow: TextOverflow.ellipsis),
-                  trailing: const Icon(Icons.edit_outlined),
-                  onTap: () async {
-                    final controller = TextEditingController(text: work);
-                    final value = await showDialog<String>(
-                      context: sheetContext,
-                      builder: (dialogContext) => AlertDialog(
-                        title: const Text('Адрес работы'),
-                        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(hintText: 'Введите адрес')),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
-                          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Сохранить')),
-                        ],
-                      ),
-                    );
-                    controller.dispose();
-                    if (value == null) return;
-                    work = value;
-                    await prefs.setString('my_place_work', work);
-                    refresh(() {});
-                  },
-                ),
-                const Divider(),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.favorite_outline, color: Color(0xFFE45D52)),
-                  title: const Text('Избранное'),
-                  subtitle: const Text('Сохранённые точки на карте'),
+                  leading: const Icon(Icons.bookmark_border),
+                  title: const Text('Точки, сохранённые на карте'),
+                  subtitle: const Text('Открыть закладки с координатами'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () { Navigator.pop(sheetContext); _openBookmarks(); },
+                  onTap: () {
+                    Navigator.pop(pageContext);
+                    _openBookmarks();
+                  },
                 ),
-              ]),
+              ],
             ),
           ),
         ),
