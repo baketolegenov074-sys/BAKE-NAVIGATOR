@@ -1533,6 +1533,43 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     status: 'Подписка BAKE Plus пока не создана. Оплата и платные функции не включены.',
   );
 
+  Future<void> _openPointMenu(LatLng point) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('Что здесь'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                unawaited(_showPointDetails(point));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.add_location_alt_outlined),
+              title: const Text('Добавить точку маршрута'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                unawaited(_addRouteStop(point));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share_outlined),
+              title: const Text('Скопировать ссылку на точку'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                unawaited(_sharePoint(point));
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _showPointDetails(LatLng point) async {
     try {
       final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
@@ -2354,7 +2391,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               icon: Icons.my_location,
               tooltip: 'Моё местоположение',
               iconColor: const Color(0xFF343434),
-              onPressed: _isLocating ? null : _locateMe,
+              onPressed: _isLocating ? null : () => unawaited(_locateMe()),
             ),
           ),
           Positioned(
