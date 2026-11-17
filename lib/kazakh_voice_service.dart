@@ -160,8 +160,9 @@ class KazakhVoiceService {
 
   Future<String?> importModelArchive() async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['bz2'],
+      // Android's native picker may reject the custom .bz2 filter.
+      // Let the user browse files; validate the complete .tar.bz2 name below.
+      type: FileType.any,
       allowMultiple: false,
       withData: false,
     );
