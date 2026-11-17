@@ -235,7 +235,314 @@ class KazakhVoiceService {
           final contentRange = response.headers.value(Headers.contentRangeHeader);
           final match = contentRange == null
               ? null
-              : RegExp(r'^bytes (\\d+)-(\\d+)/(\\d+)$').firstMatch(contentRange);
+              : RegExp(r'^bytes (\d+)-(\d+)/(\d+).firstMatch(contentRange);
+          final rangeStart = int.tryParse(match?.group(1) ?? '');
+          if (offset == 0 || rangeStart != offset) {
+            // A partial response that does not begin exactly where our local
+            // file ends would corrupt the archive if appended.
+            if (await partial.exists()) await partial.delete();
+            throw Exception('Сервер вернул неверный диапазон докачки.');
+          }
+          final expectedTotal = int.tryParse(match?.group(3) ?? '');
+          final actualLength = await partial.length();
+          if (expectedTotal != null && actualLength < expectedTotal) {
+            throw Exception('Загрузка ещё не завершена: получено $actualLength из $expectedTotal байт.');
+          }
+          if (expectedTotal != null && actualLength > expectedTotal) {
+            await partial.delete();
+            throw Exception('Размер загруженного архива превышает ожидаемый.');
+          }
+          if (expectedTotal == null) {
+            throw Exception('Сервер не сообщил полный размер архива; файл не будет принят.');
+          }
+        } else if (response.statusCode == 200) {
+          final expectedLength = int.tryParse(
+            response.headers.value(Headers.contentLengthHeader) ?? '',
+          );
+          final actualLength = await partial.length();
+          if (expectedLength == null || actualLength != expectedLength) {
+            throw Exception(
+              'Размер архива не подтверждён: получено $actualLength байт, '
+              'ожидалось ${expectedLength ?? 'неизвестно'}.',
+            );
+          }
+        } else {
+          throw Exception('Жүктеу серверінен қате жауап алынды.');
+        }
+
+        final finalLength = await partial.length();
+        if (finalLength < 1024) {
+          throw Exception('Сервер вернул пустой или слишком маленький архив ($finalLength байт).');
+        }
+
+        if (await archiveFile.exists()) await archiveFile.delete();
+        await partial.rename(archiveFile.path);
+        onStage?.call('extracting');
+        return await _extractArchive(archiveFile);
+      } catch (error) {
+        if (attempt == 4) {
+          if (error is DioException) {
+            final status = error.response?.statusCode;
+            throw Exception(
+              status == null
+                  ? 'Загрузка прервалась из-за сети. Частичный файл сохранён для продолжения.'
+                  : 'Сервер загрузки вернул HTTP $status. Частичный файл сохранён.',
+            );
+          }
+          rethrow;
+        }
+        await Future<void>.delayed(Duration(seconds: 2 << attempt));
+      }
+    }
+    throw Exception('Загрузка не завершена. Частичный файл сохранён для повторной попытки.');
+  }
+
+  Future<void> ensureReady({
+    void Function(int received, int total)? onProgress,
+    void Function(String stage)? onStage,
+  }) async {
+    if (_starting != null) return _starting!;
+    _starting = _start(onProgress: onProgress, onStage: onStage);
+    try {
+      await _starting;
+    } catch (_) {
+      _starting = null;
+      rethrow;
+    }
+  }
+
+  Future<void> _start({
+    void Function(int received, int total)? onProgress,
+    void Function(String stage)? onStage,
+  }) async {
+    final modelDir = await _downloadAndExtractModel(onProgress: onProgress, onStage: onStage);
+    onStage?.call('initializing');
+    final receivePort = ReceivePort();
+    _receivePort = receivePort;
+    _ready = Completer<void>();
+
+    receivePort.listen((message) {
+      if (message is SendPort) {
+        _workerPort = message;
+        message.send({'command': 'init', 'modelDir': modelDir});
+        return;
+      }
+      if (message is! Map) return;
+      final type = message['type'];
+      if (type == 'ready') {
+        if (!(_ready?.isCompleted ?? true)) _ready!.complete();
+      } else if (type == 'error') {
+        final error = Exception(message['message']?.toString() ?? 'Ошибка голосового движка.');
+        if (!(_ready?.isCompleted ?? true)) _ready!.completeError(error);
+        final id = message['id'];
+        if (id is int) {
+          final completer = _pending.remove(id);
+          if (completer != null && !completer.isCompleted) completer.completeError(error);
+        }
+      } else if (type == 'done') {
+        final id = message['id'];
+        if (id is int) {
+          final completer = _pending.remove(id);
+          if (completer != null && !completer.isCompleted) {
+            if (message['ok'] == true) {
+              completer.complete();
+            } else {
+              final details = message['message']?.toString();
+              completer.completeError(
+                Exception(details?.isNotEmpty == true
+                    ? details
+                    : 'Не удалось создать аудио казахского голоса.'),
+              );
+            }
+          }
+        }
+      }
+    });
+
+    try {
+      _isolate = await Isolate.spawn(_kazakhTtsWorker, receivePort.sendPort);
+      await _ready!.future.timeout(const Duration(minutes: 3));
+    } catch (error) {
+      // A failed native model initialization must not leave a dead worker
+      // and ReceivePort behind. Otherwise the next test can appear to do nothing.
+      _isolate?.kill(priority: Isolate.immediate);
+      _isolate = null;
+      _workerPort = null;
+      _receivePort?.close();
+      _receivePort = null;
+      _ready = null;
+      rethrow;
+    }
+  }
+
+  Future<void> speak({
+    required String text,
+    required int speakerId,
+    double speed = 1.0,
+    void Function(int received, int total)? onDownloadProgress,
+    void Function(String stage)? onStage,
+  }) async {
+    await ensureReady(onProgress: onDownloadProgress, onStage: onStage);
+    final worker = _workerPort;
+    if (worker == null) {
+      throw Exception('Казахский голосовой движок не запустился: нет связи с аудиомодулем.');
+    }
+
+    final id = _requestId++;
+    final temp = await getTemporaryDirectory();
+    final wavPath = '${temp.path}/bake_kazakh_voice_$id.wav';
+    final wavFile = File(wavPath);
+    final completer = Completer<void>();
+    _pending[id] = completer;
+    try {
+      worker.send({
+        'command': 'speak',
+        'id': id,
+        'text': text,
+        'speakerId': speakerId.clamp(0, 5).toInt(),
+        'speed': speed,
+        'wavPath': wavPath,
+      });
+
+      await completer.future.timeout(
+        const Duration(seconds: 45),
+        onTimeout: () => throw TimeoutException('Казахский голос не успел создать аудио за 45 секунд.'),
+      );
+
+      if (!await wavFile.exists()) {
+        throw Exception('Голосовой движок сообщил об успехе, но аудиофайл не создан.');
+      }
+      final audioBytes = await wavFile.length();
+      if (audioBytes <= 44) {
+        throw Exception('Создан пустой или повреждённый аудиофайл ($audioBytes байт).');
+      }
+
+      await _player.stop();
+      final completed = _player.onPlayerComplete.first;
+      try {
+        await _player.play(DeviceFileSource(wavPath));
+      } catch (error) {
+        throw Exception('Аудио создано ($audioBytes байт), но Android не смог его воспроизвести: $error');
+      }
+      try {
+        await completed.timeout(const Duration(seconds: 30));
+      } on TimeoutException {
+        // Android may not report completion reliably; stop playback before cleanup.
+        await _player.stop();
+        throw TimeoutException('Аудиофайл создан, но воспроизведение не подтвердилось за 30 секунд.');
+      }
+    } finally {
+      _pending.remove(id);
+      if (await wavFile.exists()) {
+        await wavFile.delete();
+      }
+    }
+  }
+
+  Future<void> stop() => _player.stop();
+
+  Future<void> dispose() async {
+    _workerPort?.send({'command': 'dispose'});
+    _isolate?.kill(priority: Isolate.immediate);
+    _receivePort?.close();
+    for (final completer in _pending.values) {
+      if (!completer.isCompleted) completer.completeError(StateError('Voice service disposed'));
+    }
+    _pending.clear();
+    await _player.dispose();
+  }
+}
+
+void _kazakhTtsWorker(SendPort mainPort) {
+  final receivePort = ReceivePort();
+  mainPort.send(receivePort.sendPort);
+  sherpa.OfflineTts? engine;
+
+  receivePort.listen((message) async {
+    if (message is! Map) return;
+    final command = message['command'];
+    if (command == 'init') {
+      try {
+        // Initialize FFI asynchronously inside the worker isolate before creating native objects.
+        await sherpa.initBindingsAsync();
+        final dir = message['modelDir'] as String;
+        final config = sherpa.OfflineTtsConfig(
+          model: sherpa.OfflineTtsModelConfig(
+            vits: sherpa.OfflineTtsVitsModelConfig(
+              model: '$dir/kk_KZ-issai-high.onnx',
+              tokens: '$dir/tokens.txt',
+              dataDir: '$dir/espeak-ng-data',
+            ),
+            numThreads: 2,
+            debug: false,
+          ),
+          maxNumSentences: 2,
+        );
+        engine = sherpa.OfflineTts(config);
+        mainPort.send({'type': 'ready', 'speakers': engine!.numSpeakers});
+      } catch (error) {
+        mainPort.send({'type': 'error', 'message': error.toString()});
+      }
+    } else if (command == 'speak' && engine != null) {
+      final id = message['id'] as int;
+      try {
+        // Use the simple, documented VITS generation API. It passes speaker ID
+        // and speed directly and avoids the advanced config FFI path.
+        final audio = engine!.generate(
+          text: message['text'] as String,
+          sid: message['speakerId'] as int,
+          speed: (message['speed'] as num).toDouble(),
+        );
+        final samples = audio.samples;
+        final sampleRate = audio.sampleRate;
+        final speakerCount = engine!.numSpeakers;
+        var peakAmplitude = 0.0;
+        for (final sample in samples) {
+          final amplitude = sample.abs();
+          if (amplitude > peakAmplitude) peakAmplitude = amplitude;
+        }
+
+        // Check generated samples, not only whether a WAV header was written.
+        if (samples.isEmpty || sampleRate <= 0 || peakAmplitude == 0.0) {
+          mainPort.send({
+            'type': 'done',
+            'id': id,
+            'ok': false,
+            'message':
+                'Диагностика TTS: пустой или нулевой звук. '
+                'Отсчётов: ${samples.length}; частота: $sampleRate Гц; '
+                'пиковый уровень: $peakAmplitude; голосов модели: $speakerCount.',
+          });
+          return;
+        }
+
+        final ok = sherpa.writeWave(
+          filename: message['wavPath'] as String,
+          samples: samples,
+          sampleRate: sampleRate,
+        );
+        mainPort.send({
+          'type': 'done',
+          'id': id,
+          'ok': ok,
+          'message': ok
+              ? 'Создано отсчётов: ${samples.length}; частота: $sampleRate Гц; '
+                  'пиковый уровень: $peakAmplitude; голосов модели: $speakerCount.'
+              : 'Sherpa-ONNX не смог записать WAV. Отсчётов: ${samples.length}; '
+                  'частота: $sampleRate Гц; пиковый уровень: $peakAmplitude; '
+                  'голосов модели: $speakerCount.',
+        });
+      } catch (error) {
+        mainPort.send({'type': 'error', 'id': id, 'message': error.toString()});
+      }
+    } else if (command == 'dispose') {
+      engine?.free();
+      engine = null;
+      receivePort.close();
+    }
+  });
+}
+).firstMatch(contentRange);
           final rangeStart = int.tryParse(match?.group(1) ?? '');
           if (offset == 0 || rangeStart != offset) {
             // A partial response that does not begin exactly where our local
