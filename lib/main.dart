@@ -130,6 +130,36 @@ class AppLocale {
       'Системный голос по умолчанию': 'Әдепкі жүйелік дауыс',
       'Громкость': 'Дыбыс деңгейі',
       'Скорость речи': 'Сөйлеу жылдамдығы',
+      'Для выбранного языка голоса не найдены. Установите голосовые данные в настройках преобразования текста в речь Android.': 'Таңдалған тілге арналған дауыс табылмады. Android мәтінді сөйлеуге түрлендіру баптауларынан дауыс деректерін орнатыңыз.',
+      'Изменить точки': 'Нүктелерді өзгерту',
+      'Промежуточные остановки: ': 'Аралық аялдамалар: ',
+      'Вариант ': 'Нұсқа ',
+      'Куда едем?': 'Қайда барамыз?',
+      'Найти': 'Іздеу',
+      'Опишите, что не так': 'Мәселені сипаттаңыз',
+      'Поддержка BAKE': 'BAKE қолдауы',
+      'Разместить объект': 'Нысанды орналастыру',
+      'Бронирования и история': 'Брондаулар және тарих',
+      'Отзывы и исправления': 'Пікірлер және түзетулер',
+      'Музыка BAKE': 'BAKE музыкасы',
+      'Добавьте описание (необязательно)': 'Сипаттама қосыңыз (міндетті емес)',
+      'Введите адрес': 'Мекенжайды енгізіңіз',
+      'Адрес дома': 'Үй мекенжайы',
+      'Адрес работы': 'Жұмыс мекенжайы',
+      'Удалить место': 'Орынды жою',
+      'Например, спортзал': 'Мысалы, спортзал',
+      'Улица, дом или место': 'Көше, үй немесе орын',
+      'Куда': 'Қайда',
+      'Введите адрес или место': 'Мекенжайды немесе орынды енгізіңіз',
+      'Найти место': 'Орынды табу',
+      'Точка на карте: ': 'Картадағы нүкте: ',
+      'Удалить остановку': 'Аялдаманы жою',
+      'Завершить навигацию': 'Навигацияны аяқтау',
+      'Слои карты': 'Карта қабаттары',
+      'На север': 'Солтүстікке',
+      'Моё местоположение': 'Менің орналасқан жерім',
+      'Координаты: ': 'Координаттар: ',
+      'Голос телефона': 'Телефон дауысы',
     },
     'en': {
       'Настройки': 'Settings',
@@ -206,6 +236,36 @@ class AppLocale {
       'Системный голос по умолчанию': 'System default voice',
       'Громкость': 'Volume',
       'Скорость речи': 'Speech rate',
+      'Для выбранного языка голоса не найдены. Установите голосовые данные в настройках преобразования текста в речь Android.': 'No voices found for the selected language. Install voice data in Android text-to-speech settings.',
+      'Изменить точки': 'Edit stops',
+      'Промежуточные остановки: ': 'Intermediate stops: ',
+      'Вариант ': 'Option ',
+      'Куда едем?': 'Where to?',
+      'Найти': 'Search',
+      'Опишите, что не так': 'Describe the issue',
+      'Поддержка BAKE': 'BAKE Support',
+      'Разместить объект': 'Add a place',
+      'Бронирования и история': 'Bookings and history',
+      'Отзывы и исправления': 'Reviews and corrections',
+      'Музыка BAKE': 'BAKE Music',
+      'Добавьте описание (необязательно)': 'Add a description (optional)',
+      'Введите адрес': 'Enter an address',
+      'Адрес дома': 'Home address',
+      'Адрес работы': 'Work address',
+      'Удалить место': 'Delete place',
+      'Например, спортзал': 'For example, gym',
+      'Улица, дом или место': 'Street, building or place',
+      'Куда': 'To',
+      'Введите адрес или место': 'Enter an address or place',
+      'Найти место': 'Find place',
+      'Точка на карте: ': 'Map point: ',
+      'Удалить остановку': 'Remove stop',
+      'Завершить навигацию': 'End navigation',
+      'Слои карты': 'Map layers',
+      'На север': 'North up',
+      'Моё местоположение': 'My location',
+      'Координаты: ': 'Coordinates: ',
+      'Голос телефона': 'Device voice',
     },
   };
 
@@ -515,7 +575,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   Text(AppLocale.tr('Голос телефона'), style: TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
                   if (voices.isEmpty)
-                    const Text('Для выбранного языка голоса не найдены. Установите голосовые данные в настройках преобразования текста в речь Android.', style: TextStyle(color: Color(0xFF9A5B00)))
+                    Text(AppLocale.tr('Для выбранного языка голоса не найдены. Установите голосовые данные в настройках преобразования текста в речь Android.', style: TextStyle(color: Color(0xFF9A5B00)))
                   else
                     DropdownButtonFormField<String>(
                       value: selectedExists ? selectedKey : '',
@@ -587,12 +647,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     style: const TextStyle(color: Color(0xFF555B63)),
                   ),
                   const Divider(height: 28),
-                  Text('Громкость · ${(volume * 100).round()}%', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text('${AppLocale.tr('Громкость')} · ${(volume * 100).round()}%', style: const TextStyle(fontWeight: FontWeight.w700)),
                   Slider(value: volume, min: 0, max: 1, divisions: 10, onChanged: (value) async {
                     volume = value; refresh(() {});
                     await prefs.setDouble('voice_volume', value); await _tts.setVolume(value);
                   }),
-                  Text('Скорость речи · ${rate.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text('${AppLocale.tr('Скорость речи')} · ${rate.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w700)),
                   Slider(value: rate, min: 0.25, max: 0.75, divisions: 10, onChanged: (value) async {
                     rate = value; refresh(() {});
                     await prefs.setDouble('voice_rate', value); await _tts.setSpeechRate(value);
@@ -1266,7 +1326,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             surfaceTintColor: Colors.white,
             actions: [
               IconButton(
-                tooltip: 'Изменить точки',
+                tooltip: AppLocale.tr('Изменить точки'),
                 onPressed: () {
                   Navigator.pop(pageContext);
                   _openRoutePlanner();
@@ -1327,7 +1387,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               ),
                               if (_routeStops.isNotEmpty) ...[
                                 const Divider(height: 22),
-                                Text('Промежуточные остановки: ${_routeStops.length}'),
+                                Text('${AppLocale.tr('Промежуточные остановки: ')}${_routeStops.length}'),
                               ],
                             ],
                           ),
@@ -1356,7 +1416,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               '$minutes мин · $km км',
                               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                             ),
-                            subtitle: Text('Вариант ${index + 1}'),
+                            subtitle: Text('${AppLocale.tr('Вариант ')}${index + 1}'),
                             trailing: selected ? const Icon(Icons.check_circle, color: Color(0xFF269B68)) : null,
                             onTap: () {
                               _selectRouteAlternative(index);
@@ -1447,10 +1507,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     _searchAddress();
                   },
                   decoration: InputDecoration(
-                    hintText: 'Куда едем?',
+                    hintText: AppLocale.tr('Куда едем?'),
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: IconButton(
-                      tooltip: 'Найти',
+                      tooltip: AppLocale.tr('Найти'),
                       onPressed: _isSearching
                           ? null
                           : () {
@@ -1654,7 +1714,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         content: TextField(
           controller: controller,
           maxLines: 4,
-          decoration: const InputDecoration(hintText: 'Опишите, что не так', border: OutlineInputBorder()),
+          decoration: const InputDecoration(hintText: AppLocale.tr('Опишите, что не так'), border: OutlineInputBorder()),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(AppLocale.tr('Отмена'))),
@@ -2054,7 +2114,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: Text(AppLocale.tr('Что здесь')),
-          content: Text('$address\\n\\nКоординаты: ${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
+          content: Text('$address\\n\\n${AppLocale.tr('Координаты: ')}${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
           actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(AppLocale.tr('Закрыть')))],
         ),
       );
@@ -2095,7 +2155,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               TextField(
                 controller: controller,
                 maxLines: 4,
-                decoration: const InputDecoration(hintText: 'Добавьте описание (необязательно)', border: OutlineInputBorder()),
+                decoration: const InputDecoration(hintText: AppLocale.tr('Добавьте описание (необязательно)'), border: OutlineInputBorder()),
               ),
             ],
           ),
@@ -2147,7 +2207,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             autofocus: true,
             textInputAction: TextInputAction.done,
             decoration: const InputDecoration(
-              hintText: 'Введите адрес',
+              hintText: AppLocale.tr('Введите адрес'),
               border: OutlineInputBorder(),
             ),
             onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
@@ -2255,7 +2315,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               _searchAddress();
                             },
                       trailing: IconButton(
-                        tooltip: 'Удалить место',
+                        tooltip: AppLocale.tr('Удалить место'),
                         icon: const Icon(Icons.delete_outline),
                         onPressed: () async {
                           customPlaces.removeAt(index);
@@ -2281,7 +2341,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               controller: nameController,
                               decoration: const InputDecoration(
                                 labelText: 'Название',
-                                hintText: 'Например, спортзал',
+                                hintText: AppLocale.tr('Например, спортзал'),
                               ),
                             ),
                             const SizedBox(height: 10),
@@ -2289,7 +2349,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               controller: addressController,
                               decoration: const InputDecoration(
                                 labelText: 'Адрес',
-                                hintText: 'Улица, дом или место',
+                                hintText: AppLocale.tr('Улица, дом или место'),
                               ),
                             ),
                           ],
@@ -2589,7 +2649,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         onSubmitted: (_) { searchOriginAfterClose = originController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
                         decoration: const InputDecoration(
                           labelText: 'Найти адрес отправления',
-                          hintText: 'Улица, дом или место',
+                          hintText: AppLocale.tr('Улица, дом или место'),
                           prefixIcon: Icon(Icons.search),
                           border: OutlineInputBorder(),
                           isDense: true,
@@ -2608,10 +2668,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       controller: destinationController,
                       textInputAction: TextInputAction.search,
                       onSubmitted: (_) { searchAfterClose = true; Navigator.pop(sheetContext); },
-                      decoration: const InputDecoration(labelText: 'Куда', hintText: 'Введите адрес или место', border: InputBorder.none),
+                      decoration: const InputDecoration(labelText: AppLocale.tr('Куда'), hintText: AppLocale.tr('Введите адрес или место'), border: InputBorder.none),
                     )),
                     IconButton(
-                      tooltip: 'Найти место',
+                      tooltip: AppLocale.tr('Найти место'),
                       onPressed: () { searchAfterClose = destinationController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
                       icon: const Icon(Icons.search, color: Color(0xFF343434)),
                     ),
@@ -2619,7 +2679,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   if (_destination != null)
                     Padding(
                       padding: const EdgeInsets.only(left: 36, bottom: 8),
-                      child: Text('Точка на карте: ${_destination!.latitude.toStringAsFixed(5)}, ${_destination!.longitude.toStringAsFixed(5)}', style: const TextStyle(fontSize: 11, color: Color(0xFF6D7882))),
+                      child: Text('${AppLocale.tr('Точка на карте: ')}${_destination!.latitude.toStringAsFixed(5)}, ${_destination!.longitude.toStringAsFixed(5)}', style: const TextStyle(fontSize: 11, color: Color(0xFF6D7882))),
                     ),
                   const Divider(height: 18),
                   Row(children: [
@@ -2637,7 +2697,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       leading: CircleAvatar(radius: 12, child: Text('${entry.key + 1}', style: const TextStyle(fontSize: 11))),
                       title: Text('${entry.value.latitude.toStringAsFixed(5)}, ${entry.value.longitude.toStringAsFixed(5)}', style: const TextStyle(fontSize: 13)),
                       trailing: IconButton(
-                        tooltip: 'Удалить остановку',
+                        tooltip: AppLocale.tr('Удалить остановку'),
                         icon: const Icon(Icons.close, size: 19),
                         onPressed: () { setState(() { _routeStops.removeAt(entry.key); _routePoints = []; _instructions = []; }); refreshSheet(() {}); },
                       ),
@@ -2992,10 +3052,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             controller: _searchController,
                             textInputAction: TextInputAction.search,
                             onSubmitted: (_) => _searchAddress(),
-                            decoration: const InputDecoration(hintText: 'Куда едем?', border: InputBorder.none, isDense: true),
+                            decoration: const InputDecoration(hintText: AppLocale.tr('Куда едем?'), border: InputBorder.none, isDense: true),
                           )),
                           IconButton(
-                            tooltip: 'Найти',
+                            tooltip: AppLocale.tr('Найти'),
                             onPressed: _isSearching ? null : _searchAddress,
                             icon: _isSearching
                                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
@@ -3050,7 +3110,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             ),
                           ),
                           IconButton(
-                            tooltip: 'Завершить навигацию',
+                            tooltip: AppLocale.tr('Завершить навигацию'),
                             onPressed: () async {
                               setState(() {
                                 _navigationActive = false;
@@ -3158,13 +3218,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               children: [
                 _roundMapButton(
                   icon: Icons.layers_outlined,
-                  tooltip: 'Слои карты',
+                  tooltip: AppLocale.tr('Слои карты'),
                   onPressed: _openMapLayers,
                 ),
                 const SizedBox(height: 10),
                 _roundMapButton(
                   icon: Icons.explore_outlined,
-                  tooltip: 'На север',
+                  tooltip: AppLocale.tr('На север'),
                   onPressed: () => _mapController.rotate(0),
                 ),
               ],
@@ -3175,7 +3235,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             bottom: 86,
             child: _roundMapButton(
               icon: Icons.my_location,
-              tooltip: 'Моё местоположение',
+              tooltip: AppLocale.tr('Моё местоположение'),
               iconColor: const Color(0xFF343434),
               onPressed: _isLocating ? null : () => unawaited(_locateMe()),
             ),
@@ -3533,7 +3593,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                   child: Padding(
                     padding: const EdgeInsets.all(14),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Громкость · ${(_voiceVolume * 100).round()}%'),
+                      Text('${AppLocale.tr('Громкость')} · ${(_voiceVolume * 100).round()}%'),
                       Slider(
                         value: _voiceVolume,
                         min: 0,
@@ -3545,7 +3605,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                           unawaited(_saveNavigationPreferences());
                         },
                       ),
-                      Text('Скорость речи · ${_voiceRate.toStringAsFixed(2)}'),
+                      Text('${AppLocale.tr('Скорость речи')} · ${_voiceRate.toStringAsFixed(2)}'),
                       Slider(
                         value: _voiceRate,
                         min: 0.25,
