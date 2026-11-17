@@ -2996,7 +2996,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
-      builder: (sheetContext) => StatefulBuilder(
+      builder: (sheetContext) => FractionallySizedBox(
+        heightFactor: 0.44,
+        alignment: Alignment.bottomCenter,
+        child: StatefulBuilder(
         builder: (sheetContext, refreshSheet) => SafeArea(
           child: Padding(
             padding: EdgeInsets.fromLTRB(18, 12, 18, 18 + MediaQuery.of(sheetContext).viewInsets.bottom),
@@ -3128,7 +3131,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           ),
         ),
-      ),
+      )),
     );
     final destinationQuery = destinationController.text.trim();
     final originQuery = originController.text.trim();
@@ -3407,7 +3410,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               ),
             ],
           ),
-          Positioned(
+          if (!_navigationActive)
+            Positioned(
             top: 0,
             left: 0,
             right: 0,
@@ -3545,31 +3549,56 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           if (_navigationActive)
             Positioned(
-              left: 0,
-              right: 0,
-              bottom: 86,
+              left: 12,
+              right: 12,
+              bottom: 8,
               child: SafeArea(
                 top: false,
-                child: Center(
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFFFCC00),
-                      foregroundColor: const Color(0xFF171717),
-                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-                      elevation: 6,
-                    ),
-                    onPressed: () async {
-                      setState(() {
-                        _navigationActive = false;
-                        _message = 'Навигация завершена.';
-                      });
-                      await _tts.stop();
-                      await _startLiveLocationUpdates();
-                    },
-                    child: Text(
-                      AppLocale.tr('Завершить маршрут'),
-                      style: const TextStyle(fontWeight: FontWeight.w800),
+                child: Material(
+                  color: Colors.white,
+                  elevation: 7,
+                  borderRadius: BorderRadius.circular(18),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _routeDistanceMeters == null ? '— км' : '${(_routeDistanceMeters! / 1000).toStringAsFixed(1)} км',
+                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                              ),
+                              Text(
+                                _routeDurationSeconds == null ? 'Время прибытия —' : 'Прибытие · ${TimeOfDay.fromDateTime(DateTime.now().add(Duration(seconds: _routeDurationSeconds!))).format(context)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF626A73)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFFFFCC00),
+                            foregroundColor: const Color(0xFF171717),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                          ),
+                          onPressed: () async {
+                            setState(() {
+                              _navigationActive = false;
+                              _message = AppLocale.tr('Навигация завершена.');
+                            });
+                            await _tts.stop();
+                            await _startLiveLocationUpdates();
+                          },
+                          child: Text(AppLocale.tr('Завершить'), style: const TextStyle(fontWeight: FontWeight.w800)),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -3587,6 +3616,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   onPressed: _openMapLayers,
                 ),
                 const SizedBox(height: 10),
+                _roundMapButton(
+                  icon: Icons.add,
+                  tooltip: 'Приблизить карту',
+                  onPressed: () { final camera = _mapController.camera; _mapController.move(camera.center, camera.zoom + 1); },
+                ),
+                const SizedBox(height: 8),
+                _roundMapButton(
+                  icon: Icons.remove,
+                  tooltip: 'Отдалить карту',
+                  onPressed: () { final camera = _mapController.camera; _mapController.move(camera.center, camera.zoom - 1); },
+                ),
+                const SizedBox(height: 8),
                 _roundMapButton(
                   icon: Icons.explore_outlined,
                   tooltip: AppLocale.tr('На север'),
@@ -3631,7 +3672,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ),
               ),
             ),
-          Positioned(
+          if (!_navigationActive)
+            Positioned(
             left: 18,
             right: 18,
             bottom: 8,
