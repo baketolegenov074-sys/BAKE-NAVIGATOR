@@ -86,9 +86,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _isLocating = false;
   bool _isSearching = false;
   bool _isBuildingRoute = false;
-  bool _carPaymentOnly = false;
   int _voiceMode = 3;
-  double? _gpsAccuracyMeters;
   double? _gpsHeadingDegrees;
   int _offRouteSamples = 0;
   DateTime? _lastAutomaticReroute;
@@ -246,6 +244,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _openSoundSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     var mode = prefs.getInt('voice_mode') ?? _voiceMode;
     var volume = prefs.getDouble('voice_volume') ?? 1.0;
     var rate = prefs.getDouble('voice_rate') ?? 0.48;
@@ -362,7 +361,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (!mounted) return;
       setState(() {
         _currentLocation = point;
-        _gpsAccuracyMeters = position.accuracy;
         if (position.speed >= 0.8 && position.heading.isFinite) {
           _gpsHeadingDegrees = position.heading;
         }
@@ -410,7 +408,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         if (!mounted) return;
         setState(() {
           _currentLocation = LatLng(position.latitude, position.longitude);
-          _gpsAccuracyMeters = position.accuracy;
           // Ignore unstable compass headings while stopped or moving very slowly.
           if (position.speed >= 0.8 && position.heading.isFinite) {
             _gpsHeadingDegrees = position.heading;
@@ -772,16 +769,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
-  Future<void> _stopNavigation() async {
-    setState(() {
-      _navigationActive = false;
-      _message = 'Навигация остановлена.';
-    });
-    await _tts.stop();
-    await _startLiveLocationUpdates();
-  }
-
-
   double _distanceToRouteMeters(LatLng position) {
     if (_routePoints.length < 2) return double.infinity;
     const latScale = 110540.0;
@@ -1017,26 +1004,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     });
   }
 
-  void _clearDestination() {
-    final wasNavigating = _navigationActive;
-    setState(() {
-      _destination = null;
-      _routeOrigin = null;
-      _routeStops.clear();
-      _routeAlternatives = [];
-      _selectedRouteIndex = 0;
-      _routePoints = [];
-      _instructions = [];
-      _navigationActive = false;
-      _instructionIndex = 0;
-      _routeDistanceMeters = null;
-      _routeDurationSeconds = null;
-      _message = 'Маршрут очищен. Удерживайте карту, чтобы выбрать новую точку.';
-    });
-    unawaited(_removeSavedRoutePoint(_savedRouteOriginKey));
-    unawaited(_removeSavedRoutePoint(_savedRouteDestinationKey));
-    if (wasNavigating) unawaited(_startLiveLocationUpdates());
-  }
+
 
   Future<void> _openSearchPanel() async {
     final prefs = await SharedPreferences.getInstance();
@@ -1262,6 +1230,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _openRoutePreferences() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     var avoidTolls = prefs.getBool('avoid_tolls') ?? false;
     var avoidUnpaved = prefs.getBool('avoid_unpaved') ?? false;
     await showModalBottomSheet<void>(
@@ -1652,9 +1621,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
     await Clipboard.setData(ClipboardData(text: report));
     controller.dispose();
-    if (mounted) setState(() => _message = title == 'Дорожное событие'
-      ? 'Событие сохранено на устройстве. Отправка другим водителям пока не подключена.'
-      : 'Отчёт скопирован. Отправка на сервер пока не подключена.');
+    if (mounted) {
+      setState(() => _message = title == 'Дорожное событие'
+        ? 'Событие сохранено на устройстве. Отправка другим водителям пока не подключена.'
+        : 'Отчёт скопирован. Отправка на сервер пока не подключена.');
+    }
   }
 
   Future<void> _openMyPlaces() async {
@@ -2069,13 +2040,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
   }
 
-  String _gpsQualityLabel(double accuracyMeters) {
-    if (accuracyMeters <= 10) return 'отличный сигнал';
-    if (accuracyMeters <= 20) return 'хороший сигнал';
-    if (accuracyMeters <= 50) return 'слабый сигнал';
-    return 'неточный сигнал';
-  }
-
   String _routeSummary() {
     if (_routeDistanceMeters == null || _routeDurationSeconds == null) {
       return 'Маршрут ещё не построен';
@@ -2113,7 +2077,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 TextButton(
                   onPressed: () async {
                     await prefs.setStringList('selected_station_networks', initial.toList());
-                    if (!mounted) return;
+                    if (!pageContext.mounted) return;
                     Navigator.pop(pageContext);
                     final query = initial.isEmpty || initial.length == networks.length
                         ? 'АЗС'
@@ -2220,6 +2184,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
   }
 
+  @override
   Widget build(BuildContext context) {
     final markers = <Marker>[
       if (_routeOrigin != null)
@@ -2394,6 +2359,31 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               onPressed: _isLocating ? null : () => unawaited(_locateMe()),
             ),
           ),
+          if (_message.isNotEmpty)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 82,
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.center,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Material(
+                      color: const Color(0xEEFFFFFF),
+                      elevation: 3,
+                      borderRadius: BorderRadius.circular(14),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                        child: Text(_message, maxLines: 2, overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             left: 18,
             right: 18,
@@ -2433,13 +2423,11 @@ class _MapActionButton extends StatelessWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
-    this.loading = false,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback? onPressed;
-  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -2450,9 +2438,7 @@ class _MapActionButton extends StatelessWidget {
       child: IconButton(
         tooltip: tooltip,
         onPressed: onPressed,
-        icon: loading
-            ? const SizedBox(width: 19, height: 19, child: CircularProgressIndicator(strokeWidth: 2))
-            : Icon(icon, color: const Color(0xFF343434)),
+        icon: Icon(icon, color: const Color(0xFF343434)),
       ),
     );
   }
