@@ -842,7 +842,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (sheetContext) => StatefulBuilder(
+      builder: (sheetContext) => Transform.translate(
+        offset: const Offset(0, -24),
+        child: StatefulBuilder(
         builder: (sheetContext, refresh) {
           final voices = voicesFor(language);
           final selectedExists = voices.any((v) => '${v['name']}|${v['locale']}' == selectedKey);
@@ -1039,6 +1041,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           );
         },
+        ),
       ),
     );
   }
