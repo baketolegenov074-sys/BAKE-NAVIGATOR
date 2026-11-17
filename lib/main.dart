@@ -668,6 +668,34 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
+  Future<void> _chooseAppLanguage() async {
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text(AppLocale.tr('Язык приложения')),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'ru'),
+            child: const Text('Русский'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'kk'),
+            child: const Text('Қазақша'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'en'),
+            child: const Text('English'),
+          ),
+        ],
+      ),
+    );
+    if (selected == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('app_language', selected);
+    AppLocale.language = selected;
+    if (mounted) setState(() {});
+  }
+
   Future<void> _openSettings() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -3257,6 +3285,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  Material(
+                    color: Colors.white,
+                    elevation: 5,
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      tooltip: AppLocale.tr('Язык приложения'),
+                      onPressed: _chooseAppLanguage,
+                      icon: const Icon(Icons.language, color: Color(0xFF343434)),
+                    ),
+                  ),
                 ]),
               ),
             ),
@@ -3460,7 +3499,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           Positioned(
             left: 18,
             right: 18,
-            bottom: 12,
+            bottom: 27,
             child: SafeArea(
               top: false,
               child: Material(
