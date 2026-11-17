@@ -133,14 +133,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Future<void> _loadSavedRoutePoints() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final origin = _decodePoint(prefs.getString(_savedRouteOriginKey));
+      // A saved start point may be stale after the user has moved.
+      // Always use the fresh GPS fix as the default route origin on app launch.
+      await prefs.remove(_savedRouteOriginKey);
       final destination = _decodePoint(prefs.getString(_savedRouteDestinationKey));
-      if (!mounted) return;
-      if (origin == null && destination == null) return;
+      if (!mounted || destination == null) return;
       setState(() {
-        _routeOrigin = origin;
+        _routeOrigin = null;
         _destination = destination;
-        _message = 'Предыдущие точки маршрута восстановлены. При необходимости проверьте их.';
+        _message = 'Последний пункт назначения восстановлен. Начальная точка будет определена по GPS.';
       });
     } catch (_) {
       // Route planning remains usable if local preferences are unavailable.
