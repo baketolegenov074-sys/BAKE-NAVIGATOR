@@ -1096,8 +1096,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           ),
         ),
-          ),
-        ),
       ),
     );
   }
@@ -3023,8 +3021,8 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
     setState(() => _avoidTolls = value);
   }
 
-  Future<void> _showAbout() async {
-    await showAboutDialog(
+  void _showAbout() {
+    showAboutDialog(
       context: context,
       applicationName: 'BAKE Navigator',
       applicationLegalese: 'Навигационное приложение BAKE.',
