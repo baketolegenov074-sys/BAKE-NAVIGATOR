@@ -1341,6 +1341,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Разместить объект', () { Navigator.pop(sheetContext); _openPlaceSubmissionPage(); }),
             _menuTile(sheetContext, Icons.share_location_outlined, 'Поделиться геопозицией', () { Navigator.pop(sheetContext); _shareCurrentLocation(); }),
             _menuTile(sheetContext, Icons.bookmark_border, 'Закладки', () { Navigator.pop(sheetContext); _openBookmarks(); }),
+            _menuTile(sheetContext, Icons.place_outlined, 'Мои места', () { Navigator.pop(sheetContext); _openMyPlaces(); }),
+            _menuTile(sheetContext, Icons.warning_amber_outlined, 'События на дороге', () { Navigator.pop(sheetContext); _openRoadEvents(); }),
             _menuTile(sheetContext, Icons.local_gas_station_outlined, 'Заправки', () { Navigator.pop(sheetContext); _openStationNetworks(); }),
             _menuTile(sheetContext, Icons.local_parking_outlined, 'Парковки', () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
             _menuTile(sheetContext, Icons.settings_outlined, 'Настройки', () { Navigator.pop(sheetContext); _openSettings(); }),
@@ -1523,7 +1525,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       ),
     );
     if (accepted != true || !mounted) { controller.dispose(); return; }
-    final report = '$title\\nКоординаты: ${point.latitude}, ${point.longitude}\\n${controller.text.trim()}';
+    final detail = controller.text.trim();
+    final report = '$title\\nКоординаты: ${point.latitude}, ${point.longitude}\\n$detail';
+    if (title == 'Дорожное событие') {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList('road_event_reports') ?? <String>[];
+      saved.add(jsonEncode({'kind': 'Дорожное событие', 'detail': detail, 'lat': point.latitude, 'lon': point.longitude, 'date': DateTime.now().toLocal().toString().substring(0, 16)}));
+      await prefs.setStringList('road_event_reports', saved);
+    }
     await Clipboard.setData(ClipboardData(text: report));
     controller.dispose();
     if (mounted) setState(() => _message = 'Отчёт скопирован. Отправка на сервер пока не подключена.');
@@ -1622,6 +1631,152 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 Navigator.pop(sheetContext);
                 setState(() => _message = 'Точка сохранена в закладки.');
               },
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openMyPlaces() async {
+    final prefs = await SharedPreferences.getInstance();
+    var home = prefs.getString('my_place_home') ?? '';
+    var work = prefs.getString('my_place_work') ?? '';
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, refresh) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(18, 16, 18, 18 + MediaQuery.of(sheetContext).viewInsets.bottom),
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Мои места', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(backgroundColor: Color(0xFFFFF3C4), child: Icon(Icons.home_outlined, color: Color(0xFF343434))),
+                  title: const Text('Дом'),
+                  subtitle: Text(home.isEmpty ? 'Адрес не задан' : home, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  trailing: const Icon(Icons.edit_outlined),
+                  onTap: () async {
+                    final controller = TextEditingController(text: home);
+                    final value = await showDialog<String>(
+                      context: sheetContext,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Адрес дома'),
+                        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(hintText: 'Введите адрес')),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
+                          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Сохранить')),
+                        ],
+                      ),
+                    );
+                    controller.dispose();
+                    if (value == null) return;
+                    home = value;
+                    await prefs.setString('my_place_home', home);
+                    refresh(() {});
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const CircleAvatar(backgroundColor: Color(0xFFEAF4FF), child: Icon(Icons.work_outline, color: Color(0xFF343434))),
+                  title: const Text('Работа'),
+                  subtitle: Text(work.isEmpty ? 'Адрес не задан' : work, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  trailing: const Icon(Icons.edit_outlined),
+                  onTap: () async {
+                    final controller = TextEditingController(text: work);
+                    final value = await showDialog<String>(
+                      context: sheetContext,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('Адрес работы'),
+                        content: TextField(controller: controller, autofocus: true, decoration: const InputDecoration(hintText: 'Введите адрес')),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
+                          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Сохранить')),
+                        ],
+                      ),
+                    );
+                    controller.dispose();
+                    if (value == null) return;
+                    work = value;
+                    await prefs.setString('my_place_work', work);
+                    refresh(() {});
+                  },
+                ),
+                const Divider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.favorite_outline, color: Color(0xFFE45D52)),
+                  title: const Text('Избранное'),
+                  subtitle: const Text('Сохранённые точки на карте'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () { Navigator.pop(sheetContext); _openBookmarks(); },
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRoadEvents() async {
+    final prefs = await SharedPreferences.getInstance();
+    final reports = prefs.getStringList('road_event_reports') ?? <String>[];
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('События на дороге', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            const Text('Сообщения сохраняются на этом устройстве. Они пока не передаются другим водителям.'),
+            const SizedBox(height: 12),
+            if (reports.isEmpty)
+              const Padding(padding: EdgeInsets.symmetric(vertical: 18), child: Text('Пока нет добавленных событий.', textAlign: TextAlign.center))
+            else
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 280),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: reports.reversed.map((raw) {
+                    final item = jsonDecode(raw) as Map<String, dynamic>;
+                    final kind = item['kind']?.toString() ?? 'Дорожное событие';
+                    final detail = item['detail']?.toString() ?? '';
+                    final date = item['date']?.toString() ?? '';
+                    final icon = kind == 'ДТП' ? Icons.car_crash_outlined : kind == 'Ремонт дороги' ? Icons.construction : kind == 'Камера' ? Icons.camera_alt_outlined : Icons.warning_amber_outlined;
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(icon, color: const Color(0xFFB88A00)),
+                      title: Text(kind),
+                      subtitle: Text([detail, date].where((v) => v.isNotEmpty).join(' · ')),
+                    );
+                  }).toList(),
+                ),
+              ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(sheetContext);
+                final point = _currentLocation;
+                if (point == null) {
+                  _showUnavailableFeature('Геопозиция', 'Сначала дождитесь определения GPS или выберите точку долгим нажатием на карте.');
+                } else {
+                  _reportMapItem(point, 'Дорожное событие');
+                }
+              },
+              icon: const Icon(Icons.add_alert_outlined),
+              label: const Text('Сообщить о событии'),
             ),
           ]),
         ),
