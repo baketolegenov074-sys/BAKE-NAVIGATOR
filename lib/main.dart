@@ -3880,31 +3880,48 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ),
               ),
             ),
-          if (_routeReady && (_navigationActive || !_routeActionDismissed))
+          if (_routeReady && !_navigationActive && !_routeActionDismissed)
             Positioned(
-              left: 0,
-              right: 0,
-              bottom: _navigationActive ? 20 : 76,
+              left: 12,
+              right: 12,
+              bottom: 76,
               child: SafeArea(
                 top: false,
-                child: Center(
-                  child: SizedBox(
-                    height: 38,
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xFFFFCC00),
-                        foregroundColor: const Color(0xFF171717),
-                        elevation: 5,
-                        padding: const EdgeInsets.symmetric(horizontal: 28),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xEEFFFFFF),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      onPressed: _navigationActive ? _finishNavigation : _startNavigation,
                       child: Text(
-                        AppLocale.tr(_navigationActive ? 'Завершить' : 'Поехали'),
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                        _routeSummary(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF555B63)),
                       ),
                     ),
-                  ),
+                    SizedBox(
+                      height: 38,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFFFCC00),
+                          foregroundColor: const Color(0xFF171717),
+                          elevation: 5,
+                          padding: const EdgeInsets.symmetric(horizontal: 28),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                        ),
+                        onPressed: _startNavigation,
+                        child: Text(
+                          AppLocale.tr('Поехали'),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
