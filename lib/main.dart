@@ -1151,7 +1151,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 point.latitude,
                 point.longitude,
               ) > 8) {
-            _mapController.move(point, math.max(camera.zoom, 16.0));
+            _mapController.move(point, math.max(camera.zoom, 16.0).toDouble());
           }
         }
 
@@ -1160,7 +1160,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _checkForOffRoute(position);
       },
       onError: (Object error) {
-        if (!firstFix.isCompleted) {
+        if (waitForFirstFix && !firstFix.isCompleted) {
           firstFix.completeError(error, StackTrace.current);
         }
         if (!mounted) return;
@@ -1508,11 +1508,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         waitForFirstFix: true,
       );
     } catch (error) {
+      await _positionSubscription?.cancel();
+      _positionSubscription = null;
       if (!mounted) return;
       setState(() {
         _navigationActive = false;
         _message = AppLocale.pick('Не удалось включить фоновый GPS: $error', 'Фондық GPS қосылмады: $error', 'Could not enable background GPS: $error');
       });
+      // Keep ordinary foreground location updates available after a failed start.
+      unawaited(_startLiveLocationUpdates());
       return;
     }
     if (!mounted) return;
