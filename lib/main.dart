@@ -1011,6 +1011,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             }
             refreshSheet(() {});
           },
+          onStage: (stage) {
+            offlineVoiceStatus = stage == 'extracting'
+                ? 'Архив распаковывается…'
+                : 'Қазақша дауыс қозғалтқышы іске қосылуда…';
+            refreshSheet(() {});
+          },
         );
         offlineVoiceReady = true;
         offlineVoiceFailed = false;
@@ -1019,9 +1025,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           'Қазақша офлайн дауыс дайын.',
           'Kazakh offline voice is ready.',
         );
-      } catch (_) {
+      } catch (error) {
         offlineVoiceFailed = true;
-        offlineVoiceStatus = 'Жүктеу үзілді, интернетті тексеріңіз.';
+        final detail = error.toString().replaceFirst('Exception: ', '').trim();
+        offlineVoiceStatus = detail.isEmpty
+            ? 'Қазақша дауыс іске қосылмады.'
+            : (detail.length > 220 ? '${detail.substring(0, 220)}…' : detail);
       } finally {
         offlineVoiceBusy = false;
         refreshSheet(() {});
