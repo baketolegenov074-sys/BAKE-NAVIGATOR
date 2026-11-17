@@ -1701,7 +1701,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     setState(() {
       _selectedRouteIndex = index;
       _routePoints = points;
-        _routeReady = points.length >= 2;
+      _routeReady = points.length >= 2;
       _instructions = instructions;
       _instructionIndex = 0;
       _routeDistanceMeters = (route['distance'] as num).toDouble();
