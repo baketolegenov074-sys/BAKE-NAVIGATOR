@@ -126,6 +126,15 @@ class AppLocale {
       'Выбрать MBTiles-файл': 'MBTiles файлын таңдау',
       'Язык голосовых подсказок': 'Дауыстық нұсқаулар тілі',
       'Голос телефона': 'Телефон дауысы',
+      'Название': 'Атауы',
+      'Адрес': 'Мекенжай',
+      'Найти адрес отправления': 'Бастапқы мекенжайды табу',
+      'Марка автомобиля': 'Көлік маркасы',
+      'Модель': 'Моделі',
+      'Цвет': 'Түсі',
+      'Государственный номер': 'Мемлекеттік нөмірі',
+      'Пока нет сохранённых точек. Удерживайте место на карте и выберите «Сохранить в закладки».': 'Әзірге сақталған нүктелер жоқ. Картадағы орынды басып тұрып, «Бетбелгілерге сақтау» таңдаңыз.',
+      'Добавьте остановку долгим нажатием на нужное место карты.': 'Картадағы қажетті орынды ұзақ басып, аялдама қосыңыз.',
       'Прослушать голос': 'Дауысты тыңдау',
       'Системный голос по умолчанию': 'Әдепкі жүйелік дауыс',
       'Громкость': 'Дыбыс деңгейі',
@@ -232,6 +241,15 @@ class AppLocale {
       'Выбрать MBTiles-файл': 'Choose MBTiles file',
       'Язык голосовых подсказок': 'Voice guidance language',
       'Голос телефона': 'Device voice',
+      'Название': 'Name',
+      'Адрес': 'Address',
+      'Найти адрес отправления': 'Find starting address',
+      'Марка автомобиля': 'Vehicle make',
+      'Модель': 'Model',
+      'Цвет': 'Color',
+      'Государственный номер': 'License plate',
+      'Пока нет сохранённых точек. Удерживайте место на карте и выберите «Сохранить в закладки».': 'No saved points yet. Long-press a place on the map and choose “Save to bookmarks”.',
+      'Добавьте остановку долгим нажатием на нужное место карты.': 'Long-press the desired place on the map to add a stop.',
       'Прослушать голос': 'Preview voice',
       'Системный голос по умолчанию': 'System default voice',
       'Громкость': 'Volume',
@@ -1714,7 +1732,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         content: TextField(
           controller: controller,
           maxLines: 4,
-          decoration: const InputDecoration(hintText: AppLocale.tr('Опишите, что не так'), border: OutlineInputBorder()),
+          decoration: InputDecoration(hintText: AppLocale.tr('Опишите, что не так'), border: OutlineInputBorder()),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(AppLocale.tr('Отмена'))),
@@ -2155,7 +2173,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               TextField(
                 controller: controller,
                 maxLines: 4,
-                decoration: const InputDecoration(hintText: AppLocale.tr('Добавьте описание (необязательно)'), border: OutlineInputBorder()),
+                decoration: InputDecoration(hintText: AppLocale.tr('Добавьте описание (необязательно)'), border: OutlineInputBorder()),
               ),
             ],
           ),
@@ -2340,7 +2358,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             TextField(
                               controller: nameController,
                               decoration: const InputDecoration(
-                                labelText: 'Название',
+                                labelText: AppLocale.tr('Название'),
                                 hintText: AppLocale.tr('Например, спортзал'),
                               ),
                             ),
@@ -2348,7 +2366,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             TextField(
                               controller: addressController,
                               decoration: const InputDecoration(
-                                labelText: 'Адрес',
+                                labelText: AppLocale.tr('Адрес'),
                                 hintText: AppLocale.tr('Улица, дом или место'),
                               ),
                             ),
@@ -2528,7 +2546,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Закладки'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
             if (saved.isEmpty)
-              Padding(padding: const EdgeInsets.all(22), child: Text(AppLocale.tr('Пока нет сохранённых точек. Удерживайте место на карте и выберите «Сохранить в закладки».')))
+              Padding(padding: const EdgeInsets.all(22), child: Text(AppLocale.tr('Пока нет сохранённых точек. Удерживайте место на карте и выберите «Сохранить в закладки».' ))))
             else
               ...saved.map((raw) {
                 final item = jsonDecode(raw) as Map<String, dynamic>;
@@ -2648,7 +2666,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         textInputAction: TextInputAction.search,
                         onSubmitted: (_) { searchOriginAfterClose = originController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
                         decoration: const InputDecoration(
-                          labelText: 'Найти адрес отправления',
+                          labelText: AppLocale.tr('Найти адрес отправления'),
                           hintText: AppLocale.tr('Улица, дом или место'),
                           prefixIcon: Icon(Icons.search),
                           border: OutlineInputBorder(),
@@ -2668,7 +2686,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       controller: destinationController,
                       textInputAction: TextInputAction.search,
                       onSubmitted: (_) { searchAfterClose = true; Navigator.pop(sheetContext); },
-                      decoration: const InputDecoration(labelText: AppLocale.tr('Куда'), hintText: AppLocale.tr('Введите адрес или место'), border: InputBorder.none),
+                      decoration: InputDecoration(labelText: AppLocale.tr('Куда'), hintText: AppLocale.tr('Введите адрес или место'), border: InputBorder.none),
                     )),
                     IconButton(
                       tooltip: AppLocale.tr('Найти место'),
@@ -3052,7 +3070,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             controller: _searchController,
                             textInputAction: TextInputAction.search,
                             onSubmitted: (_) => _searchAddress(),
-                            decoration: const InputDecoration(hintText: AppLocale.tr('Куда едем?'), border: InputBorder.none, isDense: true),
+                            decoration: InputDecoration(hintText: AppLocale.tr('Куда едем?'), border: InputBorder.none, isDense: true),
                           )),
                           IconButton(
                             tooltip: AppLocale.tr('Найти'),
@@ -3331,7 +3349,7 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
         children: [
           SimpleDialogOption(onPressed: () => Navigator.pop(context, 'ru'), child: Text(AppLocale.tr('Русский'))),
           SimpleDialogOption(onPressed: () => Navigator.pop(context, 'kk'), child: Text(AppLocale.tr('Қазақша'))),
-          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'en'), child: const Text('English')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'en'), child: Text(AppLocale.language == 'en' ? 'English' : 'English')),
         ],
       ),
     );
@@ -3580,10 +3598,10 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                 const SizedBox(height: 6),
                 Text(AppLocale.tr('Эти сведения сохраняются только на этом телефоне.')),
                 const SizedBox(height: 10),
-                TextField(controller: _vehicleMake, decoration: const InputDecoration(labelText: 'Марка автомобиля')),
-                TextField(controller: _vehicleModel, decoration: const InputDecoration(labelText: 'Модель')),
-                TextField(controller: _vehicleColor, decoration: const InputDecoration(labelText: 'Цвет')),
-                TextField(controller: _vehiclePlate, decoration: const InputDecoration(labelText: 'Государственный номер')),
+                TextField(controller: _vehicleMake, decoration: const InputDecoration(labelText: AppLocale.tr('Марка автомобиля'))),
+                TextField(controller: _vehicleModel, decoration: const InputDecoration(labelText: AppLocale.tr('Модель'))),
+                TextField(controller: _vehicleColor, decoration: const InputDecoration(labelText: AppLocale.tr('Цвет'))),
+                TextField(controller: _vehiclePlate, decoration: const InputDecoration(labelText: AppLocale.tr('Государственный номер'))),
                 const SizedBox(height: 12),
                 FilledButton.icon(onPressed: _saveVehicle, icon: const Icon(Icons.save_outlined), label: Text(AppLocale.tr('Сохранить'))),
                 const SizedBox(height: 22),
