@@ -2938,6 +2938,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
 
+  }
 }
 
 class _MapActionButton extends StatelessWidget {
