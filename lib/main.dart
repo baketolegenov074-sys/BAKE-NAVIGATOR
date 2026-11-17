@@ -206,28 +206,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Future<void> _openSettings() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (sheetContext) => SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(
-            18,
-            14,
-            18,
-            22 + MediaQuery.of(sheetContext).viewInsets.bottom,
-          ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Align(alignment: Alignment.centerLeft, child: Text('Настройки BAKE', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
-            ListTile(leading: const Icon(Icons.volume_up_outlined), title: const Text('Звуковое сопровождение'), onTap: () { Navigator.pop(sheetContext); _openSoundSettings(); }),
-            ListTile(leading: const Icon(Icons.alt_route), title: const Text('Параметры маршрута'), onTap: () { Navigator.pop(sheetContext); _openRoutePreferences(); }),
-            ListTile(leading: const Icon(Icons.layers_outlined), title: const Text('Внешний вид и слои карты'), onTap: () { Navigator.pop(sheetContext); _openMapLayers(); }),
-            ListTile(leading: const Icon(Icons.download_for_offline_outlined), title: const Text('Офлайн-карты и автомобиль'), onTap: () { Navigator.pop(sheetContext); _openOfflineAndVehicleSettings(); }),
-            ListTile(leading: const Icon(Icons.place_outlined), title: const Text('Мои места'), onTap: () { Navigator.pop(sheetContext); _openMyPlaces(); }),
-            ListTile(leading: const Icon(Icons.warning_amber_outlined), title: const Text('События на дороге'), onTap: () { Navigator.pop(sheetContext); _openRoadEvents(); }),
-          ]),
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => NavigatorPreferencesScreen(
+          onOpenSoundSettings: _openSoundSettings,
+          onOpenRoutePreferences: _openRoutePreferences,
+          onOpenProfile: _openProfileMenu,
         ),
       ),
     );
@@ -2482,6 +2466,130 @@ class _MapActionButton extends StatelessWidget {
         onPressed: onPressed,
         icon: Icon(icon, color: const Color(0xFF343434)),
       ),
+    );
+  }
+}
+
+class NavigatorPreferencesScreen extends StatefulWidget {
+  const NavigatorPreferencesScreen({
+    super.key,
+    required this.onOpenSoundSettings,
+    required this.onOpenRoutePreferences,
+    required this.onOpenProfile,
+  });
+
+  final Future<void> Function() onOpenSoundSettings;
+  final Future<void> Function() onOpenRoutePreferences;
+  final Future<void> Function() onOpenProfile;
+
+  @override
+  State<NavigatorPreferencesScreen> createState() => _NavigatorPreferencesScreenState();
+}
+
+class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen> {
+  bool _voiceEnabled = true;
+  bool _avoidTolls = false;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _voiceEnabled = (prefs.getInt('voice_mode') ?? 3) != 0;
+      _avoidTolls = prefs.getBool('avoid_tolls') ?? false;
+      _loading = false;
+    });
+  }
+
+  Future<void> _setVoice(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final mode = value ? 3 : 0;
+    await prefs.setInt('voice_mode', mode);
+    if (!mounted) return;
+    setState(() => _voiceEnabled = value);
+  }
+
+  Future<void> _setAvoidTolls(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('avoid_tolls', value);
+    if (!mounted) return;
+    setState(() => _avoidTolls = value);
+  }
+
+  Future<void> _showAbout() async {
+    await showAboutDialog(
+      context: context,
+      applicationName: 'BAKE Navigator',
+      applicationLegalese: 'Навигационное приложение BAKE.',
+      children: const [
+        Text('Часть функций зависит от подключённых источников картографических и дорожных данных.'),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: const Text('Настройки'),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.volume_up_outlined),
+                  title: const Text('Голосовые подсказки'),
+                  value: _voiceEnabled,
+                  onChanged: _setVoice,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.alt_route),
+                  title: const Text('Предпочтения маршрута'),
+                  subtitle: const Text('Быстрый'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onOpenRoutePreferences,
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.toll_outlined),
+                  title: const Text('Избегать платных дорог'),
+                  value: _avoidTolls,
+                  onChanged: _setAvoidTolls,
+                ),
+                const ListTile(
+                  leading: Icon(Icons.straighten_outlined),
+                  title: Text('Единицы измерения'),
+                  subtitle: Text('км, м'),
+                ),
+                const ListTile(
+                  leading: Icon(Icons.language_outlined),
+                  title: Text('Язык приложения'),
+                  subtitle: Text('Русский'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.person_outline),
+                  title: const Text('Профиль'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onOpenProfile,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: const Text('О приложении'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _showAbout,
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
     );
   }
 }
