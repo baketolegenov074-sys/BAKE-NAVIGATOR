@@ -1182,11 +1182,47 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     });
     var shouldBuildRoute = false;
     try {
-      // Acquire a real GPS fix before searching so the nearby search is centered
-      // on the driver's actual position, not the hard-coded Shymkent fallback.
-      if (!selectAsOrigin && _routeOrigin == null && _currentLocation == null) {
+      // Explicit destination city takes priority over the current GPS position.
+      const cityAliases = <String, String>{
+        'алма-ата': 'Алматы', 'алматы': 'Алматы',
+        'шымкент': 'Шымкент', 'чимкент': 'Шымкент',
+        'астана': 'Астана', 'нур-султан': 'Астана',
+        'туркестан': 'Туркестан', 'түркістан': 'Туркестан',
+        'тараз': 'Тараз', 'караганда': 'Караганда', 'қарағанды': 'Караганда',
+        'кызылорда': 'Кызылорда', 'қызылорда': 'Кызылорда',
+        'актобе': 'Актобе', 'ақтөбе': 'Актобе', 'атырау': 'Атырау',
+        'актау': 'Актау', 'ақтау': 'Актау', 'павлодар': 'Павлодар',
+        'костанай': 'Костанай', 'қостанай': 'Костанай',
+        'петропавловск': 'Петропавловск', 'кокшетау': 'Кокшетау',
+        'көкшетау': 'Кокшетау', 'семей': 'Семей',
+        'усть-каменогорск': 'Усть-Каменогорск', 'өскемен': 'Усть-Каменогорск',
+        'талдыкорган': 'Талдыкорган', 'талдықорған': 'Талдыкорган',
+        'жезказган': 'Жезказган', 'жезқазған': 'Жезказган',
+        'экибастуз': 'Экибастуз', 'екібастұз': 'Экибастуз',
+      };
+      final lowerQuery = query.toLowerCase();
+      final aliasesByLength = cityAliases.keys.toList()
+        ..sort((a, b) => b.length.compareTo(a.length));
+      String? explicitCityAlias;
+      for (final alias in aliasesByLength) {
+        if (lowerQuery.contains(alias)) {
+          explicitCityAlias = alias;
+          break;
+        }
+      }
+      final explicitCityName = explicitCityAlias == null
+          ? null
+          : cityAliases[explicitCityAlias];
+
+      // GPS is acquired only for local searches; a typed city is independent
+      // from the device's current location.
+      if (!selectAsOrigin &&
+          explicitCityName == null &&
+          _routeOrigin == null &&
+          _currentLocation == null) {
         await _locateMe();
       }
+
       final anchor = selectAsOrigin
           ? (_currentLocation ?? _routeOrigin ?? _shymkent)
           : (_routeOrigin ?? _currentLocation ?? _shymkent);
@@ -1195,44 +1231,55 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final east = (anchor.longitude + 0.45).toStringAsFixed(6);
       final south = (anchor.latitude - 0.45).toStringAsFixed(6);
 
-      Future<List<dynamic>> requestSearch({required bool bounded, String limit = '12'}) async {
+      Future<List<dynamic>> requestSearch({String? searchQuery}) async {
         final params = <String, String>{
-          'q': query,
+          'q': searchQuery ?? query,
           'format': 'jsonv2',
-          'limit': limit,
+          'limit': '20',
           'countrycodes': 'kz',
           'accept-language': 'ru,kk',
           'addressdetails': '1',
-          'viewbox': '$west,$north,$east,$south',
-          if (bounded) 'bounded': '1',
+          // A viewbox is a soft ranking hint only. Do not bound results to GPS.
+          if (explicitCityName == null) 'viewbox': '$west,$north,$east,$south',
         };
         final uri = Uri.https('nominatim.openstreetmap.org', '/search', params);
         final response = await http.get(
           uri,
-          headers: const {
-            'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
-          },
+          headers: const {'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)'},
         ).timeout(const Duration(seconds: 20));
         if (response.statusCode == 429) {
-          throw Exception(AppLocale.pick('Сервис поиска просит подождать. Повторите через минуту.', 'Іздеу қызметі күте тұруды сұрайды. Бір минуттан кейін қайталаңыз.', 'Search service asks you to wait. Try again in a minute.'));
+          throw Exception(AppLocale.pick(
+            'Сервис поиска временно ограничил запросы. Повторите позже.',
+            'Іздеу қызметі сұрауларды уақытша шектеді. Кейін қайталаңыз.',
+            'The address service temporarily rate-limited requests. Try again later.',
+          ));
         }
         if (response.statusCode != 200) {
-          throw Exception(AppLocale.pick('Поиск адресов временно недоступен.', 'Мекенжай іздеу уақытша қолжетімсіз.', 'Address search is temporarily unavailable.'));
+          throw Exception(AppLocale.pick(
+            'Поиск адресов временно недоступен.',
+            'Мекенжай іздеу уақытша қолжетімсіз.',
+            'Address search is temporarily unavailable.',
+          ));
         }
         return jsonDecode(response.body) as List<dynamic>;
       }
 
-      // Try nearby first for relevant matches, then automatically broaden to
-      // all Kazakhstan. Do not interrupt the destination -> route flow with
-      // an extra confirmation dialog.
-      var results = await requestSearch(bounded: true);
+      // Retry only with the country qualifier, not with a fuzzy nationwide
+      // query that could return an unrelated house in a different city.
+      var results = await requestSearch();
       if (!mounted) return;
-      if (results.isEmpty) {
-        results = await requestSearch(bounded: false, limit: '40');
+      if (results.isEmpty &&
+          !lowerQuery.contains('казахстан') &&
+          !lowerQuery.contains('қазақстан')) {
+        results = await requestSearch(searchQuery: '$query, Казахстан');
         if (!mounted) return;
       }
       if (results.isEmpty) {
-        setState(() => _message = AppLocale.pick('Такой объект не найден в Казахстане. Проверьте название.', 'Қазақстаннан мұндай нысан табылмады. Атауын тексеріңіз.', 'This place was not found in Kazakhstan. Check the name.'));
+        setState(() => _message = AppLocale.pick(
+          'Адрес не найден. Проверьте город, улицу и номер дома.',
+          'Мекенжай табылмады. Қаланы, көшені және үй нөмірін тексеріңіз.',
+          'Address not found. Check the city, street, and house number.',
+        ));
         return;
       }
 
@@ -1243,7 +1290,37 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             lat >= 40.0 && lat <= 56.0 && lon >= 46.0 && lon <= 88.0;
       }).toList();
 
+      int relevance(Map<String, dynamic> item) {
+        final address = item['address'] is Map
+            ? (item['address'] as Map).values.join(' ')
+            : '';
+        final searchableText =
+            '\${item['display_name'] ?? ''} $address'.toLowerCase();
+        var score = 0;
+        if (explicitCityName != null &&
+            searchableText.contains(explicitCityName.toLowerCase())) {
+          score += 1000;
+        }
+        final tokens = lowerQuery
+            .split(RegExp(r'[^0-9a-zа-яёәіңғүұқөһ]+'))
+            .where((token) => token.length >= 3);
+        for (final token in tokens) {
+          if (searchableText.contains(token)) {
+            score += token.length >= 6 ? 8 : 3;
+          }
+        }
+        final houseMatch =
+            RegExp(r'\b\d+[а-яa-z]?\b', caseSensitive: false).firstMatch(query);
+        if (houseMatch != null &&
+            searchableText.contains(houseMatch.group(0)!.toLowerCase())) {
+          score += 30;
+        }
+        return score;
+      }
+
       valid.sort((a, b) {
+        final byText = relevance(b).compareTo(relevance(a));
+        if (byText != 0) return byText;
         final aPoint = LatLng(
           double.parse(a['lat'].toString()),
           double.parse(a['lon'].toString()),
