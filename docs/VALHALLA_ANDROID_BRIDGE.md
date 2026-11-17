@@ -6,6 +6,16 @@
 
 Добавить локальный Android-модуль маршрутизации Valhalla так, чтобы Flutter-экран и существующий Dart-код продолжали получать маршрут в привычном OSRM-подобном JSON. На этом этапе нельзя удалять или менять текущий онлайн-маршрутизатор OSRM: он остаётся резервным вариантом, пока офлайн-движок не проверен.
 
+## Проверенные Android-зависимости
+
+По Maven Central и опубликованному README подтверждены координаты:
+
+- `io.github.rallista:valhalla-mobile:0.6.4` — Android engine (релиз 0.6.4; версия 0.6.5 встречается на странице API, но отдельный опубликованный релиз 0.6.5 пока не подтверждён).
+- `io.github.rallista:valhalla-models:0.6.0` и `io.github.rallista:valhalla-models-config:0.6.0` — model/config artifacts, соответствующие engine 0.6.4 по опубликованным зависимостям.
+- `com.stadiamaps:osrm-openapi:0.0.10` — OSRM response model; bridge сейчас возвращает raw JSON, но зависимость указана в README библиотеки для OSRM typed response.
+
+Engine 0.6.4 публикуется с Kotlin stdlib 2.2.10. Сгенерированный Android-шаблон Flutter 3.27.4 может использовать более старый Kotlin Gradle plugin. Пока точная версия плагина и совместимость Gradle/AGP не подтверждены, зависимости и bridge не добавляются в workflow: иначе можно получить заведомо несовместимую сборку.
+
 ## Что подтверждено документацией
 
 - `Rallista/valhalla-mobile` предоставляет Android shared library и Kotlin API.
@@ -36,6 +46,18 @@
 
 В репозитории нет постоянной папки `android/`: workflow генерирует Android-проект командой `flutter create` при каждой сборке. Поэтому Kotlin-файл моста, Gradle-зависимости и регистрацию MethodChannel потребуется добавлять в workflow после шага генерации Android-платформы. Сам workflow запускается при push только в `navigator-ui-work`; эта подготовительная ветка не входит в список триггеров.
 
+## Подготовленный Kotlin source
+
+Черновой класс находится в `android-bridge/ValhallaRoutingBridge.kt`. Он:
+
+- регистрирует MethodChannel `bake.navigator/valhalla`;
+- принимает путь к готовому Valhalla tile extract (`.tar`), открывает один долгоживущий engine;
+- принимает координаты начала/конца и запрашивает автомобильный маршрут с `format: osrm`;
+- возвращает Flutter исходный JSON-ответ, не меняя Dart-парсер;
+- выполняет native routing в отдельном однопоточном executor и закрывает engine при dispose.
+
+Этот source пока не подключён к `MainActivity`, а workflow не изменён. Это сделано намеренно: сначала нужно подтвердить совместимость Kotlin Gradle plugin / Gradle / Android Gradle Plugin с Kotlin stdlib 2.2.10. Дополнительно нужен этап преобразования исходного OSM PBF в Valhalla tile extract: PBF напрямую движок не читает.
+
 ## Следующий безопасный шаг
 
-До написания Kotlin-кода сверить точные Maven-координаты engine и model/config artifacts для одной совместимой версии, затем подготовить Kotlin bridge source и отдельные изменения workflow. Не запускать APK build и не переносить изменения в `navigator-ui-work` без отдельного разрешения владельца проекта.
+Проверить шаблон Android, который генерирует Flutter 3.27.4, и подобрать совместимые версии Gradle/AGP/Kotlin либо более старый совместимый release Valhalla. После этого отдельным коммитом подключить bridge в `MainActivity` и зависимости в workflow. Не запускать APK build и не переносить изменения в `navigator-ui-work` без отдельного разрешения владельца проекта.
