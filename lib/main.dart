@@ -498,6 +498,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   final MapController _mapController = MapController();
   ml.MapLibreMapController? _mapLibreController;
   bool _mapLibreStyleReady = false;
+  bool _mapLibreAnnotationSyncInProgress = false;
+  bool _mapLibreAnnotationSyncPending = false;
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   int _kazakhVoiceId = 0;
@@ -804,16 +806,33 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   void _onMapLibreStyleLoaded() {
     _mapLibreStyleReady = true;
     unawaited(_syncMapLibreAnnotations());
+    // GPS may finish before MapLibre has created its controller. In that case
+    // the first camera move is ignored, so center the map again when the style
+    // becomes ready to make the live-position arrow visible immediately.
+    final currentLocation = _currentLocation;
+    if (currentLocation != null) {
+      _moveMapCamera(currentLocation, 16);
+    }
     if (_routePoints.length > 1) _fitMapCamera(_routePoints);
   }
 
   Future<void> _syncMapLibreAnnotations() async {
-    final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+    // GPS updates can arrive while the previous annotation update is still
+    // clearing and recreating symbols. Serialize those updates and run once
+    // more with the newest position instead of allowing overlapping clears.
+    if (_mapLibreAnnotationSyncInProgress) {
+      _mapLibreAnnotationSyncPending = true;
+      return;
+    }
+    _mapLibreAnnotationSyncInProgress = true;
     try {
-      await controller.clearLines();
-      await controller.clearSymbols();
-      if (_routePoints.length > 1) {
+      do {
+        _mapLibreAnnotationSyncPending = false;
+        final controller = _mapLibreController;
+        if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+        await controller.clearLines();
+        await controller.clearSymbols();
+        if (_routePoints.length > 1) {
         await controller.addLine(ml.LineOptions(
           geometry: _routePoints.map(_toMapLibrePoint).toList(),
           lineColor: '#2378C8', lineWidth: 6, lineOpacity: 0.96,
@@ -848,8 +867,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           textHaloColor: '#FFFFFF', textHaloWidth: 2,
         ));
       }
+      } while (_mapLibreAnnotationSyncPending);
     } catch (_) {
       // Ignore a style recreation racing with a GPS or route update.
+    } finally {
+      _mapLibreAnnotationSyncInProgress = false;
+      if (_mapLibreAnnotationSyncPending) {
+        unawaited(_syncMapLibreAnnotations());
+      }
     }
   }
 
