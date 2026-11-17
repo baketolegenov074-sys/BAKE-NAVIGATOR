@@ -261,6 +261,22 @@ class AppLocale {
       'На север': 'Солтүстікке',
       'Моё местоположение': 'Менің орналасқан жерім',
       'Координаты: ': 'Координаттар: ',
+      'Поддержка BAKE': 'BAKE қолдауы',
+      'Разместить объект': 'Нысанды орналастыру',
+      'Бронирования и история': 'Брондаулар және тарих',
+      'Отзывы и исправления': 'Пікірлер және түзетулер',
+      'Музыка BAKE': 'BAKE музыкасы',
+      'Звуковое сопровождение': 'Дыбыстық сүйемелдеу',
+      'Готовый MBTiles-файл пока не подключён.': 'Дайын MBTiles файлы әлі қосылмаған.',
+      'Офлайн-карта подключена на этом устройстве.': 'Офлайн карта осы құрылғыда қосылған.',
+      'Офлайн-карты': 'Офлайн карталар',
+      'Исходный OSM PBF не является готовой MBTiles-картой. Для офлайн-режима нужны отдельно подготовленные тайлы.': 'Бастапқы OSM PBF дайын MBTiles картасы емес. Офлайн режим үшін алдын ала дайындалған тайлдар қажет.',
+      'Импортировать MBTiles-файл с телефона': 'Телефоннан MBTiles файлын импорттау',
+      'Фильтры сохраняются, но текущий тестовый сервис маршрутов OSRM пока не применяет их при расчёте.': 'Сүзгілер сақталады, бірақ қазіргі OSRM маршрут қызметі оларды есептеу кезінде әлі қолданбайды.',
+      'Звуковое сопровождение': 'Дыбыстық сүйемелдеу',
+      'Изменения сохраняются на этом телефоне и применяются при следующем запуске навигатора.': 'Өзгерістер осы телефонда сақталып, навигатор келесі іске қосылғанда қолданылады.',
+      'Фильтры сохраняются, но текущий тестовый сервис маршрутов OSRM пока не применяет их при расчёте.': 'Сүзгілер сақталады, бірақ OSRM сынақ қызметі оларды әзірге маршрут есебінде қолданбайды.',
+      'Сначала сохраните файл карты в память телефона, затем выберите его.': 'Алдымен карта файлын телефон жадына сақтап, содан кейін таңдаңыз.'
       'Голос телефона': 'Телефон дауысы',
     },
     'en': {
@@ -469,6 +485,20 @@ class AppLocale {
       'На север': 'North up',
       'Моё местоположение': 'My location',
       'Координаты: ': 'Coordinates: ',
+      'Поддержка BAKE': 'BAKE Support',
+      'Разместить объект': 'Add a place',
+      'Бронирования и история': 'Bookings and history',
+      'Отзывы и исправления': 'Reviews and corrections',
+      'Музыка BAKE': 'BAKE Music',
+      'Звуковое сопровождение': 'Sound settings',
+      'Готовый MBTiles-файл пока не подключён.': 'No ready-to-use MBTiles file is connected yet.',
+      'Офлайн-карта подключена на этом устройстве.': 'Offline map is connected on this device.',
+      'Офлайн-карты': 'Offline maps',
+      'Исходный OSM PBF не является готовой MBTiles-картой. Для офлайн-режима нужны отдельно подготовленные тайлы.': 'An OSM PBF source file is not a ready-to-use MBTiles map. Offline mode requires separately prepared tiles.',
+      'Импортировать MBTiles-файл с телефона': 'Import an MBTiles file from your phone',
+      'Фильтры сохраняются, но текущий тестовый сервис маршрутов OSRM пока не применяет их при расчёте.': 'Filters are saved, but the current OSRM test routing service does not yet apply them when calculating routes.',
+      'Изменения сохраняются на этом телефоне и применяются при следующем запуске навигатора.': 'Changes are saved on this phone and applied the next time the navigator starts.',
+      'Сначала сохраните файл карты в память телефона, затем выберите его.': 'Save the map file to your phone first, then select it.'
       'Голос телефона': 'Device voice',
     },
   };
@@ -785,7 +815,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   Text(AppLocale.tr('Голос телефона'), style: TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
                   if (voices.isEmpty)
-                    Text(AppLocale.tr('Для выбранного языка голоса не найдены. Установите голосовые данные в настройках преобразования текста в речь Android.', style: TextStyle(color: Color(0xFF9A5B00)))
+                    Text(AppLocale.tr('Для выбранного языка голоса не найдены. Установите голосовые данные в настройках преобразования текста в речь Android.'), style: const TextStyle(color: Color(0xFF9A5B00)))
                   else
                     DropdownButtonFormField<String>(
                       value: selectedExists ? selectedKey : '',
@@ -794,7 +824,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         DropdownMenuItem(value: '', child: Text(AppLocale.tr('Системный голос по умолчанию'))),
                         ...voices.map((v) {
                           final key = '${v['name']}|${v['locale']}';
-                          return DropdownMenuItem(value: key, child: Text(AppLocale.tr('${v[')name']} · ${v['locale']}', overflow: TextOverflow.ellipsis));
+                          return DropdownMenuItem(value: key, child: Text('${v['name']} · ${v['locale']}', overflow: TextOverflow.ellipsis));
                         }),
                       ],
                       onChanged: (value) async {
@@ -2059,9 +2089,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ),
                 const Divider(),
                 const SizedBox(height: 10),
-                const Text(
-                  'Офлайн-карты',
-                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                Text(
+                  AppLocale.tr('Офлайн-карты'),
+                  style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
                 ListTile(
@@ -2187,7 +2217,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         child: Icon(icon, size: 30, color: const Color(0xFF343434)),
                       ),
                       const SizedBox(height: 18),
-                      Text(title, style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
+                      Text(AppLocale.tr(title), style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 10),
                       Text(AppLocale.tr(description), style: const TextStyle(fontSize: 16, height: 1.45)),
                       const SizedBox(height: 18),
@@ -3871,9 +3901,9 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                           contentPadding: EdgeInsets.zero,
                           leading: const Icon(Icons.map_outlined),
                           title: Text(AppLocale.tr('Офлайн-карта')),
-                          subtitle: Text(_offlineMapPath == null
+                          subtitle: Text(AppLocale.tr(_offlineMapPath == null
                               ? 'Готовый MBTiles-файл пока не подключён.'
-                              : 'Офлайн-карта подключена на этом устройстве.'),
+                              : 'Офлайн-карта подключена на этом устройстве.')),
                         ),
                         SizedBox(
                           width: double.infinity,
