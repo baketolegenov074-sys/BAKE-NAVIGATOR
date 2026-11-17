@@ -2412,7 +2412,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             controller: controller,
             autofocus: true,
             textInputAction: TextInputAction.done,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: AppLocale.tr('Введите адрес'),
               border: OutlineInputBorder(),
             ),
@@ -2742,7 +2742,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 final lon = (item['lon'] as num).toDouble();
                 return ListTile(
                   leading: const Icon(Icons.bookmark),
-                  title: Text(item['label']?.toString() ?? 'Сохранённая точка'),
+                  title: Text(AppLocale.tr(item['label']?.toString() ?? 'Сохранённая точка')),
                   onTap: () {
                     Navigator.pop(sheetContext);
                     final point = LatLng(lat, lon);
