@@ -3852,7 +3852,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           if (!_navigationActive && !_routeReady)
             Positioned(
               left: 14,
-              top: 206,
+              top: 146,
               child: Material(
                 color: Colors.white,
                 elevation: 4,
@@ -3869,7 +3869,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           Positioned(
             left: 14,
-            top: 144,
+            top: 84,
             child: _roundMapButton(
               icon: Icons.my_location,
               tooltip: AppLocale.tr('Моё местоположение'),
