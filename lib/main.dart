@@ -4205,6 +4205,13 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
                   onChanged: _setVoice,
                 ),
                 ListTile(
+                  leading: const Icon(Icons.record_voice_over_outlined),
+                  title: Text(AppLocale.pick('Язык и голос озвучки', 'Дауыс тілі мен дауысы', 'Voice language and voice')),
+                  subtitle: Text(AppLocale.pick('Казахский, русский или английский', 'Қазақша, орысша немесе ағылшынша', 'Kazakh, Russian or English')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onOpenSoundSettings,
+                ),
+                ListTile(
                   leading: const Icon(Icons.alt_route),
                   title: Text(AppLocale.tr('Предпочтения маршрута')),
                   subtitle: Text(AppLocale.tr('Быстрый')),
