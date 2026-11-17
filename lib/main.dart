@@ -216,6 +216,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ListTile(leading: const Icon(Icons.alt_route), title: const Text('Параметры маршрута'), onTap: () { Navigator.pop(sheetContext); _openRoutePreferences(); }),
             ListTile(leading: const Icon(Icons.layers_outlined), title: const Text('Внешний вид и слои карты'), onTap: () { Navigator.pop(sheetContext); _openMapLayers(); }),
             ListTile(leading: const Icon(Icons.download_for_offline_outlined), title: const Text('Офлайн-карты и автомобиль'), onTap: () { Navigator.pop(sheetContext); _openOfflineAndVehicleSettings(); }),
+            ListTile(leading: const Icon(Icons.place_outlined), title: const Text('Мои места'), onTap: () { Navigator.pop(sheetContext); _openMyPlaces(); }),
+            ListTile(leading: const Icon(Icons.warning_amber_outlined), title: const Text('События на дороге'), onTap: () { Navigator.pop(sheetContext); _openRoadEvents(); }),
           ]),
         ),
       ),
@@ -1297,20 +1299,77 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Future<void> _openMapLayers() async {
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (sheetContext) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Align(alignment: Alignment.centerLeft, child: Text('Карта и слои', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
-            ListTile(leading: const Icon(Icons.map_outlined), title: const Text('Схема'), subtitle: const Text('Карта OpenStreetMap'), trailing: const Icon(Icons.check, color: Color(0xFF269B68))),
-            ListTile(leading: const Icon(Icons.bookmark_border), title: const Text('Закладки'), onTap: () { Navigator.pop(sheetContext); _openBookmarks(); }),
-            ListTile(leading: const Icon(Icons.local_parking_outlined), title: const Text('Парковки'), onTap: () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
-            ListTile(leading: const Icon(Icons.traffic), title: const Text('Пробки'), subtitle: const Text('Источник данных о пробках пока не подключён'), enabled: false),
-            ListTile(leading: const Icon(Icons.panorama), title: const Text('Панорамы'), subtitle: const Text('Панорамный сервис пока не подключён'), enabled: false),
-            ListTile(leading: const Icon(Icons.satellite_alt), title: const Text('Спутник и гибрид'), subtitle: const Text('Поставщик спутниковых тайлов пока не подключён'), enabled: false),
-          ]),
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Align(alignment: Alignment.centerLeft, child: Text('Карта и слои', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+              const SizedBox(height: 8),
+              ListTile(
+                leading: const Icon(Icons.map_outlined),
+                title: const Text('Схема'),
+                subtitle: Text(_offlineTileProvider == null ? 'OpenStreetMap · онлайн' : 'Подключена офлайн-карта'),
+                trailing: const Icon(Icons.check_circle, color: Color(0xFF269B68)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  if (_offlineTileProvider != null) _openOfflineAndVehicleSettings();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.download_for_offline_outlined),
+                title: const Text('Офлайн-карты'),
+                subtitle: const Text('Выбрать файл карты или вернуться к онлайн-карте'),
+                onTap: () { Navigator.pop(sheetContext); _openOfflineAndVehicleSettings(); },
+              ),
+              ListTile(
+                leading: const Icon(Icons.bookmark_border),
+                title: const Text('Избранные точки'),
+                subtitle: const Text('Открыть сохранённые места'),
+                onTap: () { Navigator.pop(sheetContext); _openBookmarks(); },
+              ),
+              ListTile(
+                leading: const Icon(Icons.place_outlined),
+                title: const Text('Мои места'),
+                subtitle: const Text('Дом и работа'),
+                onTap: () { Navigator.pop(sheetContext); _openMyPlaces(); },
+              ),
+              ListTile(
+                leading: const Icon(Icons.local_parking_outlined),
+                title: const Text('Парковки'),
+                subtitle: const Text('Найти парковки через поиск карты'),
+                onTap: () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); },
+              ),
+              ListTile(
+                leading: const Icon(Icons.warning_amber_outlined),
+                title: const Text('События на дороге'),
+                subtitle: const Text('Локальные сообщения на этом устройстве'),
+                onTap: () { Navigator.pop(sheetContext); _openRoadEvents(); },
+              ),
+              const Divider(),
+              const ListTile(
+                leading: Icon(Icons.traffic),
+                title: Text('Пробки'),
+                subtitle: Text('Пока нет подключённого источника данных'),
+                enabled: false,
+              ),
+              const ListTile(
+                leading: Icon(Icons.panorama),
+                title: Text('Панорамы'),
+                subtitle: Text('Панорамный сервис пока не подключён'),
+                enabled: false,
+              ),
+              const ListTile(
+                leading: Icon(Icons.satellite_alt),
+                title: Text('Спутник и гибрид'),
+                subtitle: Text('Поставщик спутниковых снимков пока не подключён'),
+                enabled: false,
+              ),
+            ]),
+          ),
         ),
       ),
     );
