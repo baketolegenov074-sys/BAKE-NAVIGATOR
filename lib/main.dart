@@ -522,6 +522,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _isBuildingRoute = false;
   int _voiceMode = 3;
   double? _gpsHeadingDegrees;
+  double? _lastCameraHeadingDegrees;
+  int _announcedManeuverStage = 0;
   int _offRouteSamples = 0;
   DateTime? _lastAutomaticReroute;
   DateTime? _plannedDeparture;
@@ -1142,7 +1144,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           }
         });
 
-        // Keep the vehicle marker in view while turn-by-turn navigation is active.
+        // Follow the live GPS position and rotate the map to the direction of travel.
+        // flutter_map supports 2D rotation, but not a true 3D pitch camera.
         if (_navigationActive) {
           final camera = _mapController.camera;
           if (Geolocator.distanceBetween(
@@ -1150,8 +1153,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 camera.center.longitude,
                 point.latitude,
                 point.longitude,
-              ) > 8) {
-            _mapController.move(point, math.max(camera.zoom, 16.0).toDouble());
+              ) > 3) {
+            _mapController.move(point, math.max(camera.zoom, 17.0).toDouble());
+          }
+          final heading = _gpsHeadingDegrees;
+          if (heading != null && position.speed >= 1.5) {
+            final normalizedHeading = (heading % 360 + 360) % 360;
+            final previousHeading = _lastCameraHeadingDegrees;
+            final difference = previousHeading == null
+                ? 360.0
+                : ((normalizedHeading - previousHeading + 540) % 360) - 180;
+            if (difference.abs() >= 4) {
+              _mapController.rotate(-normalizedHeading);
+              _lastCameraHeadingDegrees = normalizedHeading;
+            }
           }
         }
 
@@ -1497,6 +1512,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
     setState(() {
       _navigationActive = true;
+      _announcedManeuverStage = 0;
       _instructionIndex = _instructions.isNotEmpty && _instructions.length > 1 ? 1 : 0;
       _message = AppLocale.pick('Включаем фоновый GPS и голосовые подсказки…', 'Фондық GPS пен дауыстық нұсқаулар қосылуда…', 'Enabling background GPS and voice guidance…');
     });
@@ -1520,6 +1536,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       return;
     }
     if (!mounted) return;
+    final livePoint = _currentLocation!;
+    _mapController.move(livePoint, 17);
+    final initialHeading = _gpsHeadingDegrees;
+    if (initialHeading != null && _currentSpeedKmh >= 5.4) {
+      _mapController.rotate(-initialHeading);
+      _lastCameraHeadingDegrees = initialHeading;
+    }
     setState(() {
       _message = AppLocale.pick('Навигация началась. GPS продолжит работать при свёрнутом приложении.', 'Навигация басталды. Қолданба кішірейтілгенде де GPS жұмысын жалғастырады.', 'Navigation started. GPS will keep running when the app is minimized.');
     });
@@ -1533,6 +1556,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _message = AppLocale.tr('Навигация завершена.');
     });
     await _tts.stop();
+    _lastCameraHeadingDegrees = null;
+    _mapController.rotate(0);
     await _startLiveLocationUpdates();
   }
 
@@ -1564,6 +1589,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
+  double? get _distanceToNextManeuverMeters {
+    if (_currentLocation == null || _instructionIndex >= _instructions.length) return null;
+    final target = _instructions[_instructionIndex].location;
+    return Geolocator.distanceBetween(
+      _currentLocation!.latitude,
+      _currentLocation!.longitude,
+      target.latitude,
+      target.longitude,
+    );
+  }
+
   void _updateNavigationProgress(LatLng position) {
     if (!_navigationActive || _instructionIndex >= _instructions.length) return;
     final target = _instructions[_instructionIndex];
@@ -1573,6 +1609,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       target.location.latitude,
       target.location.longitude,
     );
+
+    // Announce the upcoming maneuver in stages instead of speaking only once.
+    final stage = meters <= 35 ? 3 : meters <= 150 ? 2 : meters <= 500 ? 1 : 0;
+    if (stage > _announcedManeuverStage) {
+      _announcedManeuverStage = stage;
+      if (_voiceMode >= 2) {
+        final announcement = stage == 1
+            ? _localized('Через 500 метров: ${target.text}', '500 метрден кейін: ${target.text}', 'In 500 meters: ${target.text}')
+            : stage == 2
+                ? _localized('Через 150 метров: ${target.text}', '150 метрден кейін: ${target.text}', 'In 150 meters: ${target.text}')
+                : target.text;
+        unawaited(_speakText(announcement));
+      }
+    }
+
     if (meters <= 35) {
       if (_instructionIndex + 1 >= _instructions.length) {
         setState(() {
@@ -1583,7 +1634,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         unawaited(_startLiveLocationUpdates());
         return;
       }
-      setState(() => _instructionIndex++);
+      setState(() {
+        _instructionIndex++;
+        _announcedManeuverStage = 0;
+      });
       _speakCurrentInstruction();
     }
   }
@@ -1651,7 +1705,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       return;
     }
     if (_routeOrigin == null && _currentLocation == null) await _locateMe();
-    final routeOrigin = _routeOrigin ?? _currentLocation;
+    // During an automatic reroute, always start from the latest live GPS fix;
+    // a manually saved/planned origin must never pull the driver backwards.
+    final routeOrigin = automaticReroute
+        ? _currentLocation
+        : (_routeOrigin ?? _currentLocation);
     if (routeOrigin == null || _destination == null) {
       if (mounted) setState(() => _message = AppLocale.pick('Не удалось определить начальную точку. Выберите её на карте или включите GPS.', 'Бастапқы нүктені анықтау мүмкін болмады. Оны картадан таңдаңыз немесе GPS қосыңыз.', 'Could not determine the starting point. Select it on the map or enable GPS.'));
       return;
@@ -1725,6 +1783,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           coordinates: points,
           padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
         ));
+        if (automaticReroute && resumeNavigation && _currentLocation != null) {
+          _mapController.move(_currentLocation!, 17);
+          final heading = _gpsHeadingDegrees;
+          if (heading != null && _currentSpeedKmh >= 5.4) {
+            _mapController.rotate(-heading);
+            _lastCameraHeadingDegrees = heading;
+          }
+        }
       }
       if (automaticReroute && resumeNavigation) {
         if (_voiceMode >= 1) await _speakText(AppLocale.pick('Вы отклонились от маршрута. Маршрут перестроен.', 'Бағыттан ауытқыдыңыз. Маршрут қайта құрылды.', 'You left the route. The route has been recalculated.'));
@@ -3439,7 +3505,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           width: 44,
           height: 44,
           child: Transform.rotate(
-            angle: (_gpsHeadingDegrees ?? 0) * math.pi / 180,
+            angle: _navigationActive ? 0 : (_gpsHeadingDegrees ?? 0) * math.pi / 180,
             child: const Icon(Icons.navigation, color: Color(0xFF1769AA), size: 36),
           ),
         ),
@@ -3583,7 +3649,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                 ),
                                 if (_instructionIndex < _instructions.length)
                                   Text(
-                                    'Следующий манёвр · ${_instructions[_instructionIndex].distanceMeters.round()} м',
+                                    'Следующий манёвр · ${_distanceToNextManeuverMeters == null ? '—' : (_distanceToNextManeuverMeters! >= 1000 ? '${(_distanceToNextManeuverMeters! / 1000).toStringAsFixed(1)} км' : '${_distanceToNextManeuverMeters!.round()} м')}',
                                     style: const TextStyle(fontSize: 12, color: Color(0xFF626A73)),
                                   ),
                               ],
@@ -3724,7 +3790,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Positioned(
               left: 16,
               right: 16,
-              bottom: _navigationActive ? 380 : 125,
+              bottom: _navigationActive ? 380 : (_routeReady ? 160 : 125),
               child: IgnorePointer(
                 child: Align(
                   alignment: Alignment.center,
