@@ -19,7 +19,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
-  AppLocale.language = prefs.getString('app_language') ?? 'ru';
+  // One-time migration: make Kazakh the default app and navigation language.
+  if (!(prefs.getBool('kazakh_primary_language_v1') ?? false)) {
+    await prefs.setString('app_language', 'kk');
+    await prefs.setString('navigation_language', 'kk-KZ');
+    await prefs.remove('voice_name');
+    await prefs.remove('voice_locale');
+    await prefs.setBool('kazakh_primary_language_v1', true);
+  }
+  AppLocale.language = prefs.getString('app_language') ?? 'kk';
   runApp(const BakeNavigatorApp());
 }
 
@@ -52,7 +60,7 @@ class BakeNavigatorApp extends StatelessWidget {
 
 
 class AppLocale {
-  static String language = 'ru';
+  static String language = 'kk';
 
   static const Map<String, Map<String, String>> _translations = {
     'kk': {
@@ -582,7 +590,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
-  String _navigationLanguage = 'ru-RU';
+  String _navigationLanguage = 'kk-KZ';
   String? _selectedVoiceName;
   String? _selectedVoiceLocale;
   List<Map<String, String>> _availableVoices = <Map<String, String>>[];
@@ -593,7 +601,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final volume = prefs.getDouble('voice_volume') ?? 1.0;
       final rate = prefs.getDouble('voice_rate') ?? 0.48;
       _voiceMode = prefs.getInt('voice_mode') ?? 3;
-      _navigationLanguage = prefs.getString('navigation_language') ?? 'ru-RU';
+      _navigationLanguage = prefs.getString('navigation_language') ?? 'kk-KZ';
       _selectedVoiceName = prefs.getString('voice_name');
       _selectedVoiceLocale = prefs.getString('voice_locale');
       await _tts.setLanguage(_navigationLanguage);
@@ -625,13 +633,57 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
+  String _voiceLanguageCode(String locale) =>
+      locale.toLowerCase().replaceAll('_', '-').split('-').first;
+
+  Future<bool> _prepareSpeechVoice() async {
+    await _tts.setLanguage(_navigationLanguage);
+    final requiredLanguage = _voiceLanguageCode(_navigationLanguage);
+    final matchingVoices = _availableVoices
+        .where((voice) => _voiceLanguageCode(voice['locale'] ?? '') == requiredLanguage)
+        .toList();
+    // Never let Android silently read Kazakh street names with a Russian voice.
+    if (matchingVoices.isEmpty) return false;
+
+    final selected = matchingVoices.where((voice) =>
+      voice['name'] == _selectedVoiceName &&
+      voice['locale'] == _selectedVoiceLocale
+    );
+    final voice = selected.isNotEmpty ? selected.first : matchingVoices.first;
+    _selectedVoiceName = voice['name'];
+    _selectedVoiceLocale = voice['locale'];
+    await _tts.setVoice(<String, String>{
+      'name': voice['name']!,
+      'locale': voice['locale']!,
+    });
+    return true;
+  }
+
   Future<void> _applySelectedVoice() async {
-    final name = _selectedVoiceName;
-    final locale = _selectedVoiceLocale;
-    if (name != null && locale != null) {
-      await _tts.setVoice(<String, String>{'name': name, 'locale': locale});
-    } else {
-      await _tts.setLanguage(_navigationLanguage);
+    await _prepareSpeechVoice();
+  }
+
+  Future<void> _speakText(String text) async {
+    try {
+      if (!await _prepareSpeechVoice()) {
+        if (mounted) {
+          setState(() => _message = AppLocale.pick(
+            'Для казахской озвучки установите казахский голос в настройках Android.',
+            'Қазақша дыбыстау үшін Android баптауларынан қазақ дауысын орнатыңыз.',
+            'Install a Kazakh voice in Android settings for Kazakh navigation speech.',
+          ));
+        }
+        return;
+      }
+      await _tts.speak(text);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _message = AppLocale.pick(
+          'Не удалось запустить выбранный голос навигации.',
+          'Таңдалған навигация дауысын іске қосу мүмкін болмады.',
+          'Could not start the selected navigation voice.',
+        ));
+      }
     }
   }
 
@@ -788,6 +840,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       await prefs.remove('voice_name');
                       await prefs.remove('voice_locale');
                       await _tts.setLanguage(value);
+                      await _refreshAvailableVoices();
+                      await _prepareSpeechVoice();
                       refresh(() {});
                     },
                   ),
@@ -832,7 +886,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       child: TextButton.icon(
                         onPressed: () async {
                           await _applySelectedVoice();
-                          await _tts.speak(language == 'kk-KZ'
+                          await _speakText(language == 'kk-KZ'
                               ? 'Дауысты тексеру. Бағыт бойынша жүре беріңіз.'
                               : language == 'en-US'
                                   ? 'Voice test. Continue on the route.'
@@ -1319,7 +1373,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ? _localized('${(meters / 1000).toStringAsFixed(1)} километра', '${(meters / 1000).toStringAsFixed(1)} километр', '${(meters / 1000).toStringAsFixed(1)} kilometers')
         : _localized('${meters.round()} метров', '${meters.round()} метр', '${meters.round()} meters');
     if (_voiceMode >= 2) {
-      await _tts.speak(_localized('${instruction.text} через $distanceText.', '${instruction.text} $distanceText кейін.', '${instruction.text} in $distanceText.'));
+      await _speakText(_localized('${instruction.text} через $distanceText.', '${instruction.text} $distanceText кейін.', '${instruction.text} in $distanceText.'));
     }
   }
 
@@ -1338,7 +1392,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           _navigationActive = false;
           _message = AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.');
         });
-        if (_voiceMode >= 1) _tts.speak(AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.'));
+        if (_voiceMode >= 1) _speakText(AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.'));
         unawaited(_startLiveLocationUpdates());
         return;
       }
@@ -1485,12 +1539,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ));
       }
       if (automaticReroute && resumeNavigation) {
-        if (_voiceMode >= 1) await _tts.speak(AppLocale.pick('Вы отклонились от маршрута. Маршрут перестроен.', 'Бағыттан ауытқыдыңыз. Маршрут қайта құрылды.', 'You left the route. The route has been recalculated.'));
+        if (_voiceMode >= 1) await _speakText(AppLocale.pick('Вы отклонились от маршрута. Маршрут перестроен.', 'Бағыттан ауытқыдыңыз. Маршрут қайта құрылды.', 'You left the route. The route has been recalculated.'));
         await _speakCurrentInstruction();
       } else {
         final distanceKm = (distance / 1000).toStringAsFixed(1);
         final minutes = (duration / 60).round();
-        if (_voiceMode >= 3) await _tts.speak(AppLocale.pick('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.', 'Маршрут құрылды. Қашықтық $distanceKm километр. Жол уақыты шамамен $minutes минут.', 'Route built. Distance $distanceKm kilometers. Estimated travel time $minutes minutes.'));
+        if (_voiceMode >= 3) await _speakText(AppLocale.pick('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.', 'Маршрут құрылды. Қашықтық $distanceKm километр. Жол уақыты шамамен $minutes минут.', 'Route built. Distance $distanceKm kilometers. Estimated travel time $minutes minutes.'));
         // Always show the route summary, including the «Поехали» action,
         // even when the routing service returns only one valid route.
         unawaited(_openRouteAlternatives());
@@ -3500,7 +3554,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           Positioned(
             left: 18,
             right: 18,
-            bottom: 27,
+            bottom: 8,
             child: SafeArea(
               top: false,
               child: Material(
@@ -3551,7 +3605,7 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
   bool _voiceEnabled = true;
   bool _avoidTolls = false;
   bool _loading = true;
-  String _appLanguage = 'ru';
+  String _appLanguage = 'kk';
 
   String get _appLanguageLabel => const {'ru': 'Русский', 'kk': 'Қазақша', 'en': 'English'}[_appLanguage] ?? 'Русский';
 
@@ -3586,7 +3640,7 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
     setState(() {
       _voiceEnabled = (prefs.getInt('voice_mode') ?? 3) != 0;
       _avoidTolls = prefs.getBool('avoid_tolls') ?? false;
-      _appLanguage = prefs.getString('app_language') ?? 'ru';
+      _appLanguage = prefs.getString('app_language') ?? 'kk';
       _loading = false;
     });
   }
