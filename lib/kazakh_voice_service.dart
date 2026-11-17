@@ -321,12 +321,13 @@ void _kazakhTtsWorker(SendPort mainPort) {
   mainPort.send(receivePort.sendPort);
   sherpa.OfflineTts? engine;
 
-  receivePort.listen((message) {
+  receivePort.listen((message) async {
     if (message is! Map) return;
     final command = message['command'];
     if (command == 'init') {
       try {
-        sherpa.initBindings();
+        // Initialize FFI asynchronously inside the worker isolate before creating native objects.
+        await sherpa.initBindingsAsync();
         final dir = message['modelDir'] as String;
         final config = sherpa.OfflineTtsConfig(
           model: sherpa.OfflineTtsModelConfig(
@@ -338,7 +339,7 @@ void _kazakhTtsWorker(SendPort mainPort) {
             numThreads: 2,
             debug: false,
           ),
-          maxNumSentences: 1,
+          maxNumSentences: 2,
         );
         engine = sherpa.OfflineTts(config);
         mainPort.send({'type': 'ready', 'speakers': engine!.numSpeakers});
@@ -348,13 +349,12 @@ void _kazakhTtsWorker(SendPort mainPort) {
     } else if (command == 'speak' && engine != null) {
       final id = message['id'] as int;
       try {
-        final audio = engine!.generateWithConfig(
+        // Use the simple, documented VITS generation API. It passes speaker ID
+        // and speed directly and avoids the advanced config FFI path.
+        final audio = engine!.generate(
           text: message['text'] as String,
-          config: sherpa.OfflineTtsGenerationConfig(
-            sid: message['speakerId'] as int,
-            speed: (message['speed'] as num).toDouble(),
-            silenceScale: 0.2,
-          ),
+          sid: message['speakerId'] as int,
+          speed: (message['speed'] as num).toDouble(),
         );
         final samples = audio.samples;
         final sampleRate = audio.sampleRate;
