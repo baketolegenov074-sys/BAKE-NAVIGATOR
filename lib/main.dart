@@ -782,7 +782,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           onOpenProfile: _openProfileMenu,
           onVoiceChanged: (enabled) {
             setState(() => _voiceMode = enabled ? 3 : 0);
-            if (!enabled) unawaited(_tts.stop());
+            if (!enabled) {
+              unawaited(_tts.stop());
+              unawaited(_kazakhVoiceService.stop());
+            }
           },
         ),
       ),
@@ -897,7 +900,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Бір пакетте 2 ер және 4 әйел дауысы бар. Алғашқы жүктеу шамамен 129 МБ, кейін интернетсіз жұмыс істейді.',
+                      AppLocale.pick('В пакете 2 мужских и 4 женских голоса. Первая загрузка — около 129 МБ, дальше работает без интернета.', 'Бір пакетте 2 ер және 4 әйел дауысы бар. Алғашқы жүктеу шамамен 129 МБ, кейін интернетсіз жұмыс істейді.', 'One package includes 2 male and 4 female voices. First download is about 129 MB; after that it works offline.'),
                       style: const TextStyle(fontSize: 12, color: Color(0xFF62666D)),
                     ),
                     const SizedBox(height: 8),
@@ -905,8 +908,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       onPressed: offlineVoiceBusy ? null : () async {
                         offlineVoiceBusy = true;
                         offlineVoiceStatus = offlineVoiceReady
-                            ? 'Таңдалған дауыс дайындалып жатыр…'
-                            : 'Қазақша дауыс пакеті жүктеліп жатыр…';
+                            ? AppLocale.pick('Готовим выбранный голос…', 'Таңдалған дауыс дайындалып жатыр…', 'Preparing the selected voice…')
+                            : AppLocale.pick('Загружаем казахский голосовой пакет…', 'Қазақша дауыс пакеті жүктеліп жатыр…', 'Downloading Kazakh voice pack…');
                         refresh(() {});
                         try {
                           await _kazakhVoiceService.speak(
@@ -915,7 +918,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             speed: 1.0,
                           );
                           offlineVoiceReady = true;
-                          offlineVoiceStatus = 'Қазақша офлайн дауыс дайын.';
+                          offlineVoiceStatus = AppLocale.pick('Казахский офлайн-голос готов.', 'Қазақша офлайн дауыс дайын.', 'Kazakh offline voice is ready.');
                         } catch (error) {
                           offlineVoiceStatus = error.toString().replaceFirst('Exception: ', '');
                         } finally {
@@ -927,10 +930,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.download_for_offline_outlined),
                       label: Text(offlineVoiceBusy
-                          ? 'Күте тұрыңыз…'
+                          ? AppLocale.pick('Подождите…', 'Күте тұрыңыз…', 'Please wait…')
                           : offlineVoiceReady
-                              ? 'Таңдалған дауысты тыңдау'
-                              : 'Жүктеу және дауысты тыңдау'),
+                              ? AppLocale.pick('Прослушать выбранный голос', 'Таңдалған дауысты тыңдау', 'Preview selected voice')
+                              : AppLocale.pick('Загрузить и прослушать голос', 'Жүктеу және дауысты тыңдау', 'Download and preview voice')),
                     ),
                     if (offlineVoiceStatus.isNotEmpty)
                       Text(offlineVoiceStatus, style: const TextStyle(fontSize: 12, color: Color(0xFF62666D))),
