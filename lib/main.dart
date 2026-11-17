@@ -2005,148 +2005,61 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       await _openRoutePlanner();
       return;
     }
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (pageContext) => StatefulBuilder(
-          builder: (pageContext, refreshPage) => Scaffold(
-          backgroundColor: const Color(0xFFF7F8FA),
-          appBar: AppBar(
-            title: Text(AppLocale.tr('Построение маршрута')),
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.white,
-            actions: [
-              IconButton(
-                tooltip: AppLocale.tr('Изменить точки'),
-                onPressed: () {
-                  Navigator.pop(pageContext);
-                  _openRoutePlanner();
-                },
-                icon: const Icon(Icons.edit_location_alt_outlined),
-              ),
-            ],
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          body: SafeArea(
-            child: Column(
-              children: [
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-                    children: [
-                      Card(
-                        color: Colors.white,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.trip_origin, color: Color(0xFF269B68)),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      _routeOrigin == null
-                                          ? (_currentLocation == null ? 'Моё местоположение' : 'Текущее местоположение')
-                                          : '${_routeOrigin!.latitude.toStringAsFixed(5)}, ${_routeOrigin!.longitude.toStringAsFixed(5)}',
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontWeight: FontWeight.w600),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const Padding(
-                                padding: EdgeInsets.only(left: 11),
-                                child: SizedBox(height: 18, child: VerticalDivider(width: 1, thickness: 1)),
-                              ),
-                              Row(
-                                children: [
-                                  const Icon(Icons.location_on, color: Color(0xFFE45D52)),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      _destination == null
-                                          ? 'Пункт назначения не выбран'
-                                          : '${_destination!.latitude.toStringAsFixed(5)}, ${_destination!.longitude.toStringAsFixed(5)}',
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontWeight: FontWeight.w600),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              if (_routeStops.isNotEmpty) ...[
-                                const Divider(height: 22),
-                                Text('${AppLocale.tr('Промежуточные остановки: ')}${_routeStops.length}'),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Варианты маршрута',
-                        style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 8),
-                      ...List.generate(_routeAlternatives.length, (index) {
-                        final route = _routeAlternatives[index];
-                        final km = ((route['distance'] as num).toDouble() / 1000).toStringAsFixed(1);
-                        final minutes = (((route['duration'] as num).toDouble()) / 60).round();
-                        final selected = index == _selectedRouteIndex;
-                        return Card(
-                          color: selected ? const Color(0xFFFFF4CC) : Colors.white,
-                          child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                            leading: Icon(
-                              selected ? Icons.radio_button_checked : Icons.radio_button_off,
-                              color: const Color(0xFF343434),
-                            ),
-                            title: Text(
-                              '$minutes мин · $km км',
-                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                            ),
-                            subtitle: Text('${AppLocale.tr('Вариант ')}${index + 1}'),
-                            trailing: selected ? const Icon(Icons.check_circle, color: Color(0xFF269B68)) : null,
-                            onTap: () {
-                              _selectRouteAlternative(index);
-                              refreshPage(() {});
-                            },
-                          ),
-                        );
-                      }),
-                    ],
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD5D9DE),
+                    borderRadius: BorderRadius.circular(4),
                   ),
                 ),
-                Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                  child: SafeArea(
-                    top: false,
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFFFFCC00),
-                          foregroundColor: const Color(0xFF171717),
-                        ),
-                        onPressed: _navigationActive ? null : () {
-                          Navigator.pop(pageContext);
-                          _startNavigation();
-                        },
-                        child: Text(AppLocale.tr('Поехали'), style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                      ),
-                    ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                AppLocale.tr('Варианты маршрута'),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              ...List.generate(_routeAlternatives.length, (index) {
+                final route = _routeAlternatives[index];
+                final km = ((route['distance'] as num).toDouble() / 1000).toStringAsFixed(1);
+                final minutes = (((route['duration'] as num).toDouble()) / 60).round();
+                final selected = index == _selectedRouteIndex;
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  leading: Icon(
+                    selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                    color: selected ? const Color(0xFFB88A00) : const Color(0xFF69737D),
                   ),
-                ),
-              ],
-            ),
+                  title: Text('$minutes мин · $km км', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text('${AppLocale.tr('Вариант ')}${index + 1}'),
+                  onTap: () {
+                    _selectRouteAlternative(index);
+                    Navigator.pop(sheetContext);
+                  },
+                );
+              }),
+            ],
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   Future<void> _addRouteStop(LatLng point) async {
@@ -3961,7 +3874,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Positioned(
               left: 16,
               right: 16,
-              bottom: _navigationActive ? 380 : (_routeReady ? 160 : 125),
+              bottom: _navigationActive ? 380 : (_routeReady ? 205 : 125),
               child: IgnorePointer(
                 child: Align(
                   alignment: Alignment.center,
@@ -3984,23 +3897,70 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           if (!_navigationActive && _routeReady)
             Positioned(
-              left: 18,
-              right: 18,
-              bottom: 88,
+              left: 12,
+              right: 12,
+              bottom: 76,
               child: SafeArea(
                 top: false,
-                child: SizedBox(
-                  height: 54,
-                  child: FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFFFCC00),
-                      foregroundColor: const Color(0xFF171717),
-                      elevation: 7,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                child: Material(
+                  color: Colors.white,
+                  elevation: 8,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: List.generate(_routeAlternatives.length, (index) {
+                              final route = _routeAlternatives[index];
+                              final km = ((route['distance'] as num).toDouble() / 1000).toStringAsFixed(1);
+                              final minutes = (((route['duration'] as num).toDouble()) / 60).round();
+                              final selected = index == _selectedRouteIndex;
+                              return Padding(
+                                padding: EdgeInsets.only(right: index == _routeAlternatives.length - 1 ? 0 : 7),
+                                child: ChoiceChip(
+                                  selected: selected,
+                                  showCheckmark: true,
+                                  selectedColor: const Color(0xFFFFF0B8),
+                                  backgroundColor: const Color(0xFFF1F3F5),
+                                  side: BorderSide(
+                                    color: selected ? const Color(0xFFE0AD00) : const Color(0xFFE1E4E8),
+                                  ),
+                                  label: Text(
+                                    '${index + 1} · $minutes мин · $km км',
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                                  ),
+                                  onSelected: (value) {
+                                    if (value) _selectRouteAlternative(index);
+                                  },
+                                ),
+                              );
+                            }),
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 46,
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFCC00),
+                              foregroundColor: const Color(0xFF171717),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                            onPressed: _isBuildingRoute || !_routeReady ? null : _startNavigation,
+                            icon: const Icon(Icons.navigation, size: 20),
+                            label: Text(
+                              AppLocale.tr('Поехали'),
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    onPressed: _isBuildingRoute ? null : _startNavigation,
-                    icon: const Icon(Icons.navigation),
-                    label: Text(AppLocale.tr('Поехали'), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900)),
                   ),
                 ),
               ),
