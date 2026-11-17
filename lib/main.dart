@@ -3422,7 +3422,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           ),
         ),
-      ))),
+      )))),
     );
     final destinationQuery = destinationController.text.trim();
     final originQuery = originController.text.trim();
