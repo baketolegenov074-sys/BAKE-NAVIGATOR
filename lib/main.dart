@@ -3903,6 +3903,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ),
               ),
             ),
+          if (!_navigationActive)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: -10,
+              child: SafeArea(
+                top: false,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 7,
+                  borderRadius: BorderRadius.circular(24),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                    child: Row(
+                      children: [
+                        _mapBottomItem(Icons.search, AppLocale.tr('Поиск'), _openSearchPanel),
+                        _mapBottomItem(Icons.alt_route, AppLocale.tr('Маршрут'), _openRouteMenu),
+                        _mapBottomItem(Icons.local_gas_station_outlined, AppLocale.tr('АЗС'), _openStationNetworks),
+                        _mapBottomItem(Icons.bookmark_border, AppLocale.tr('Избранное'), _openBookmarks),
+                        _mapBottomItem(Icons.settings_outlined, AppLocale.tr('Настройки'), _openSettings),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (!_navigationActive && _routeReady)
             Positioned(
               left: 12,
@@ -3919,37 +3945,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: List.generate(_routeAlternatives.length, (index) {
-                              final route = _routeAlternatives[index];
-                              final km = ((route['distance'] as num).toDouble() / 1000).toStringAsFixed(1);
-                              final minutes = (((route['duration'] as num).toDouble()) / 60).round();
-                              final selected = index == _selectedRouteIndex;
-                              return Padding(
-                                padding: EdgeInsets.only(right: index == _routeAlternatives.length - 1 ? 0 : 7),
-                                child: ChoiceChip(
-                                  selected: selected,
-                                  showCheckmark: true,
-                                  selectedColor: const Color(0xFFFFF0B8),
-                                  backgroundColor: const Color(0xFFF1F3F5),
-                                  side: BorderSide(
-                                    color: selected ? const Color(0xFFE0AD00) : const Color(0xFFE1E4E8),
-                                  ),
-                                  label: Text(
-                                    '${index + 1} · $minutes мин · $km км',
-                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-                                  ),
-                                  onSelected: (value) {
-                                    if (value) _selectRouteAlternative(index);
-                                  },
-                                ),
-                              );
-                            }),
-                          ),
-                        ),
-                        const SizedBox(height: 7),
                         SizedBox(
                           width: double.infinity,
                           height: 46,
