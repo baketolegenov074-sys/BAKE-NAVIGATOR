@@ -166,18 +166,63 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
+  String _navigationLanguage = 'ru-RU';
+  String? _selectedVoiceName;
+  String? _selectedVoiceLocale;
+  List<Map<String, String>> _availableVoices = <Map<String, String>>[];
+
   Future<void> _configureVoice() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final volume = prefs.getDouble('voice_volume') ?? 1.0;
       final rate = prefs.getDouble('voice_rate') ?? 0.48;
       _voiceMode = prefs.getInt('voice_mode') ?? 3;
-      await _tts.setLanguage('ru-RU');
+      _navigationLanguage = prefs.getString('navigation_language') ?? 'ru-RU';
+      _selectedVoiceName = prefs.getString('voice_name');
+      _selectedVoiceLocale = prefs.getString('voice_locale');
+      await _tts.setLanguage(_navigationLanguage);
       await _tts.setSpeechRate(rate);
       await _tts.setVolume(volume);
+      await _refreshAvailableVoices();
+      await _applySelectedVoice();
     } catch (_) {
       // Voice support depends on the speech engine installed on the phone.
     }
+  }
+
+  Future<void> _refreshAvailableVoices() async {
+    try {
+      final raw = await _tts.getVoices;
+      final parsed = <Map<String, String>>[];
+      if (raw is List) {
+        for (final item in raw) {
+          if (item is! Map) continue;
+          final name = item['name']?.toString() ?? '';
+          final locale = (item['locale'] ?? item['language'] ?? '').toString();
+          if (name.isEmpty || locale.isEmpty) continue;
+          parsed.add(<String, String>{'name': name, 'locale': locale});
+        }
+      }
+      _availableVoices = parsed;
+    } catch (_) {
+      _availableVoices = <Map<String, String>>[];
+    }
+  }
+
+  Future<void> _applySelectedVoice() async {
+    final name = _selectedVoiceName;
+    final locale = _selectedVoiceLocale;
+    if (name != null && locale != null) {
+      await _tts.setVoice(<String, String>{'name': name, 'locale': locale});
+    } else {
+      await _tts.setLanguage(_navigationLanguage);
+    }
+  }
+
+  String _localized(String ru, String kk, String en) {
+    if (_navigationLanguage == 'kk-KZ') return kk;
+    if (_navigationLanguage == 'en-US') return en;
+    return ru;
   }
 
   @override
@@ -246,82 +291,154 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Future<void> _openSoundSettings() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
+    await _refreshAvailableVoices();
     var mode = prefs.getInt('voice_mode') ?? _voiceMode;
     var volume = prefs.getDouble('voice_volume') ?? 1.0;
     var rate = prefs.getDouble('voice_rate') ?? 0.48;
+    var language = prefs.getString('navigation_language') ?? _navigationLanguage;
+    var selectedKey = (_selectedVoiceName == null || _selectedVoiceLocale == null)
+        ? ''
+        : '$_selectedVoiceName|$_selectedVoiceLocale';
+    const languages = <String, String>{
+      'ru-RU': 'Русский',
+      'kk-KZ': 'Қазақша',
+      'en-US': 'English',
+    };
     const modes = <String>['Выкл.', 'Важные', 'Подсказки', 'Все'];
+    List<Map<String, String>> voicesFor(String lang) => _availableVoices
+        .where((v) => (v['locale'] ?? '').toLowerCase().replaceAll('_', '-').startsWith(lang.substring(0, 2).toLowerCase()))
+        .toList();
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (sheetContext) => StatefulBuilder(
-        builder: (sheetContext, refresh) => SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text('Звуковое сопровождение', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: List<Widget>.generate(modes.length, (index) => ChoiceChip(
-                    label: Text(modes[index]),
-                    selected: mode == index,
-                    onSelected: (_) async {
-                      mode = index;
-                      _voiceMode = index;
+        builder: (sheetContext, refresh) {
+          final voices = voicesFor(language);
+          final selectedExists = voices.any((v) => '${v['name']}|${v['locale']}' == selectedKey);
+          return SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('Звуковое сопровождение', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 14),
+                  const Text('Язык голосовых подсказок', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<String>(
+                    value: language,
+                    isExpanded: true,
+                    items: languages.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
+                    onChanged: (value) async {
+                      if (value == null) return;
+                      language = value;
+                      _navigationLanguage = value;
+                      _selectedVoiceName = null;
+                      _selectedVoiceLocale = null;
+                      selectedKey = '';
+                      await prefs.setString('navigation_language', value);
+                      await prefs.remove('voice_name');
+                      await prefs.remove('voice_locale');
+                      await _tts.setLanguage(value);
                       refresh(() {});
-                      await prefs.setInt('voice_mode', index);
-                      if (index == 0) await _tts.stop();
                     },
-                  )),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  mode == 0 ? 'Голосовые подсказки выключены.'
-                    : mode == 1 ? 'Озвучиваются прибытие и важные предупреждения.'
-                    : mode == 2 ? 'Озвучиваются дорожные манёвры и предупреждения.'
-                    : 'Озвучиваются манёвры, предупреждения и информация о маршруте.',
-                  style: const TextStyle(color: Color(0xFF555B63)),
-                ),
-                const Divider(height: 28),
-                Text('Громкость · ${(volume * 100).round()}%', style: const TextStyle(fontWeight: FontWeight.w700)),
-                Slider(
-                  value: volume,
-                  min: 0,
-                  max: 1,
-                  divisions: 10,
-                  onChanged: (value) async {
-                    volume = value;
-                    refresh(() {});
-                    await prefs.setDouble('voice_volume', value);
-                    await _tts.setVolume(value);
-                  },
-                ),
-                Text('Скорость речи · ${rate.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                Slider(
-                  value: rate,
-                  min: 0.25,
-                  max: 0.75,
-                  divisions: 10,
-                  onChanged: (value) async {
-                    rate = value;
-                    refresh(() {});
-                    await prefs.setDouble('voice_rate', value);
-                    await _tts.setSpeechRate(value);
-                  },
-                ),
-                const Text('Настраиваются голосовые подсказки BAKE. Отдельные звуковые сигналы и музыка не подключены.', style: TextStyle(fontSize: 12, color: Colors.black54)),
-                const SizedBox(height: 12),
-                Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(sheetContext), child: const Text('Готово'))),
-              ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Голос телефона', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  if (voices.isEmpty)
+                    const Text('Для выбранного языка голоса не найдены. Установите голосовые данные в настройках преобразования текста в речь Android.', style: TextStyle(color: Color(0xFF9A5B00)))
+                  else
+                    DropdownButtonFormField<String>(
+                      value: selectedExists ? selectedKey : '',
+                      isExpanded: true,
+                      items: <DropdownMenuItem<String>>[
+                        const DropdownMenuItem(value: '', child: Text('Системный голос по умолчанию')),
+                        ...voices.map((v) {
+                          final key = '${v['name']}|${v['locale']}';
+                          return DropdownMenuItem(value: key, child: Text('${v['name']} · ${v['locale']}', overflow: TextOverflow.ellipsis));
+                        }),
+                      ],
+                      onChanged: (value) async {
+                        selectedKey = value ?? '';
+                        if (selectedKey.isEmpty) {
+                          _selectedVoiceName = null;
+                          _selectedVoiceLocale = null;
+                          await prefs.remove('voice_name');
+                          await prefs.remove('voice_locale');
+                          await _tts.setLanguage(language);
+                        } else {
+                          final voice = voices.firstWhere((v) => '${v['name']}|${v['locale']}' == selectedKey);
+                          _selectedVoiceName = voice['name'];
+                          _selectedVoiceLocale = voice['locale'];
+                          await prefs.setString('voice_name', _selectedVoiceName!);
+                          await prefs.setString('voice_locale', _selectedVoiceLocale!);
+                          await _tts.setVoice(<String, String>{'name': _selectedVoiceName!, 'locale': _selectedVoiceLocale!});
+                        }
+                        refresh(() {});
+                      },
+                    ),
+                  if (voices.isNotEmpty)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () async {
+                          await _applySelectedVoice();
+                          await _tts.speak(language == 'kk-KZ'
+                              ? 'Дауысты тексеру. Бағыт бойынша жүре беріңіз.'
+                              : language == 'en-US'
+                                  ? 'Voice test. Continue on the route.'
+                                  : 'Проверка голоса. Продолжайте движение по маршруту.');
+                        },
+                        icon: const Icon(Icons.play_arrow),
+                        label: const Text('Прослушать голос'),
+                      ),
+                    ),
+                  const Divider(height: 24),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: List<Widget>.generate(modes.length, (index) => ChoiceChip(
+                      label: Text(modes[index]),
+                      selected: mode == index,
+                      onSelected: (_) async {
+                        mode = index;
+                        _voiceMode = index;
+                        refresh(() {});
+                        await prefs.setInt('voice_mode', index);
+                        if (index == 0) await _tts.stop();
+                      },
+                    )),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    mode == 0 ? 'Голосовые подсказки выключены.'
+                      : mode == 1 ? 'Озвучиваются прибытие и важные предупреждения.'
+                      : mode == 2 ? 'Озвучиваются дорожные манёвры и предупреждения.'
+                      : 'Озвучиваются манёвры, предупреждения и информация о маршруте.',
+                    style: const TextStyle(color: Color(0xFF555B63)),
+                  ),
+                  const Divider(height: 28),
+                  Text('Громкость · ${(volume * 100).round()}%', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Slider(value: volume, min: 0, max: 1, divisions: 10, onChanged: (value) async {
+                    volume = value; refresh(() {});
+                    await prefs.setDouble('voice_volume', value); await _tts.setVolume(value);
+                  }),
+                  Text('Скорость речи · ${rate.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Slider(value: rate, min: 0.25, max: 0.75, divisions: 10, onChanged: (value) async {
+                    rate = value; refresh(() {});
+                    await prefs.setDouble('voice_rate', value); await _tts.setSpeechRate(value);
+                  }),
+                  const SizedBox(height: 12),
+                  Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(sheetContext), child: const Text('Готово'))),
+                ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -671,24 +788,28 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final type = maneuver['type']?.toString() ?? '';
     final modifier = maneuver['modifier']?.toString() ?? '';
     final name = (step['name']?.toString() ?? '').trim();
-    final road = name.isEmpty ? '' : ' на $name';
-    if (type == 'depart') return 'Начинайте движение$road';
-    if (type == 'arrive') return 'Вы прибыли в пункт назначения';
+    final road = name.isEmpty
+        ? ''
+        : _localized(' на $name', ' $name жолымен', ' on $name');
+    if (type == 'depart') return _localized('Начинайте движение$road', 'Қозғалысты бастаңыз$road', 'Start driving$road');
+    if (type == 'arrive') return _localized('Вы прибыли в пункт назначения', 'Межелі жерге жеттіңіз', 'You have arrived at your destination');
     if (type == 'roundabout' || type == 'rotary') {
-      return 'На круговом движении продолжайте$road';
+      return _localized('На круговом движении продолжайте$road', 'Айналма жолмен жүре беріңіз$road', 'Continue around the roundabout$road');
     }
     final actions = <String, String>{
-      'left': 'Поверните налево',
-      'slight left': 'Плавно поверните налево',
-      'sharp left': 'Резко поверните налево',
-      'right': 'Поверните направо',
-      'slight right': 'Плавно поверните направо',
-      'sharp right': 'Резко поверните направо',
-      'uturn': 'Развернитесь',
-      'straight': 'Продолжайте прямо',
+      'left': _localized('Поверните налево', 'Солға бұрылыңыз', 'Turn left'),
+      'slight left': _localized('Плавно поверните налево', 'Солға қарай жайлап бұрылыңыз', 'Slight left'),
+      'sharp left': _localized('Резко поверните налево', 'Солға күрт бұрылыңыз', 'Sharp left'),
+      'right': _localized('Поверните направо', 'Оңға бұрылыңыз', 'Turn right'),
+      'slight right': _localized('Плавно поверните направо', 'Оңға қарай жайлап бұрылыңыз', 'Slight right'),
+      'sharp right': _localized('Резко поверните направо', 'Оңға күрт бұрылыңыз', 'Sharp right'),
+      'uturn': _localized('Развернитесь', 'Кері бұрылыңыз', 'Make a U-turn'),
+      'straight': _localized('Продолжайте прямо', 'Тура жүре беріңіз', 'Continue straight'),
     };
     final action = actions[modifier] ??
-        (type == 'new name' ? 'Продолжайте движение' : 'Продолжайте по маршруту');
+        (type == 'new name'
+            ? _localized('Продолжайте движение', 'Қозғалысты жалғастырыңыз', 'Continue driving')
+            : _localized('Продолжайте по маршруту', 'Бағыт бойынша жүре беріңіз', 'Continue on the route'));
     return '$action$road';
   }
 
@@ -750,9 +871,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       instruction.location.longitude,
     );
     final distanceText = meters >= 1000
-        ? '${(meters / 1000).toStringAsFixed(1)} километра'
-        : '${meters.round()} метров';
-    if (_voiceMode >= 2) await _tts.speak('${instruction.text} через $distanceText.');
+        ? _localized('${(meters / 1000).toStringAsFixed(1)} километра', '${(meters / 1000).toStringAsFixed(1)} километр', '${(meters / 1000).toStringAsFixed(1)} kilometers')
+        : _localized('${meters.round()} метров', '${meters.round()} метр', '${meters.round()} meters');
+    if (_voiceMode >= 2) {
+      await _tts.speak(_localized('${instruction.text} через $distanceText.', '${instruction.text} $distanceText кейін.', '${instruction.text} in $distanceText.'));
+    }
   }
 
   void _updateNavigationProgress(LatLng position) {
@@ -768,9 +891,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (_instructionIndex + 1 >= _instructions.length) {
         setState(() {
           _navigationActive = false;
-          _message = 'Вы прибыли в пункт назначения.';
+          _message = _localized('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.');
         });
-        if (_voiceMode >= 1) _tts.speak('Вы прибыли в пункт назначения.');
+        if (_voiceMode >= 1) _tts.speak(_localized('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.'));
         unawaited(_startLiveLocationUpdates());
         return;
       }
@@ -917,12 +1040,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ));
       }
       if (automaticReroute && resumeNavigation) {
-        if (_voiceMode >= 1) await _tts.speak('Вы отклонились от маршрута. Маршрут перестроен.');
+        if (_voiceMode >= 1) await _tts.speak(_localized('Вы отклонились от маршрута. Маршрут перестроен.', 'Бағыттан ауытқыдыңыз. Маршрут қайта құрылды.', 'You left the route. The route has been recalculated.'));
         await _speakCurrentInstruction();
       } else {
         final distanceKm = (distance / 1000).toStringAsFixed(1);
         final minutes = (duration / 60).round();
-        if (_voiceMode >= 3) await _tts.speak('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.');
+        if (_voiceMode >= 3) await _tts.speak(_localized('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.', 'Маршрут құрылды. Қашықтық $distanceKm километр. Жол уақыты шамамен $minutes минут.', 'Route built. Distance $distanceKm kilometers. Estimated travel time $minutes minutes.'));
         // Always show the route summary, including the «Поехали» action,
         // even when the routing service returns only one valid route.
         unawaited(_openRouteAlternatives());
@@ -2971,6 +3094,27 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
   bool _voiceEnabled = true;
   bool _avoidTolls = false;
   bool _loading = true;
+  String _appLanguage = 'ru';
+
+  String get _appLanguageLabel => const {'ru': 'Русский', 'kk': 'Қазақша', 'en': 'English'}[_appLanguage] ?? 'Русский';
+
+  Future<void> _chooseAppLanguage() async {
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Язык приложения'),
+        children: [
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'ru'), child: const Text('Русский')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'kk'), child: const Text('Қазақша')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'en'), child: const Text('English')),
+        ],
+      ),
+    );
+    if (selected == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('app_language', selected);
+    if (mounted) setState(() => _appLanguage = selected);
+  }
 
   @override
   void initState() {
@@ -2984,6 +3128,7 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
     setState(() {
       _voiceEnabled = (prefs.getInt('voice_mode') ?? 3) != 0;
       _avoidTolls = prefs.getBool('avoid_tolls') ?? false;
+      _appLanguage = prefs.getString('app_language') ?? 'ru';
       _loading = false;
     });
   }
@@ -3052,10 +3197,12 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
                   title: Text('Единицы измерения'),
                   subtitle: Text('км, м'),
                 ),
-                const ListTile(
-                  leading: Icon(Icons.language_outlined),
-                  title: Text('Язык приложения'),
-                  subtitle: Text('Русский'),
+                ListTile(
+                  leading: const Icon(Icons.language_outlined),
+                  title: const Text('Язык приложения'),
+                  subtitle: Text(_appLanguageLabel),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _chooseAppLanguage,
                 ),
                 ListTile(
                   leading: const Icon(Icons.person_outline),
