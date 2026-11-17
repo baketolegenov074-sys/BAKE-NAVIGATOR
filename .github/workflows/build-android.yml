@@ -2,9 +2,16 @@ name: Build BAKE Navigator APK
 
 on:
   workflow_dispatch:
+    inputs:
+      build_apk:
+        description: "Собирать APK (только после отдельного разрешения)"
+        required: false
+        type: boolean
+        default: false
   push:
     branches:
       - navigator-ui-work
+      - fix/navigation-voice
 
 permissions:
   contents: read
@@ -75,9 +82,11 @@ jobs:
         run: flutter analyze --no-fatal-infos
 
       - name: Build release APK
+        if: github.ref == 'refs/heads/navigator-ui-work' || (github.event_name == 'workflow_dispatch' && inputs.build_apk == true)
         run: flutter build apk --release
 
       - name: Upload APK
+        if: github.ref == 'refs/heads/navigator-ui-work' || (github.event_name == 'workflow_dispatch' && inputs.build_apk == true)
         uses: actions/upload-artifact@v4
         with:
           name: BAKE-NAVIGATOR-APK
