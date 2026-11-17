@@ -715,7 +715,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       setState(() { _offlineTileProvider = provider; _message = AppLocale.pick('Офлайн-карта подключена. Для построения маршрута пока нужен интернет.', 'Офлайн карта қосылды. Маршрут құру үшін әзірге интернет қажет.', 'Offline map connected. Internet is still required to build routes.'); });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _message = 'Не удалось открыть офлайн-карту: $error');
+      setState(() => _message = AppLocale.pick('Не удалось открыть офлайн-карту: $error', 'Офлайн картаны ашу мүмкін болмады: $error', 'Could not open offline map: $error'));
     }
   }
 
@@ -1025,10 +1025,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           },
         ).timeout(const Duration(seconds: 20));
         if (response.statusCode == 429) {
-          throw Exception('Сервис поиска просит подождать. Повторите через минуту.');
+          throw Exception(AppLocale.pick('Сервис поиска просит подождать. Повторите через минуту.', 'Іздеу қызметі күте тұруды сұрайды. Бір минуттан кейін қайталаңыз.', 'Search service asks you to wait. Try again in a minute.'));
         }
         if (response.statusCode != 200) {
-          throw Exception('Поиск адресов временно недоступен.');
+          throw Exception(AppLocale.pick('Поиск адресов временно недоступен.', 'Мекенжай іздеу уақытша қолжетімсіз.', 'Address search is temporarily unavailable.'));
         }
         return jsonDecode(response.body) as List<dynamic>;
       }
@@ -1273,7 +1273,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     setState(() {
       _navigationActive = true;
       _instructionIndex = _instructions.length > 1 ? 1 : 0;
-      _message = 'Включаем фоновый GPS и голосовые подсказки…';
+      _message = AppLocale.pick('Включаем фоновый GPS и голосовые подсказки…', 'Фондық GPS пен дауыстық нұсқаулар қосылуда…', 'Enabling background GPS and voice guidance…');
     });
     try {
       await _startLiveLocationUpdates(backgroundNavigation: true);
@@ -1281,13 +1281,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (!mounted) return;
       setState(() {
         _navigationActive = false;
-        _message = 'Не удалось включить фоновый GPS: $error';
+        _message = AppLocale.pick('Не удалось включить фоновый GPS: $error', 'Фондық GPS қосылмады: $error', 'Could not enable background GPS: $error');
       });
       return;
     }
     if (!mounted) return;
     setState(() {
-      _message = 'Навигация началась. GPS продолжит работать при свёрнутом приложении.';
+      _message = AppLocale.pick('Навигация началась. GPS продолжит работать при свёрнутом приложении.', 'Навигация басталды. Қолданба кішірейтілгенде де GPS жұмысын жалғастырады.', 'Navigation started. GPS will keep running when the app is minimized.');
     });
     await _speakCurrentInstruction();
   }
@@ -1418,12 +1418,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       );
       // Public OSRM demo endpoint is for testing, not production traffic.
       final response = await http.get(uri).timeout(const Duration(seconds: 25));
-      if (response.statusCode != 200) throw Exception('Сервис маршрутов временно недоступен.');
+      if (response.statusCode != 200) throw Exception(AppLocale.pick('Сервис маршрутов временно недоступен.', 'Маршрут қызметі уақытша қолжетімсіз.', 'Route service is temporarily unavailable.'));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final routes = (data['routes'] as List?) ?? const [];
       if (data['code'] != 'Ok' || routes.isEmpty) {
-        throw Exception('Маршрут не найден. Попробуйте изменить выбранные точки.');
+        throw Exception(AppLocale.pick('Маршрут не найден. Попробуйте изменить выбранные точки.', 'Маршрут табылмады. Таңдалған нүктелерді өзгертіп көріңіз.', 'Route not found. Try changing the selected points.'));
       }
 
       final validRoutes = routes.cast<Map<String, dynamic>>().where((route) {
@@ -1435,7 +1435,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         return distance <= math.max(5000.0, directDistance * 8.0);
       }).toList();
       if (validRoutes.isEmpty) {
-        throw Exception('Сервис вернул слишком длинный маршрут. Проверьте выбранные точки.');
+        throw Exception(AppLocale.pick('Сервис вернул слишком длинный маршрут. Проверьте выбранные точки.', 'Қызмет тым ұзын маршрут қайтарды. Таңдалған нүктелерді тексеріңіз.', 'The service returned a route that is too long. Check the selected points.'));
       }
 
       final first = validRoutes.first;
@@ -1888,17 +1888,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Future<void> _shareCurrentLocation() async {
     final point = _currentLocation;
     if (point == null) {
-      await _showUnavailableFeature('Геопозиция', 'Сначала дождитесь определения GPS.');
+      await _showUnavailableFeature('Геопозиция', AppLocale.pick('Сначала дождитесь определения GPS.', 'Алдымен GPS анықталғанын күтіңіз.', 'Wait for GPS to determine your location first.'));
       return;
     }
     final value = 'Моя геопозиция BAKE: https://www.openstreetmap.org/?mlat=${point.latitude}&mlon=${point.longitude}#map=17/${point.latitude}/${point.longitude}';
     await Clipboard.setData(ClipboardData(text: value));
-    if (mounted) setState(() => _message = 'Ссылка на геопозицию скопирована.');
+    if (mounted) setState(() => _message = AppLocale.pick('Ссылка на геопозицию скопирована.', 'Геолокация сілтемесі көшірілді.', 'Location link copied.'));
   }
 
   Future<void> _shareRoute() async {
     if (_destination == null || _routePoints.isEmpty) {
-      await _showUnavailableFeature('Поделиться маршрутом', 'Сначала постройте маршрут.');
+      await _showUnavailableFeature('Поделиться маршрутом', AppLocale.pick('Сначала постройте маршрут.', 'Алдымен маршрут құрыңыз.', 'Build a route first.'));
       return;
     }
     final origin = _routeOrigin ?? _currentLocation;
@@ -1908,7 +1908,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         '${_routeSummary()}\\n'
         'https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${origin?.latitude}%2C${origin?.longitude}%3B${_destination!.latitude}%2C${_destination!.longitude}';
     await Clipboard.setData(ClipboardData(text: value));
-    if (mounted) setState(() => _message = 'Описание маршрута скопировано для отправки.');
+    if (mounted) setState(() => _message = AppLocale.pick('Описание маршрута скопировано для отправки.', 'Маршрут сипаттамасы жіберу үшін көшірілді.', 'Route description copied for sharing.'));
   }
 
   Future<void> _reportRouteIssue() async {
@@ -1932,7 +1932,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final report = 'Ошибка маршрута BAKE Navigator\\n${controller.text.trim()}\\n${_routeSummary()}';
     await Clipboard.setData(ClipboardData(text: report));
     controller.dispose();
-    if (mounted) setState(() => _message = 'Отчёт скопирован. Отправка на сервер пока не подключена.');
+    if (mounted) setState(() => _message = AppLocale.pick(AppLocale.pick(AppLocale.pick('Отчёт скопирован. Отправка на сервер пока не подключена.', 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'), 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'), 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'));
   }
 
   Future<void> _openRoutePreferences() async {
@@ -1984,7 +1984,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       await prefs.setBool(key, value);
       if (!mounted) return;
       setState(() {
-        _message = 'Настройка сохранена. Для отображения этого слоя нужен подключённый источник данных.';
+        _message = AppLocale.pick('Настройка сохранена. Для отображения этого слоя нужен подключённый источник данных.', 'Баптау сақталды. Бұл қабатты көрсету үшін деректер көзі қосылуы керек.', 'Setting saved. A connected data source is required to display this layer.');
       });
     }
 
@@ -2049,7 +2049,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 const Padding(
                   padding: EdgeInsets.only(bottom: 18),
                   child: Text(
-                    'Переключатели пока сохраняют выбор. Пробки, парковки, спутниковые снимки и общий слой дорожных событий ещё не подключены к источникам данных и не отображаются на карте.',
+                    AppLocale.pick('Переключатели пока сохраняют выбор. Пробки, парковки, спутниковые снимки и общий слой дорожных событий ещё не подключены к источникам данных и не отображаются на карте.', 'Ауыстырғыштар әзірге таңдауды ғана сақтайды. Кептелістер, тұрақтар, спутниктік суреттер және жол оқиғалары қабаты деректер көздеріне қосылмаған, сондықтан картада көрсетілмейді.', 'These switches currently only save your selection. Traffic, parking, satellite imagery, and the road events layer are not connected to data sources and are not displayed on the map.'),
                     style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                 ),
@@ -2086,7 +2086,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 const SizedBox(height: 10),
                 Text(
                   _offlineTileProvider == null
-                      ? 'Офлайн-карта не подключена. Размер и покрытие файла проверяются после выбора; готовые пакеты для скачивания пока не предоставляются.'
+                      ? AppLocale.pick('Офлайн-карта не подключена. Размер и покрытие файла проверяются после выбора; готовые пакеты для скачивания пока не предоставляются.', 'Офлайн карта қосылмаған. Файл таңдалғаннан кейін оның өлшемі мен қамту аумағы тексеріледі; дайын жүктеу пакеттері әзірге берілмейді.', 'No offline map is connected. File size and coverage are checked after selection; ready-made download packages are not provided yet.')
                       : AppLocale.pick('Офлайн-карта подключена. Для построения маршрута пока нужен интернет.', 'Офлайн карта қосылды. Маршрут құру үшін әзірге интернет қажет.', 'Offline map connected. Internet is still required to build routes.'),
                   style: const TextStyle(fontSize: 12, color: Colors.black54),
                 ),
@@ -2332,7 +2332,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Future<void> _sharePoint(LatLng point) async {
     final url = 'https://www.openstreetmap.org/?mlat=${point.latitude}&mlon=${point.longitude}#map=17/${point.latitude}/${point.longitude}';
     await Clipboard.setData(ClipboardData(text: url));
-    if (mounted) setState(() => _message = 'Ссылка на точку скопирована.');
+    if (mounted) setState(() => _message = AppLocale.pick('Ссылка на точку скопирована.', 'Нүкте сілтемесі көшірілді.', 'Point link copied.'));
   }
 
   Future<void> _reportMapItem(LatLng point, String title) async {
@@ -2386,8 +2386,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     controller.dispose();
     if (mounted) {
       setState(() => _message = title == 'Дорожное событие'
-        ? 'Событие сохранено на устройстве. Отправка другим водителям пока не подключена.'
-        : 'Отчёт скопирован. Отправка на сервер пока не подключена.');
+        ? AppLocale.pick('Событие сохранено на устройстве. Отправка другим водителям пока не подключена.', 'Оқиға құрылғыда сақталды. Басқа жүргізушілерге жіберу әлі қосылмаған.', 'Event saved on this device. Sharing with other drivers is not connected yet.')
+        : AppLocale.pick(AppLocale.pick(AppLocale.pick('Отчёт скопирован. Отправка на сервер пока не подключена.', 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'), 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'), 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'));
     }
   }
 
