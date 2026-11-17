@@ -1611,7 +1611,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
 
     // Announce the upcoming maneuver in stages instead of speaking only once.
-    final stage = meters <= 35 ? 3 : meters <= 150 ? 2 : meters <= 500 ? 1 : 0;
+    final isArrivalInstruction = _instructionIndex + 1 >= _instructions.length;
+    final stage = isArrivalInstruction
+        ? (meters <= 150 ? 2 : meters <= 500 ? 1 : 0)
+        : (meters <= 35 ? 3 : meters <= 150 ? 2 : meters <= 500 ? 1 : 0);
     if (stage > _announcedManeuverStage) {
       _announcedManeuverStage = stage;
       if (_voiceMode >= 2) {
