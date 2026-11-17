@@ -1295,7 +1295,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ? (item['address'] as Map).values.join(' ')
             : '';
         final searchableText =
-            '\${item['display_name'] ?? ''} $address'.toLowerCase();
+            '${item['display_name'] ?? ''} $address'.toLowerCase();
         var score = 0;
         if (explicitCityName != null &&
             searchableText.contains(explicitCityName.toLowerCase())) {
