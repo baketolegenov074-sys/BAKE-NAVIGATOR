@@ -3649,56 +3649,70 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           if (!_navigationActive)
             Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                child: Row(children: [
-                  Expanded(
-                    child: Material(
-                      color: Colors.white,
-                      elevation: 5,
-                      borderRadius: BorderRadius.circular(22),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 3, 5, 3),
-                        child: Row(children: [
-                          const Icon(Icons.search, color: Color(0xFF343434), size: 24),
-                          const SizedBox(width: 8),
-                          Expanded(child: TextField(
-                            controller: _searchController,
-                            textInputAction: TextInputAction.search,
-                            onSubmitted: (_) => _searchAddress(),
-                            decoration: InputDecoration(hintText: AppLocale.tr('Куда едем?'), border: InputBorder.none, isDense: true),
-                          )),
-                          IconButton(
-                            tooltip: AppLocale.tr('Найти'),
-                            onPressed: _isSearching ? null : _searchAddress,
-                            icon: _isSearching
-                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                                : const Icon(Icons.arrow_forward, color: Color(0xFF343434)),
-                          ),
-                        ]),
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: Row(
+                    children: [
+                      Material(
+                        color: Colors.white,
+                        elevation: 5,
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          tooltip: AppLocale.tr('Профиль'),
+                          onPressed: _openProfileMenu,
+                          icon: const Icon(Icons.person_outline, color: Color(0xFF343434)),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Material(
+                          color: Colors.white,
+                          elevation: 5,
+                          borderRadius: BorderRadius.circular(22),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(22),
+                            onTap: _openSearchPanel,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.search, color: Color(0xFF343434), size: 23),
+                                  const SizedBox(width: 9),
+                                  Expanded(
+                                    child: Text(
+                                      AppLocale.tr('Куда едем?'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 15, color: Color(0xFF626A73)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Material(
+                        color: Colors.white,
+                        elevation: 5,
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          tooltip: AppLocale.tr('Меню маршрута'),
+                          onPressed: _openRouteMenu,
+                          icon: const Icon(Icons.alt_route, color: Color(0xFF343434)),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Material(
-                    color: Colors.white,
-                    elevation: 5,
-                    shape: const CircleBorder(),
-                    child: IconButton(
-                      tooltip: AppLocale.tr('Язык приложения'),
-                      onPressed: _chooseAppLanguage,
-                      icon: const Icon(Icons.language, color: Color(0xFF343434)),
-                    ),
-                  ),
-                ]),
+                ),
               ),
             ),
-          ),
           if (_navigationActive)
             Positioned(
               top: 0,
@@ -3862,7 +3876,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           Positioned(
             left: _navigationActive ? null : 14,
             right: _navigationActive ? 14 : null,
-            bottom: _navigationActive ? 225 : 145,
+            bottom: _navigationActive ? 225 : 92,
             child: _roundMapButton(
               icon: Icons.my_location,
               tooltip: AppLocale.tr('Моё местоположение'),
@@ -3967,30 +3981,31 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           if (!_navigationActive)
             Positioned(
-            left: 18,
-            right: 18,
-            bottom: 8,
-            child: SafeArea(
-              top: false,
-              child: Material(
-                color: Colors.white,
-                elevation: 7,
-                borderRadius: BorderRadius.circular(24),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-                  child: Row(children: [
-                    _mapBottomItem(Icons.map_outlined, AppLocale.tr('Карта'), () {
-                      _moveMapCamera(_mapCameraCenter, _mapCameraZoom);
-                    }, selected: true),
-                    _mapBottomItem(Icons.search, AppLocale.tr('Поиск'), _openSearchPanel),
-                    _mapBottomItem(Icons.alt_route, AppLocale.tr('Маршрут'), _openRouteMenu),
-                    _mapBottomItem(Icons.bookmark_border, AppLocale.tr('Избранное'), _openBookmarks),
-                    _mapBottomItem(Icons.person_outline, AppLocale.tr('Профиль'), _openProfileMenu),
-                  ]),
+              left: 12,
+              right: 12,
+              bottom: 8,
+              child: SafeArea(
+                top: false,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 7,
+                  borderRadius: BorderRadius.circular(24),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                    child: Row(
+                      children: [
+                        _mapBottomItem(Icons.search, AppLocale.tr('Поиск'), _openSearchPanel),
+                        _mapBottomItem(Icons.alt_route, AppLocale.tr('Маршрут'), _openRouteMenu),
+                        _mapBottomItem(Icons.local_gas_station_outlined, AppLocale.tr('АЗС'), _openStationNetworks),
+                        _mapBottomItem(Icons.bookmark_border, AppLocale.tr('Избранное'), _openBookmarks),
+                        _mapBottomItem(Icons.settings_outlined, AppLocale.tr('Настройки'), _openSettings),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
+
         ],
       ),
     );
