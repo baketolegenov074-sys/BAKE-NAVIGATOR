@@ -3346,10 +3346,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
     if (buildRouteAfterClose && mounted) {
       if (destinationQuery.isNotEmpty) {
+        // _searchAddress() builds the route after the destination is selected.
+        // Do not call _buildRoute() again here: that caused a duplicate route
+        // calculation and could reopen route-choice UI after the map was ready.
         _searchController.text = destinationQuery;
         await _searchAddress();
+      } else if (_destination != null) {
+        await _buildRoute();
       }
-      if (mounted) await _buildRoute();
     }
   }
 
