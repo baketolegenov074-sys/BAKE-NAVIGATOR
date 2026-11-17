@@ -1279,8 +1279,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         });
         unawaited(_syncMapLibreAnnotations());
 
-        // Follow the live GPS position and rotate the map to the direction of travel.
-        // flutter_map supports 2D rotation, but not a true 3D pitch camera.
+        // Follow the live GPS position and rotate/pitch the MapLibre camera in navigation mode.
         if (_navigationActive) {
           final cameraCenter = _mapCameraCenter;
           if (Geolocator.distanceBetween(
@@ -3681,6 +3680,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               onStyleLoadedCallback: _onMapLibreStyleLoaded,
               onMapLongClick: (_, point) => _openPointMenu(LatLng(point.latitude, point.longitude)),
               compassEnabled: false,
+              trackCameraPosition: true,
               rotateGesturesEnabled: true,
               tiltGesturesEnabled: true,
               zoomGesturesEnabled: true,
