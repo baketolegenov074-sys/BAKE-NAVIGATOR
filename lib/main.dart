@@ -607,7 +607,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _navigationLanguage = prefs.getString('navigation_language') ?? 'kk-KZ';
       _selectedVoiceName = prefs.getString('voice_name');
       _selectedVoiceLocale = prefs.getString('voice_locale');
-      _kazakhVoiceId = prefs.getInt('kazakh_voice_sid') ?? 0;
+      _kazakhVoiceId = (prefs.getInt('kazakh_voice_sid') ?? 0).clamp(0, 5).toInt();
       await _tts.setLanguage(_navigationLanguage);
       await _tts.setSpeechRate(rate);
       await _tts.setVolume(volume);
@@ -821,7 +821,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     var volume = prefs.getDouble('voice_volume') ?? 1.0;
     var rate = prefs.getDouble('voice_rate') ?? 0.48;
     var language = prefs.getString('navigation_language') ?? _navigationLanguage;
-    var kazakhVoiceId = prefs.getInt('kazakh_voice_sid') ?? _kazakhVoiceId;
+    var kazakhVoiceId = (prefs.getInt('kazakh_voice_sid') ?? _kazakhVoiceId).clamp(0, 5).toInt();
     var offlineVoiceBusy = false;
     var offlineVoiceReady = await _kazakhVoiceService.isInstalled;
     var offlineVoiceStatus = '';
