@@ -14,6 +14,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'package:maplibre_gl/maplibre_gl.dart' as ml;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'kazakh_voice_service.dart';
 
@@ -495,6 +496,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   static const LatLng _shymkent = LatLng(42.3154, 69.5869);
 
   final MapController _mapController = MapController();
+  ml.MapLibreMapController? _mapLibreController;
+  bool _mapLibreStyleReady = false;
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   int _kazakhVoiceId = 0;
@@ -717,6 +720,129 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (_navigationLanguage == 'kk-KZ') return kk;
     if (_navigationLanguage == 'en-US') return en;
     return ru;
+  }
+
+  ml.LatLng _toMapLibrePoint(LatLng point) => ml.LatLng(point.latitude, point.longitude);
+
+  LatLng get _mapCameraCenter {
+    if (_offlineTileProvider != null) return _mapController.camera.center;
+    final target = _mapLibreController?.cameraPosition?.target;
+    return target == null ? (_currentLocation ?? _shymkent) : LatLng(target.latitude, target.longitude);
+  }
+
+  double get _mapCameraZoom => _offlineTileProvider != null
+      ? _mapController.camera.zoom
+      : (_mapLibreController?.cameraPosition?.zoom ?? 13);
+
+  void _moveMapCamera(LatLng point, double zoom) {
+    if (_offlineTileProvider != null) {
+      _mapController.move(point, zoom);
+      return;
+    }
+    final controller = _mapLibreController;
+    if (controller == null) return;
+    unawaited(controller.animateCamera(ml.CameraUpdate.newLatLngZoom(
+      _toMapLibrePoint(point), zoom,
+    ), duration: const Duration(milliseconds: 350)));
+  }
+
+  void _rotateMapCamera(double rotation) {
+    if (_offlineTileProvider != null) {
+      _mapController.rotate(rotation);
+      return;
+    }
+    final controller = _mapLibreController;
+    if (controller == null) return;
+    final current = controller.cameraPosition;
+    unawaited(controller.animateCamera(ml.CameraUpdate.newCameraPosition(
+      ml.CameraPosition(
+        target: current?.target ?? _toMapLibrePoint(_currentLocation ?? _shymkent),
+        zoom: current?.zoom ?? 17,
+        bearing: -rotation,
+        tilt: _navigationActive ? 48 : 0,
+      ),
+    ), duration: const Duration(milliseconds: 350)));
+  }
+
+  void _fitMapCamera(List<LatLng> points) {
+    if (points.isEmpty) return;
+    if (_offlineTileProvider != null) {
+      _mapController.fitCamera(CameraFit.coordinates(
+        coordinates: points,
+        padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
+      ));
+      return;
+    }
+    final controller = _mapLibreController;
+    if (controller == null) return;
+    final lats = points.map((p) => p.latitude);
+    final lons = points.map((p) => p.longitude);
+    final bounds = ml.LatLngBounds(
+      southwest: ml.LatLng(lats.reduce(math.min), lons.reduce(math.min)),
+      northeast: ml.LatLng(lats.reduce(math.max), lons.reduce(math.max)),
+    );
+    unawaited(controller.animateCamera(ml.CameraUpdate.newLatLngBounds(
+      bounds, left: 36, top: 100, right: 36, bottom: 250,
+    ), duration: const Duration(milliseconds: 500)));
+  }
+
+  void _zoomMapBy(double delta) {
+    _moveMapCamera(_mapCameraCenter, (_mapCameraZoom + delta).clamp(3.0, 20.0).toDouble());
+  }
+
+  void _onMapLibreCreated(ml.MapLibreMapController controller) {
+    _mapLibreController = controller;
+  }
+
+  void _onMapLibreStyleLoaded() {
+    _mapLibreStyleReady = true;
+    unawaited(_syncMapLibreAnnotations());
+  }
+
+  Future<void> _syncMapLibreAnnotations() async {
+    final controller = _mapLibreController;
+    if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+    try {
+      await controller.clearLines();
+      await controller.clearSymbols();
+      if (_routePoints.length > 1) {
+        await controller.addLine(ml.LineOptions(
+          geometry: _routePoints.map(_toMapLibrePoint).toList(),
+          lineColor: '#2378C8', lineWidth: 6, lineOpacity: 0.96,
+        ));
+      }
+      if (_routeOrigin != null) {
+        await controller.addSymbol(ml.SymbolOptions(
+          geometry: _toMapLibrePoint(_routeOrigin!), textField: '●',
+          textSize: 27, textColor: '#269B68',
+          textHaloColor: '#FFFFFF', textHaloWidth: 2,
+        ));
+      }
+      if (_currentLocation != null) {
+        await controller.addSymbol(ml.SymbolOptions(
+          geometry: _toMapLibrePoint(_currentLocation!), textField: '▲',
+          textSize: 25, textColor: '#1769AA',
+          textRotate: _navigationActive ? 0 : (_gpsHeadingDegrees ?? 0),
+          textHaloColor: '#FFFFFF', textHaloWidth: 2,
+        ));
+      }
+      for (var i = 0; i < _routeStops.length; i++) {
+        await controller.addSymbol(ml.SymbolOptions(
+          geometry: _toMapLibrePoint(_routeStops[i]), textField: '${i + 1}',
+          textSize: 16, textColor: '#FFFFFF',
+          textHaloColor: '#343434', textHaloWidth: 5,
+        ));
+      }
+      if (_destination != null) {
+        await controller.addSymbol(ml.SymbolOptions(
+          geometry: _toMapLibrePoint(_destination!), textField: '●',
+          textSize: 30, textColor: '#E53935',
+          textHaloColor: '#FFFFFF', textHaloWidth: 2,
+        ));
+      }
+    } catch (_) {
+      // Ignore a style recreation racing with a GPS or route update.
+    }
   }
 
   @override
@@ -1090,7 +1216,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         }
         _message = AppLocale.pick('GPS определён. Положение будет обновляться в реальном времени.', 'GPS анықталды. Орналасқан жер нақты уақытта жаңартылып отырады.', 'GPS located. Your position will update in real time.');
       });
-      _mapController.move(point, 15);
+      _moveMapCamera(point, 15);
       await _startLiveLocationUpdates();
     } catch (error) {
       if (!mounted) return;
@@ -1143,18 +1269,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             _gpsHeadingDegrees = position.heading;
           }
         });
+        unawaited(_syncMapLibreAnnotations());
 
         // Follow the live GPS position and rotate the map to the direction of travel.
         // flutter_map supports 2D rotation, but not a true 3D pitch camera.
         if (_navigationActive) {
-          final camera = _mapController.camera;
+          final cameraCenter = _mapCameraCenter;
           if (Geolocator.distanceBetween(
-                camera.center.latitude,
-                camera.center.longitude,
-                point.latitude,
-                point.longitude,
+                cameraCenter.latitude, cameraCenter.longitude,
+                point.latitude, point.longitude,
               ) > 3) {
-            _mapController.move(point, math.max(camera.zoom, 17.0).toDouble());
+            _moveMapCamera(point, math.max(_mapCameraZoom, 17.0).toDouble());
           }
           final heading = _gpsHeadingDegrees;
           if (heading != null && position.speed >= 1.5) {
@@ -1164,7 +1289,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ? 360.0
                 : ((normalizedHeading - previousHeading + 540) % 360) - 180;
             if (difference.abs() >= 4) {
-              _mapController.rotate(-normalizedHeading);
+              _rotateMapCamera(-normalizedHeading);
               _lastCameraHeadingDegrees = normalizedHeading;
             }
           }
@@ -1375,7 +1500,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _selectDestination(point);
         shouldBuildRoute = true;
       }
-      _mapController.move(point, 16);
+      _moveMapCamera(point, 16);
       setState(() => _message = selectAsOrigin
           ? AppLocale.pick('Начальная точка выбрана. Теперь введите пункт назначения.', 'Бастапқы нүкте таңдалды. Енді межелі орынды енгізіңіз.', 'Starting point selected. Now enter your destination.')
           : AppLocale.pick('Адрес найден. Автоматически строим маршрут от вашего GPS-положения…', 'Мекенжай табылды. GPS орналасқан жеріңізден маршрут автоматты түрде құрылады…', 'Address found. Building a route from your GPS location…'));
@@ -1405,6 +1530,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = AppLocale.pick('Начальная точка выбрана на карте. Выберите пункт назначения.', 'Бастапқы нүкте картадан таңдалды. Межелі орынды таңдаңыз.', 'Starting point selected on the map. Choose a destination.');
     });
+    unawaited(_syncMapLibreAnnotations());
     unawaited(_saveRoutePoint(_savedRouteOriginKey, point));
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
@@ -1419,6 +1545,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = AppLocale.pick('Начальная точка снова определяется по GPS.', 'Бастапқы нүкте қайтадан GPS арқылы анықталады.', 'Starting point will be detected by GPS again.');
     });
+    unawaited(_syncMapLibreAnnotations());
     unawaited(_removeSavedRoutePoint(_savedRouteOriginKey));
   }
 
@@ -1435,6 +1562,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = _localized('Точка назначения выбрана. Нажмите «Построить маршрут».', 'Межелі нүкте таңдалды. «Маршрут құру» түймесін басыңыз.', 'Destination selected. Tap “Build route”.');
     });
+    unawaited(_syncMapLibreAnnotations());
     unawaited(_saveRoutePoint(_savedRouteDestinationKey, point));
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
@@ -1537,10 +1665,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
     if (!mounted) return;
     final livePoint = _currentLocation!;
-    _mapController.move(livePoint, 17);
+    _moveMapCamera(livePoint, 17);
     final initialHeading = _gpsHeadingDegrees;
     if (initialHeading != null && _currentSpeedKmh >= 5.4) {
-      _mapController.rotate(-initialHeading);
+      _rotateMapCamera(-initialHeading);
       _lastCameraHeadingDegrees = initialHeading;
     }
     setState(() {
@@ -1557,7 +1685,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     });
     await _tts.stop();
     _lastCameraHeadingDegrees = null;
-    _mapController.rotate(0);
+    _rotateMapCamera(0);
     await _startLiveLocationUpdates();
   }
 
@@ -1782,15 +1910,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             : AppLocale.pick('Найдено вариантов: ${validRoutes.length}. Выберите подходящий маршрут.', 'Маршрут нұсқалары табылды: ${validRoutes.length}. Қажеттісін таңдаңыз.', 'Routes found: ${validRoutes.length}. Choose your preferred route.');
       });
       if (points.isNotEmpty) {
-        _mapController.fitCamera(CameraFit.coordinates(
-          coordinates: points,
-          padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
-        ));
+        unawaited(_syncMapLibreAnnotations());
+        _fitMapCamera(points);
         if (automaticReroute && resumeNavigation && _currentLocation != null) {
-          _mapController.move(_currentLocation!, 17);
+          _moveMapCamera(_currentLocation!, 17);
           final heading = _gpsHeadingDegrees;
           if (heading != null && _currentSpeedKmh >= 5.4) {
-            _mapController.rotate(-heading);
+            _rotateMapCamera(-heading);
             _lastCameraHeadingDegrees = heading;
           }
         }
@@ -1834,10 +1960,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _message = _localized('Выбран вариант маршрута ${index + 1}.', '${index + 1}-маршрут нұсқасы таңдалды.', 'Route option ${index + 1} selected.');
     });
     if (points.isNotEmpty) {
-      _mapController.fitCamera(CameraFit.coordinates(
-        coordinates: points,
-        padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
-      ));
+      unawaited(_syncMapLibreAnnotations());
+      _fitMapCamera(points);
     }
   }
 
@@ -3075,7 +3199,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     Navigator.pop(sheetContext);
                     final point = LatLng(lat, lon);
                     _selectDestination(point);
-                    _mapController.move(point, 16);
+                    _moveMapCamera(point, 16);
                   },
                 );
               }),
@@ -3535,37 +3659,45 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       backgroundColor: const Color(0xFFF3F6FA),
       body: Stack(
         children: [
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: _shymkent,
-              initialZoom: 13,
-              onLongPress: (_, point) => _openPointMenu(point),
-            ),
-            children: [
-              if (_offlineTileProvider == null)
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'kz.bake.bake_navigator',
-                )
-              else
-                TileLayer(tileProvider: _offlineTileProvider!),
-              if (_routePoints.isNotEmpty)
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: _routePoints,
-                      strokeWidth: 7,
-                      color: const Color(0xFF2378C8),
-                    ),
-                  ],
-                ),
-              MarkerLayer(markers: markers),
-              const RichAttributionWidget(
-                attributions: [TextSourceAttribution('© OpenStreetMap contributors')],
+          if (_offlineTileProvider == null)
+            ml.MapLibreMap(
+              initialCameraPosition: ml.CameraPosition(
+                target: ml.LatLng(_shymkent.latitude, _shymkent.longitude),
+                zoom: 13,
               ),
-            ],
-          ),
+              styleString: 'https://tiles.openfreemap.org/styles/liberty',
+              onMapCreated: _onMapLibreCreated,
+              onStyleLoadedCallback: _onMapLibreStyleLoaded,
+              onMapLongClick: (_, point) => _openPointMenu(LatLng(point.latitude, point.longitude)),
+              compassEnabled: false,
+              rotateGesturesEnabled: true,
+              tiltGesturesEnabled: true,
+              zoomGesturesEnabled: true,
+              scrollGesturesEnabled: true,
+              minMaxZoomPreference: const ml.MinMaxZoomPreference(3, 20),
+            )
+          else
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _shymkent,
+                initialZoom: 13,
+                onLongPress: (_, point) => _openPointMenu(point),
+              ),
+              children: [
+                TileLayer(tileProvider: _offlineTileProvider!),
+                if (_routePoints.isNotEmpty)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(points: _routePoints, strokeWidth: 7, color: const Color(0xFF2378C8)),
+                    ],
+                  ),
+                MarkerLayer(markers: markers),
+                const RichAttributionWidget(
+                  attributions: [TextSourceAttribution('© OpenStreetMap contributors')],
+                ),
+              ],
+            ),
           if (!_navigationActive)
             Positioned(
             top: 0,
@@ -3761,19 +3893,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 _roundMapButton(
                   icon: Icons.add,
                   tooltip: 'Приблизить карту',
-                  onPressed: () { final camera = _mapController.camera; _mapController.move(camera.center, camera.zoom + 1); },
+                  onPressed: () => _zoomMapBy(1),
                 ),
                 const SizedBox(height: 8),
                 _roundMapButton(
                   icon: Icons.remove,
                   tooltip: 'Отдалить карту',
-                  onPressed: () { final camera = _mapController.camera; _mapController.move(camera.center, camera.zoom - 1); },
+                  onPressed: () => _zoomMapBy(-1),
                 ),
                 const SizedBox(height: 8),
                 _roundMapButton(
                   icon: Icons.explore_outlined,
                   tooltip: AppLocale.tr('На север'),
-                  onPressed: () => _mapController.rotate(0),
+                  onPressed: () => _rotateMapCamera(0),
                 ),
               ],
             ),
@@ -3852,8 +3984,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
                   child: Row(children: [
                     _mapBottomItem(Icons.map_outlined, AppLocale.tr('Карта'), () {
-                      final camera = _mapController.camera;
-                      _mapController.move(camera.center, camera.zoom);
+                      _moveMapCamera(_mapCameraCenter, _mapCameraZoom);
                     }, selected: true),
                     _mapBottomItem(Icons.search, AppLocale.tr('Поиск'), _openSearchPanel),
                     _mapBottomItem(Icons.alt_route, AppLocale.tr('Маршрут'), _openRouteMenu),
