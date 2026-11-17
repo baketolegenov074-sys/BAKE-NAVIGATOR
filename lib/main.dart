@@ -778,8 +778,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final lats = points.map((p) => p.latitude);
     final lons = points.map((p) => p.longitude);
     final bounds = ml.LatLngBounds(
-      southwest: ml.LatLng(lats.reduce(math.min), lons.reduce(math.min)),
-      northeast: ml.LatLng(lats.reduce(math.max), lons.reduce(math.max)),
+      southwest: ml.LatLng(
+        lats.reduce((a, b) => math.min(a, b).toDouble()),
+        lons.reduce((a, b) => math.min(a, b).toDouble()),
+      ),
+      northeast: ml.LatLng(
+        lats.reduce((a, b) => math.max(a, b).toDouble()),
+        lons.reduce((a, b) => math.max(a, b).toDouble()),
+      ),
     );
     unawaited(controller.animateCamera(ml.CameraUpdate.newLatLngBounds(
       bounds, left: 36, top: 100, right: 36, bottom: 250,
@@ -791,12 +797,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   void _onMapLibreCreated(ml.MapLibreMapController controller) {
+    _mapLibreStyleReady = false;
     _mapLibreController = controller;
   }
 
   void _onMapLibreStyleLoaded() {
     _mapLibreStyleReady = true;
     unawaited(_syncMapLibreAnnotations());
+    if (_routePoints.length > 1) _fitMapCamera(_routePoints);
   }
 
   Future<void> _syncMapLibreAnnotations() async {
@@ -1670,6 +1678,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (initialHeading != null && _currentSpeedKmh >= 5.4) {
       _rotateMapCamera(-initialHeading);
       _lastCameraHeadingDegrees = initialHeading;
+    } else {
+      // Enter navigation mode with a forward-looking 3D camera even before heading stabilizes.
+      _rotateMapCamera(0);
     }
     setState(() {
       _message = AppLocale.pick('Навигация началась. GPS продолжит работать при свёрнутом приложении.', 'Навигация басталды. Қолданба кішірейтілгенде де GPS жұмысын жалғастырады.', 'Navigation started. GPS will keep running when the app is minimized.');
