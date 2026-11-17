@@ -173,6 +173,12 @@ class KazakhVoiceService {
     final partial = File('${support.path}/$_kazakhModelName.tar.bz2.part');
     final archiveFile = File('${support.path}/$_kazakhModelName.tar.bz2');
 
+    // Reuse a previously completed archive. A failed TTS initialization must
+    // never force the user to download the 129 MB package again.
+    if (await archiveFile.exists() && await archiveFile.length() > 1024) {
+      return _extractArchive(archiveFile);
+    }
+
     for (var attempt = 0; attempt < 5; attempt++) {
       var offset = await partial.exists() ? await partial.length() : 0;
       try {
@@ -205,13 +211,9 @@ class KazakhVoiceService {
 
         if (await archiveFile.exists()) await archiveFile.delete();
         await partial.rename(archiveFile.path);
-        try {
-          return await _extractArchive(archiveFile);
-        } catch (_) {
-          // A complete but invalid archive cannot be repaired with a Range retry.
-          if (await archiveFile.exists()) await archiveFile.delete();
-          rethrow;
-        }
+        // Keep the completed archive if extraction or model validation fails.
+        // The next retry can inspect/re-extract it without another network download.
+        return await _extractArchive(archiveFile);
       } catch (error) {
         if (attempt == 4) {
           if (error is DioException) {
