@@ -194,6 +194,7 @@ class AppLocale {
       'Дорожное событие': 'Жол оқиғасы',
       'Геопозиция': 'Геолокация',
       'Планирование маршрута': 'Маршрутты жоспарлау',
+      'Откуда': 'Қайдан',
       'Изменить маршрут': 'Маршрутты өзгерту',
       'Добавить точку': 'Нүкте қосу',
       'Параметры маршрута': 'Маршрут параметрлері',
@@ -1456,7 +1457,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         builder: (sheetContext) => SizedBox(
-          height: MediaQuery.of(sheetContext).size.height * 0.72,
+          height: MediaQuery.of(sheetContext).size.height * 0.84,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
             child: Column(
@@ -1611,11 +1612,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   IconData _maneuverIcon(RouteInstruction? instruction) {
     if (instruction == null) return Icons.navigation;
-    final modifier = instruction.maneuverModifier;
-    if (modifier.contains('left')) return Icons.turn_left;
-    if (modifier.contains('right')) return Icons.turn_right;
-    if (modifier == 'uturn') return Icons.u_turn_left;
-    if (modifier == 'straight') return Icons.straight;
+    final modifier = instruction.maneuverModifier.trim().toLowerCase();
+    switch (modifier) {
+      case 'left':
+      case 'slight left':
+      case 'sharp left':
+        return Icons.turn_left;
+      case 'right':
+      case 'slight right':
+      case 'sharp right':
+        return Icons.turn_right;
+      case 'uturn':
+      case 'uturn left':
+        return Icons.u_turn_left;
+      case 'uturn right':
+        return Icons.u_turn_right;
+      case 'straight':
+        return Icons.straight;
+    }
     if (instruction.maneuverType == 'roundabout' ||
         instruction.maneuverType == 'rotary') {
       return Icons.roundabout_left;
@@ -3246,6 +3260,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Future<void> _openRoutePlanner() async {
     final destinationController = TextEditingController();
     final originController = TextEditingController();
+    final originFocusNode = FocusNode();
+    final destinationFocusNode = FocusNode();
+    final routeSheetExpanded = ValueNotifier<bool>(false);
+    originFocusNode.addListener(() {
+      if (originFocusNode.hasFocus) routeSheetExpanded.value = true;
+    });
+    destinationFocusNode.addListener(() {
+      if (destinationFocusNode.hasFocus) routeSheetExpanded.value = true;
+    });
     var searchAfterClose = false;
     var searchOriginAfterClose = false;
     var buildRouteAfterClose = false;
@@ -3254,13 +3277,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
-      builder: (sheetContext) => FractionallySizedBox(
-        heightFactor: 0.44,
-        alignment: Alignment.bottomCenter,
-        child: StatefulBuilder(
+      builder: (sheetContext) => ValueListenableBuilder<bool>(
+        valueListenable: routeSheetExpanded,
+        builder: (sheetContext, expanded, _) => AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
+          child: FractionallySizedBox(
+            heightFactor: expanded ? 0.94 : 0.44,
+            alignment: Alignment.bottomCenter,
+            child: StatefulBuilder(
         builder: (sheetContext, refreshSheet) => SafeArea(
           child: Padding(
-            padding: EdgeInsets.fromLTRB(18, 12, 18, 18 + MediaQuery.of(sheetContext).viewInsets.bottom),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -3277,6 +3306,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       Expanded(
                         child: TextField(
                           controller: originController,
+                          focusNode: originFocusNode,
                           textInputAction: TextInputAction.search,
                           onSubmitted: (_) { searchOriginAfterClose = originController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
                           decoration: InputDecoration(
@@ -3301,6 +3331,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     const SizedBox(width: 10),
                     Expanded(child: TextField(
                       controller: destinationController,
+                      focusNode: destinationFocusNode,
                       textInputAction: TextInputAction.search,
                       onSubmitted: (_) { searchAfterClose = true; Navigator.pop(sheetContext); },
                       decoration: InputDecoration(
@@ -3391,12 +3422,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           ),
         ),
-      )),
+      ))),
     );
     final destinationQuery = destinationController.text.trim();
     final originQuery = originController.text.trim();
     destinationController.dispose();
     originController.dispose();
+    destinationFocusNode.dispose();
+    originFocusNode.dispose();
+    routeSheetExpanded.dispose();
     if (searchOriginAfterClose && originQuery.isNotEmpty && mounted) {
       _searchController.text = originQuery;
       await _searchAddress(selectAsOrigin: true);
@@ -3963,28 +3997,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           if (!_navigationActive && _message.isNotEmpty)
             Positioned(
-              left: 16,
-              right: 16,
-              bottom: _routeReady ? 340 : 125,
+              top: 84,
+              left: 14,
+              right: 14,
               child: IgnorePointer(
-                child: Align(
-                  alignment: Alignment.center,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 520),
-                    child: Material(
-                      color: const Color(0xEEFFFFFF),
-                      elevation: 3,
-                      borderRadius: BorderRadius.circular(14),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                        child: Text(
-                          _message,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                      ),
+                child: Material(
+                  color: const Color(0xF2FFFFFF),
+                  elevation: 3,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    child: Text(
+                      _message,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 11, height: 1.15, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
