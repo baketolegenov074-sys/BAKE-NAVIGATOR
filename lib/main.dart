@@ -48,6 +48,168 @@ class BakeNavigatorApp extends StatelessWidget {
 }
 
 
+
+class AppLocale {
+  static String language = 'ru';
+
+  static const Map<String, Map<String, String>> _translations = {
+    'kk': {
+      'Настройки': 'Баптаулар',
+      'Голосовые подсказки': 'Дауыстық нұсқаулар',
+      'Предпочтения маршрута': 'Маршрут параметрлері',
+      'Быстрый': 'Жылдам',
+      'Избегать платных дорог': 'Ақылы жолдардан аулақ болу',
+      'Единицы измерения': 'Өлшем бірліктері',
+      'км, м': 'км, м',
+      'Язык приложения': 'Қолданба тілі',
+      'Профиль': 'Профиль',
+      'О приложении': 'Қолданба туралы',
+      'Автомобиль': 'Автокөлік',
+      'Эти сведения сохраняются только на этом телефоне.': 'Бұл мәліметтер тек осы телефонда сақталады.',
+      'Марка автомобиля': 'Көлік маркасы',
+      'Модель': 'Моделі',
+      'Цвет': 'Түсі',
+      'Государственный номер': 'Мемлекеттік нөмірі',
+      'Сохранить': 'Сақтау',
+      'Параметры маршрута': 'Маршрут параметрлері',
+      'Избегать грунтовых дорог': 'Топырақ жолдардан аулақ болу',
+      'Офлайн-карты': 'Офлайн карталар',
+      'Офлайн-карта': 'Офлайн карта',
+      'Импортируем…': 'Импортталуда…',
+      'Импортировать MBTiles-карту': 'MBTiles картасын импорттау',
+      'Отключить офлайн-карту': 'Офлайн картаны өшіру',
+      'Карта': 'Карта',
+      'Поиск': 'Іздеу',
+      'Маршрут': 'Маршрут',
+      'Избранное': 'Таңдаулылар',
+      'Завершить маршрут': 'Маршрутты аяқтау',
+      'Построить маршрут': 'Маршрут құру',
+      'Поехали': 'Жолға шығу',
+      'Отмена': 'Болдырмау',
+      'Готово': 'Дайын',
+      'Закрыть': 'Жабу',
+      'Понятно': 'Түсінікті',
+      'Добавить место': 'Орын қосу',
+      'Мои места': 'Менің орындарым',
+      'Дом': 'Үй',
+      'Работа': 'Жұмыс',
+      'Добавьте домашний адрес': 'Үй мекенжайын қосыңыз',
+      'Добавьте адрес работы': 'Жұмыс мекенжайын қосыңыз',
+      'Закладки': 'Бетбелгілер',
+      'Сохранённая точка': 'Сақталған нүкте',
+      'Сохранить в закладки': 'Бетбелгілерге сақтау',
+      'Добавить остановку на карте': 'Картаға аялдама қосу',
+      'Промежуточные остановки': 'Аралық аялдамалар',
+      'Время выезда': 'Жолға шығу уақыты',
+      'Сейчас': 'Қазір',
+      'Изменить': 'Өзгерту',
+      'Сбросить': 'Қалпына келтіру',
+      'Сбросить время': 'Уақытты қалпына келтіру',
+      'Время отправления': 'Жөнелу уақыты',
+      'Дата': 'Күні',
+      'Время': 'Уақыты',
+      'ОТКУДА': 'ҚАЙДАН',
+      'Добавить точку маршрута': 'Маршрут нүктесін қосу',
+      'Скопировать ссылку на точку': 'Нүкте сілтемесін көшіру',
+      'Тип события': 'Оқиға түрі',
+      'Сообщить о событии': 'Оқиға туралы хабарлау',
+      'События на дороге': 'Жолдағы оқиғалар',
+      'Слои и офлайн-карты': 'Қабаттар және офлайн карталар',
+      'Пробки': 'Кептелістер',
+      'Дорожные события': 'Жол оқиғалары',
+      'Парковки': 'Тұрақ орындары',
+      'Спутниковая карта': 'Спутниктік карта',
+      'Карта Казахстана': 'Қазақстан картасы',
+      'Шымкент и область': 'Шымкент және облыс',
+      'Выбрать MBTiles-файл': 'MBTiles файлын таңдау',
+      'Язык голосовых подсказок': 'Дауыстық нұсқаулар тілі',
+      'Голос телефона': 'Телефон дауысы',
+      'Прослушать голос': 'Дауысты тыңдау',
+      'Системный голос по умолчанию': 'Әдепкі жүйелік дауыс',
+      'Громкость': 'Дыбыс деңгейі',
+      'Скорость речи': 'Сөйлеу жылдамдығы',
+    },
+    'en': {
+      'Настройки': 'Settings',
+      'Голосовые подсказки': 'Voice guidance',
+      'Предпочтения маршрута': 'Route preferences',
+      'Быстрый': 'Fastest',
+      'Избегать платных дорог': 'Avoid toll roads',
+      'Единицы измерения': 'Units of measurement',
+      'км, м': 'km, m',
+      'Язык приложения': 'App language',
+      'Профиль': 'Profile',
+      'О приложении': 'About',
+      'Автомобиль': 'Vehicle',
+      'Эти сведения сохраняются только на этом телефоне.': 'This information is stored only on this phone.',
+      'Марка автомобиля': 'Vehicle make',
+      'Модель': 'Model',
+      'Цвет': 'Color',
+      'Государственный номер': 'License plate',
+      'Сохранить': 'Save',
+      'Параметры маршрута': 'Route settings',
+      'Избегать грунтовых дорог': 'Avoid unpaved roads',
+      'Офлайн-карты': 'Offline maps',
+      'Офлайн-карта': 'Offline map',
+      'Импортируем…': 'Importing…',
+      'Импортировать MBTiles-карту': 'Import MBTiles map',
+      'Отключить офлайн-карту': 'Disable offline map',
+      'Карта': 'Map',
+      'Поиск': 'Search',
+      'Маршрут': 'Route',
+      'Избранное': 'Favorites',
+      'Завершить маршрут': 'End navigation',
+      'Построить маршрут': 'Build route',
+      'Поехали': 'Go',
+      'Отмена': 'Cancel',
+      'Готово': 'Done',
+      'Закрыть': 'Close',
+      'Понятно': 'Got it',
+      'Добавить место': 'Add place',
+      'Мои места': 'My places',
+      'Дом': 'Home',
+      'Работа': 'Work',
+      'Добавьте домашний адрес': 'Add your home address',
+      'Добавьте адрес работы': 'Add your work address',
+      'Закладки': 'Bookmarks',
+      'Сохранённая точка': 'Saved point',
+      'Сохранить в закладки': 'Save to bookmarks',
+      'Добавить остановку на карте': 'Add stop on map',
+      'Промежуточные остановки': 'Intermediate stops',
+      'Время выезда': 'Departure time',
+      'Сейчас': 'Now',
+      'Изменить': 'Change',
+      'Сбросить': 'Reset',
+      'Сбросить время': 'Reset time',
+      'Время отправления': 'Departure time',
+      'Дата': 'Date',
+      'Время': 'Time',
+      'ОТКУДА': 'FROM',
+      'Добавить точку маршрута': 'Add route point',
+      'Скопировать ссылку на точку': 'Copy point link',
+      'Тип события': 'Event type',
+      'Сообщить о событии': 'Report an event',
+      'События на дороге': 'Road events',
+      'Слои и офлайн-карты': 'Layers and offline maps',
+      'Пробки': 'Traffic',
+      'Дорожные события': 'Road incidents',
+      'Парковки': 'Parking',
+      'Спутниковая карта': 'Satellite map',
+      'Карта Казахстана': 'Map of Kazakhstan',
+      'Шымкент и область': 'Shymkent and region',
+      'Выбрать MBTiles-файл': 'Choose MBTiles file',
+      'Язык голосовых подсказок': 'Voice guidance language',
+      'Голос телефона': 'Device voice',
+      'Прослушать голос': 'Preview voice',
+      'Системный голос по умолчанию': 'System default voice',
+      'Громкость': 'Volume',
+      'Скорость речи': 'Speech rate',
+    },
+  };
+
+  static String tr(String russian) => _translations[language]?[russian] ?? russian;
+}
+
 class RouteInstruction {
   const RouteInstruction({
     required this.location,
@@ -324,9 +486,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('Звуковое сопровождение', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                  Text(AppLocale.tr('Звуковое сопровождение'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 14),
-                  const Text('Язык голосовых подсказок', style: TextStyle(fontWeight: FontWeight.w700)),
+                  Text(AppLocale.tr('Язык голосовых подсказок'), style: TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<String>(
                     value: language,
@@ -347,7 +509,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  const Text('Голос телефона', style: TextStyle(fontWeight: FontWeight.w700)),
+                  Text(AppLocale.tr('Голос телефона'), style: TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
                   if (voices.isEmpty)
                     const Text('Для выбранного языка голоса не найдены. Установите голосовые данные в настройках преобразования текста в речь Android.', style: TextStyle(color: Color(0xFF9A5B00)))
@@ -356,10 +518,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       value: selectedExists ? selectedKey : '',
                       isExpanded: true,
                       items: <DropdownMenuItem<String>>[
-                        const DropdownMenuItem(value: '', child: Text('Системный голос по умолчанию')),
+                        const DropdownMenuItem(value: '', child: Text(AppLocale.tr('Системный голос по умолчанию'))),
                         ...voices.map((v) {
                           final key = '${v['name']}|${v['locale']}';
-                          return DropdownMenuItem(value: key, child: Text('${v['name']} · ${v['locale']}', overflow: TextOverflow.ellipsis));
+                          return DropdownMenuItem(value: key, child: Text(AppLocale.tr('${v[')name']} · ${v['locale']}', overflow: TextOverflow.ellipsis));
                         }),
                       ],
                       onChanged: (value) async {
@@ -394,7 +556,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                   : 'Проверка голоса. Продолжайте движение по маршруту.');
                         },
                         icon: const Icon(Icons.play_arrow),
-                        label: const Text('Прослушать голос'),
+                        label: Text(AppLocale.tr('Прослушать голос')),
                       ),
                     ),
                   const Divider(height: 24),
@@ -433,7 +595,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     await prefs.setDouble('voice_rate', value); await _tts.setSpeechRate(value);
                   }),
                   const SizedBox(height: 12),
-                  Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(sheetContext), child: const Text('Готово'))),
+                  Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(sheetContext), child: Text(AppLocale.tr('Готово')))),
                 ],
               ),
             ),
@@ -609,16 +771,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         final searchNationwide = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
-            title: const Text('Рядом не найдено'),
-            content: const Text('Поблизости такого объекта нет в карте. Искать его по всему Казахстану?'),
+            title: Text(AppLocale.tr('Рядом не найдено')),
+            content: Text(AppLocale.tr('Поблизости такого объекта нет в карте. Искать его по всему Казахстану?')),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('Не сейчас'),
+                child: Text(AppLocale.tr('Не сейчас')),
               ),
               FilledButton(
                 onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: const Text('По всему Казахстану'),
+                child: Text(AppLocale.tr('По всему Казахстану')),
               ),
             ],
           ),
@@ -702,7 +864,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Отмена'),
+              child: Text(AppLocale.tr('Отмена')),
             ),
           ],
         ),
@@ -1096,7 +1258,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           builder: (pageContext, refreshPage) => Scaffold(
           backgroundColor: const Color(0xFFF7F8FA),
           appBar: AppBar(
-            title: const Text('Построение маршрута'),
+            title: Text(AppLocale.tr('Построение маршрута')),
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
             actions: [
@@ -1220,7 +1382,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           Navigator.pop(pageContext);
                           _startNavigation();
                         },
-                        child: const Text('Поехали', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                        child: Text(AppLocale.tr('Поехали'), style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                       ),
                     ),
                   ),
@@ -1265,7 +1427,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         builder: (pageContext) => Scaffold(
           backgroundColor: Colors.white,
           appBar: AppBar(
-            title: const Text('Поиск'),
+            title: Text(AppLocale.tr('Поиск')),
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
           ),
@@ -1400,7 +1562,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         builder: (pageContext) => Scaffold(
           backgroundColor: Colors.white,
           appBar: AppBar(
-            title: const Text('Ещё категории'),
+            title: Text(AppLocale.tr('Ещё категории')),
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
           ),
@@ -1449,7 +1611,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       builder: (dialogContext) => AlertDialog(
         title: Text(title),
         content: Text(detail),
-        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Понятно'))],
+        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(AppLocale.tr('Понятно')))],
       ),
     );
   }
@@ -1485,15 +1647,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final accepted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Сообщить об ошибке маршрута'),
+        title: Text(AppLocale.tr('Сообщить об ошибке маршрута')),
         content: TextField(
           controller: controller,
           maxLines: 4,
           decoration: const InputDecoration(hintText: 'Опишите, что не так', border: OutlineInputBorder()),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Скопировать отчёт')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(AppLocale.tr('Отмена'))),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text(AppLocale.tr('Скопировать отчёт'))),
         ],
       ),
     );
@@ -1519,21 +1681,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
           child: StatefulBuilder(
             builder: (sheetContext, refresh) => Column(mainAxisSize: MainAxisSize.min, children: [
-              const Align(alignment: Alignment.centerLeft, child: Text('Параметры маршрута', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+              const Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Параметры маршрута'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: avoidTolls,
-                title: const Text('Избегать платных дорог'),
+                title: Text(AppLocale.tr('Избегать платных дорог')),
                 onChanged: (value) async { avoidTolls = value; refresh(() {}); await prefs.setBool('avoid_tolls', value); },
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: avoidUnpaved,
-                title: const Text('Избегать плохих и грунтовых дорог'),
+                title: Text(AppLocale.tr('Избегать плохих и грунтовых дорог')),
                 onChanged: (value) async { avoidUnpaved = value; refresh(() {}); await prefs.setBool('avoid_unpaved', value); },
               ),
-              const Text('Эти параметры сохраняются на телефоне. Текущий тестовый сервис OSRM пока не применяет их при расчёте.', style: TextStyle(fontSize: 12, color: Colors.black54)),
-              Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(sheetContext), child: const Text('Готово'))),
+              Text(AppLocale.tr('Эти параметры сохраняются на телефоне. Текущий тестовый сервис OSRM пока не применяет их при расчёте.'), style: TextStyle(fontSize: 12, color: Colors.black54)),
+              Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(sheetContext), child: Text(AppLocale.tr('Готово')))),
             ]),
           ),
         ),
@@ -1563,7 +1725,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           builder: (pageContext, refresh) => Scaffold(
             backgroundColor: Colors.white,
             appBar: AppBar(
-              title: const Text('Слои и офлайн-карты'),
+              title: Text(AppLocale.tr('Слои и офлайн-карты')),
               backgroundColor: Colors.white,
               surfaceTintColor: Colors.white,
             ),
@@ -1578,7 +1740,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   secondary: const Icon(Icons.traffic_outlined),
-                  title: const Text('Пробки'),
+                  title: Text(AppLocale.tr('Пробки')),
                   value: traffic,
                   onChanged: (value) async {
                     refresh(() => traffic = value);
@@ -1588,7 +1750,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   secondary: const Icon(Icons.warning_amber_outlined),
-                  title: const Text('Дорожные события'),
+                  title: Text(AppLocale.tr('Дорожные события')),
                   value: roadEvents,
                   onChanged: (value) async {
                     refresh(() => roadEvents = value);
@@ -1598,7 +1760,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   secondary: const Icon(Icons.local_parking_outlined),
-                  title: const Text('Парковки'),
+                  title: Text(AppLocale.tr('Парковки')),
                   value: parking,
                   onChanged: (value) async {
                     refresh(() => parking = value);
@@ -1608,7 +1770,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   secondary: const Icon(Icons.satellite_alt_outlined),
-                  title: const Text('Спутниковая карта'),
+                  title: Text(AppLocale.tr('Спутниковая карта')),
                   value: satellite,
                   onChanged: (value) async {
                     refresh(() => satellite = value);
@@ -1632,8 +1794,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.map_outlined),
-                  title: const Text('Карта Казахстана'),
-                  subtitle: const Text('Импортировать MBTiles-файл с телефона'),
+                  title: Text(AppLocale.tr('Карта Казахстана')),
+                  subtitle: Text(AppLocale.tr('Импортировать MBTiles-файл с телефона')),
                   trailing: const Icon(Icons.download_for_offline_outlined),
                   onTap: () {
                     Navigator.pop(pageContext);
@@ -1644,8 +1806,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.location_city_outlined),
-                  title: const Text('Шымкент и область'),
-                  subtitle: const Text('Импортировать MBTiles-файл с телефона'),
+                  title: Text(AppLocale.tr('Шымкент и область')),
+                  subtitle: Text(AppLocale.tr('Импортировать MBTiles-файл с телефона')),
                   trailing: const Icon(Icons.download_for_offline_outlined),
                   onTap: () {
                     Navigator.pop(pageContext);
@@ -1666,7 +1828,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     _openOfflineAndVehicleSettings();
                   },
                   icon: const Icon(Icons.folder_open_outlined),
-                  label: const Text('Выбрать MBTiles-файл'),
+                  label: Text(AppLocale.tr('Выбрать MBTiles-файл')),
                 ),
               ],
             ),
@@ -1691,7 +1853,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Row(children: [
               const CircleAvatar(radius: 27, backgroundColor: Color(0xFFFFF5D6), child: Icon(Icons.person_outline, size: 31, color: Color(0xFF343434))),
               const SizedBox(width: 14),
-              const Expanded(child: Text('Профиль BAKE', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+              const Expanded(child: Text(AppLocale.tr('Профиль BAKE'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
               IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
             ]),
             const SizedBox(height: 10),
@@ -1843,7 +2005,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.info_outline),
-              title: const Text('Что здесь'),
+              title: Text(AppLocale.tr('Что здесь')),
               onTap: () {
                 Navigator.pop(sheetContext);
                 unawaited(_showPointDetails(point));
@@ -1851,7 +2013,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.add_location_alt_outlined),
-              title: const Text('Добавить точку маршрута'),
+              title: Text(AppLocale.tr('Добавить точку маршрута')),
               onTap: () {
                 Navigator.pop(sheetContext);
                 unawaited(_addRouteStop(point));
@@ -1859,7 +2021,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.share_outlined),
-              title: const Text('Скопировать ссылку на точку'),
+              title: Text(AppLocale.tr('Скопировать ссылку на точку')),
               onTap: () {
                 Navigator.pop(sheetContext);
                 unawaited(_sharePoint(point));
@@ -1888,9 +2050,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Что здесь'),
+          title: Text(AppLocale.tr('Что здесь')),
           content: Text('$address\\n\\nКоординаты: ${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
-          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Закрыть'))],
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(AppLocale.tr('Закрыть')))],
         ),
       );
     } catch (error) {
@@ -1918,7 +2080,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (title == 'Дорожное событие') ...[
-                const Text('Тип события'),
+                Text(AppLocale.tr('Тип события')),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<String>(
                   value: selectedType,
@@ -1935,8 +2097,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
-            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Сохранить')),
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(AppLocale.tr('Отмена'))),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text(AppLocale.tr('Сохранить'))),
           ],
         ),
       ),
@@ -1990,11 +2152,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Отмена'),
+              child: Text(AppLocale.tr('Отмена')),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-              child: const Text('Сохранить'),
+              child: Text(AppLocale.tr('Сохранить')),
             ),
           ],
         ),
@@ -2010,7 +2172,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           builder: (pageContext, refresh) => Scaffold(
             backgroundColor: Colors.white,
             appBar: AppBar(
-              title: const Text('Мои места'),
+              title: Text(AppLocale.tr('Мои места')),
               backgroundColor: Colors.white,
               surfaceTintColor: Colors.white,
             ),
@@ -2023,7 +2185,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     backgroundColor: Color(0xFFFFF3C4),
                     child: Icon(Icons.home_outlined, color: Color(0xFF343434)),
                   ),
-                  title: const Text('Дом', style: TextStyle(fontWeight: FontWeight.w700)),
+                  title: Text(AppLocale.tr('Дом'), style: TextStyle(fontWeight: FontWeight.w700)),
                   subtitle: Text(home.isEmpty ? 'Добавьте домашний адрес' : home),
                   trailing: const Icon(Icons.edit_outlined),
                   onTap: () async {
@@ -2045,7 +2207,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     backgroundColor: Color(0xFFEAF4FF),
                     child: Icon(Icons.work_outline, color: Color(0xFF343434)),
                   ),
-                  title: const Text('Работа', style: TextStyle(fontWeight: FontWeight.w700)),
+                  title: Text(AppLocale.tr('Работа'), style: TextStyle(fontWeight: FontWeight.w700)),
                   subtitle: Text(work.isEmpty ? 'Добавьте адрес работы' : work),
                   trailing: const Icon(Icons.edit_outlined),
                   onTap: () async {
@@ -2069,7 +2231,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 if (customPlaces.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 14),
-                    child: Text('Сохранённых пользовательских мест пока нет.'),
+                    child: Text(AppLocale.tr('Сохранённых пользовательских мест пока нет.')),
                   )
                 else
                   ...customPlaces.asMap().entries.map((entry) {
@@ -2108,7 +2270,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     final accepted = await showDialog<bool>(
                       context: pageContext,
                       builder: (dialogContext) => AlertDialog(
-                        title: const Text('Добавить место'),
+                        title: Text(AppLocale.tr('Добавить место')),
                         content: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -2132,7 +2294,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(dialogContext, false),
-                            child: const Text('Отмена'),
+                            child: Text(AppLocale.tr('Отмена')),
                           ),
                           FilledButton(
                             onPressed: () => Navigator.pop(
@@ -2140,7 +2302,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               nameController.text.trim().isNotEmpty &&
                                   addressController.text.trim().isNotEmpty,
                             ),
-                            child: const Text('Сохранить'),
+                            child: Text(AppLocale.tr('Сохранить')),
                           ),
                         ],
                       ),
@@ -2155,14 +2317,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     refresh(() {});
                   },
                   icon: const Icon(Icons.add),
-                  label: const Text('Добавить место'),
+                  label: Text(AppLocale.tr('Добавить место')),
                 ),
                 const SizedBox(height: 16),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.bookmark_border),
-                  title: const Text('Точки, сохранённые на карте'),
-                  subtitle: const Text('Открыть закладки с координатами'),
+                  title: Text(AppLocale.tr('Точки, сохранённые на карте')),
+                  subtitle: Text(AppLocale.tr('Открыть закладки с координатами')),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
                     Navigator.pop(pageContext);
@@ -2217,7 +2379,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         builder: (pageContext) => Scaffold(
           backgroundColor: Colors.white,
           appBar: AppBar(
-            title: const Text('События на дороге'),
+            title: Text(AppLocale.tr('События на дороге')),
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
           ),
@@ -2281,7 +2443,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 }
               },
               icon: const Icon(Icons.campaign_outlined),
-              label: const Text('Сообщить о событии'),
+              label: Text(AppLocale.tr('Сообщить о событии')),
             ),
           ),
         ),
@@ -2301,9 +2463,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         child: Padding(
           padding: const EdgeInsets.all(18),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Align(alignment: Alignment.centerLeft, child: Text('Закладки', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+            const Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Закладки'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
             if (saved.isEmpty)
-              const Padding(padding: EdgeInsets.all(22), child: Text('Пока нет сохранённых точек. Удерживайте место на карте и выберите «Сохранить в закладки».'))
+              const Padding(padding: EdgeInsets.all(22), child: Text(AppLocale.tr('Пока нет сохранённых точек. Удерживайте место на карте и выберите «Сохранить в закладки».')))
             else
               ...saved.map((raw) {
                 final item = jsonDecode(raw) as Map<String, dynamic>;
@@ -2344,13 +2506,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Row(children: [
-                const Expanded(child: Text('Время отправления', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
-                TextButton(onPressed: () { setState(() => _plannedDeparture = null); refreshPlanner(() {}); Navigator.pop(sheetContext); }, child: const Text('Сбросить')),
+                const Expanded(child: Text(AppLocale.tr('Время отправления'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+                TextButton(onPressed: () { setState(() => _plannedDeparture = null); refreshPlanner(() {}); Navigator.pop(sheetContext); }, child: Text(AppLocale.tr('Сбросить'))),
               ]),
               const SizedBox(height: 10),
               ListTile(
                 leading: const Icon(Icons.calendar_today_outlined),
-                title: const Text('Дата'),
+                title: Text(AppLocale.tr('Дата')),
                 subtitle: Text('${selected.day.toString().padLeft(2, '0')}.${selected.month.toString().padLeft(2, '0')}.${selected.year}'),
                 onTap: () async {
                   final now = DateTime.now();
@@ -2366,7 +2528,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               ),
               ListTile(
                 leading: const Icon(Icons.access_time),
-                title: const Text('Время'),
+                title: Text(AppLocale.tr('Время')),
                 subtitle: Text('${selected.hour.toString().padLeft(2, '0')}:${selected.minute.toString().padLeft(2, '0')}'),
                 onTap: () async {
                   final time = await showTimePicker(context: sheetContext, initialTime: TimeOfDay.fromDateTime(selected), helpText: 'Время отправления');
@@ -2374,7 +2536,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 },
               ),
               const SizedBox(height: 10),
-              SizedBox(width: double.infinity, child: FilledButton(onPressed: () { setState(() => _plannedDeparture = selected); refreshPlanner(() {}); Navigator.pop(sheetContext); }, child: const Text('Готово'))),
+              SizedBox(width: double.infinity, child: FilledButton(onPressed: () { setState(() => _plannedDeparture = selected); refreshPlanner(() {}); Navigator.pop(sheetContext); }, child: Text(AppLocale.tr('Готово')))),
             ]),
           ),
         ),
@@ -2404,13 +2566,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 children: [
                   Center(child: Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8)))),
                   const SizedBox(height: 14),
-                  const Text('Планирование маршрута', style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
+                  Text(AppLocale.tr('Планирование маршрута'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 16),
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     const Padding(padding: EdgeInsets.only(top: 12), child: Icon(Icons.my_location, color: Color(0xFF269B68))),
                     const SizedBox(width: 12),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('ОТКУДА', style: TextStyle(fontSize: 10, color: Color(0xFF78838D), fontWeight: FontWeight.w800, letterSpacing: 0.8)),
+                      Text(AppLocale.tr('ОТКУДА'), style: TextStyle(fontSize: 10, color: Color(0xFF78838D), fontWeight: FontWeight.w800, letterSpacing: 0.8)),
                       const SizedBox(height: 3),
                       Text(_routeOrigin != null
                           ? '${_routeOrigin!.latitude.toStringAsFixed(5)}, ${_routeOrigin!.longitude.toStringAsFixed(5)}'
@@ -2432,8 +2594,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       ),
                     ])),
                     if (_routeOrigin != null)
-                      TextButton(onPressed: () { _resetRouteOrigin(); refreshSheet(() {}); }, child: const Text('Сбросить')),
-                    TextButton(onPressed: () { Navigator.pop(sheetContext); unawaited(_locateMe()); }, child: const Text('GPS')),
+                      TextButton(onPressed: () { _resetRouteOrigin(); refreshSheet(() {}); }, child: Text(AppLocale.tr('Сбросить'))),
+                    TextButton(onPressed: () { Navigator.pop(sheetContext); unawaited(_locateMe()); }, child: Text(AppLocale.tr('GPS'))),
                   ]),
                   const Divider(height: 22),
                   Row(children: [
@@ -2460,11 +2622,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   Row(children: [
                     const Icon(Icons.more_horiz, color: Color(0xFF343434)),
                     const SizedBox(width: 12),
-                    const Expanded(child: Text('Промежуточные остановки', style: TextStyle(fontWeight: FontWeight.w700))),
+                    const Expanded(child: Text(AppLocale.tr('Промежуточные остановки'), style: TextStyle(fontWeight: FontWeight.w700))),
                     Text('${_routeStops.length}/5', style: const TextStyle(color: Color(0xFF687786))),
                   ]),
                   if (_routeStops.isEmpty)
-                    const Padding(padding: EdgeInsets.fromLTRB(36, 6, 0, 8), child: Text('Добавьте остановку долгим нажатием на нужное место карты.', style: TextStyle(fontSize: 12, color: Color(0xFF7B8792))))
+                    const Padding(padding: EdgeInsets.fromLTRB(36, 6, 0, 8), child: Text(AppLocale.tr('Добавьте остановку долгим нажатием на нужное место карты.'), style: TextStyle(fontSize: 12, color: Color(0xFF7B8792))))
                   else
                     ..._routeStops.asMap().entries.map((entry) => ListTile(
                       dense: true,
@@ -2481,22 +2643,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   OutlinedButton.icon(
                     onPressed: _routeStops.length >= 5 ? null : () { Navigator.pop(sheetContext); setState(() => _message = 'Удерживайте нужную точку карты и выберите «Добавить как промежуточную остановку».'); },
                     icon: const Icon(Icons.add_location_alt_outlined),
-                    label: const Text('Добавить остановку на карте'),
+                    label: Text(AppLocale.tr('Добавить остановку на карте')),
                   ),
                   const Divider(height: 20),
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.schedule, color: Color(0xFF343434)),
-                    title: const Text('Время выезда', style: TextStyle(fontWeight: FontWeight.w700)),
+                    title: Text(AppLocale.tr('Время выезда'), style: TextStyle(fontWeight: FontWeight.w700)),
                     subtitle: Text(_plannedDeparture == null ? 'Сейчас' : _formatDeparture(_plannedDeparture!)),
                     trailing: TextButton(
                       onPressed: () => _openDepartureTime(refreshSheet),
-                      child: const Text('Изменить'),
+                      child: Text(AppLocale.tr('Изменить')),
                     ),
                   ),
                   if (_plannedDeparture != null)
-                    Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () { setState(() => _plannedDeparture = null); refreshSheet(() {}); }, child: const Text('Сбросить время'))),
-                  const Text('Выбранное время сохраняется как план. Оно пока не учитывается тестовым сервисом расчёта маршрута и пробок.', style: TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
+                    Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () { setState(() => _plannedDeparture = null); refreshSheet(() {}); }, child: Text(AppLocale.tr('Сбросить время')))),
+                  Text(AppLocale.tr('Выбранное время сохраняется как план. Оно пока не учитывается тестовым сервисом расчёта маршрута и пробок.'), style: TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
                   const SizedBox(height: 12),
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
@@ -2513,12 +2675,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     icon: _isBuildingRoute
                         ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.alt_route),
-                    label: const Text('Построить маршрут', style: TextStyle(fontWeight: FontWeight.w800)),
+                    label: Text(AppLocale.tr('Построить маршрут'), style: TextStyle(fontWeight: FontWeight.w800)),
                   ),
                   const SizedBox(height: 8),
                   TextButton(
                     onPressed: () => Navigator.pop(sheetContext),
-                    child: const Text('Готово без построения'),
+                    child: Text(AppLocale.tr('Готово без построения')),
                   ),
                 ],
               ),
@@ -2558,7 +2720,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8))),
             const SizedBox(height: 12),
-            const Align(alignment: Alignment.centerLeft, child: Text('Маршрут', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+            const Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Маршрут'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
             _menuTile(sheetContext, Icons.edit_road_outlined, 'Планирование маршрута', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
             _menuTile(sheetContext, Icons.edit_location_alt_outlined, 'Изменить маршрут', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
             _menuTile(sheetContext, Icons.add_location_alt_outlined, 'Добавить точку', () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
@@ -2617,7 +2779,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           builder: (pageContext, refresh) => Scaffold(
             backgroundColor: const Color(0xFFFFFFFF),
             appBar: AppBar(
-              title: const Text('Сети АЗС'),
+              title: Text(AppLocale.tr('Сети АЗС')),
               backgroundColor: const Color(0xFFFFFFFF),
               actions: [
                 TextButton(
@@ -2631,7 +2793,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     _searchController.text = query.isEmpty ? 'АЗС' : query;
                     _searchAddress();
                   },
-                  child: const Text('Готово'),
+                  child: Text(AppLocale.tr('Готово')),
                 ),
               ],
             ),
@@ -2920,10 +3082,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         _currentSpeedKmh.round().toString(),
                         style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
                       ),
-                      const Text('км/ч', style: TextStyle(fontSize: 11)),
+                      Text(AppLocale.tr('км/ч'), style: TextStyle(fontSize: 11)),
                       const Divider(height: 10),
-                      const Text('60', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                      const Text('лимит', style: TextStyle(fontSize: 10)),
+                      Text(AppLocale.tr('60'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                      Text(AppLocale.tr('лимит'), style: TextStyle(fontSize: 10)),
                     ],
                   ),
                 ),
@@ -2977,7 +3139,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             await _tts.stop();
                             await _startLiveLocationUpdates();
                           },
-                          child: const Text('Завершить маршрут'),
+                          child: Text(AppLocale.tr('Завершить маршрут')),
                         ),
                       ],
                     ),
@@ -3053,14 +3215,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
                   child: Row(children: [
-                    _mapBottomItem(Icons.map_outlined, 'Карта', () {
+                    _mapBottomItem(Icons.map_outlined, AppLocale.tr('Карта'), () {
                       final camera = _mapController.camera;
                       _mapController.move(camera.center, camera.zoom);
                     }, selected: true),
-                    _mapBottomItem(Icons.search, 'Поиск', _openSearchPanel),
-                    _mapBottomItem(Icons.alt_route, 'Маршрут', _openRouteMenu),
-                    _mapBottomItem(Icons.bookmark_border, 'Избранное', _openBookmarks),
-                    _mapBottomItem(Icons.person_outline, 'Профиль', _openProfileMenu),
+                    _mapBottomItem(Icons.search, AppLocale.tr('Поиск'), _openSearchPanel),
+                    _mapBottomItem(Icons.alt_route, AppLocale.tr('Маршрут'), _openRouteMenu),
+                    _mapBottomItem(Icons.bookmark_border, AppLocale.tr('Избранное'), _openBookmarks),
+                    _mapBottomItem(Icons.person_outline, AppLocale.tr('Профиль'), _openProfileMenu),
                   ]),
                 ),
               ),
@@ -3102,10 +3264,10 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
     final selected = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('Язык приложения'),
+        title: Text(AppLocale.tr('Язык приложения')),
         children: [
-          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'ru'), child: const Text('Русский')),
-          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'kk'), child: const Text('Қазақша')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'ru'), child: Text(AppLocale.tr('Русский'))),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'kk'), child: Text(AppLocale.tr('Қазақша'))),
           SimpleDialogOption(onPressed: () => Navigator.pop(context, 'en'), child: const Text('English')),
         ],
       ),
@@ -3155,7 +3317,7 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
       applicationName: 'BAKE Navigator',
       applicationLegalese: 'Навигационное приложение BAKE.',
       children: const [
-        Text('Часть функций зависит от подключённых источников картографических и дорожных данных.'),
+        Text(AppLocale.tr('Часть функций зависит от подключённых источников картографических и дорожных данных.')),
       ],
     );
   }
@@ -3165,7 +3327,7 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('Настройки'),
+        title: Text(AppLocale.tr('Настройки')),
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
       ),
@@ -3175,44 +3337,44 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
               children: [
                 SwitchListTile(
                   secondary: const Icon(Icons.volume_up_outlined),
-                  title: const Text('Голосовые подсказки'),
+                  title: Text(AppLocale.tr('Голосовые подсказки')),
                   value: _voiceEnabled,
                   onChanged: _setVoice,
                 ),
                 ListTile(
                   leading: const Icon(Icons.alt_route),
-                  title: const Text('Предпочтения маршрута'),
-                  subtitle: const Text('Быстрый'),
+                  title: Text(AppLocale.tr('Предпочтения маршрута')),
+                  subtitle: Text(AppLocale.tr('Быстрый')),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: widget.onOpenRoutePreferences,
                 ),
                 SwitchListTile(
                   secondary: const Icon(Icons.toll_outlined),
-                  title: const Text('Избегать платных дорог'),
+                  title: Text(AppLocale.tr('Избегать платных дорог')),
                   value: _avoidTolls,
                   onChanged: _setAvoidTolls,
                 ),
                 const ListTile(
                   leading: Icon(Icons.straighten_outlined),
-                  title: Text('Единицы измерения'),
-                  subtitle: Text('км, м'),
+                  title: Text(AppLocale.tr('Единицы измерения')),
+                  subtitle: Text(AppLocale.tr('км, м')),
                 ),
                 ListTile(
                   leading: const Icon(Icons.language_outlined),
-                  title: const Text('Язык приложения'),
+                  title: Text(AppLocale.tr('Язык приложения')),
                   subtitle: Text(_appLanguageLabel),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: _chooseAppLanguage,
                 ),
                 ListTile(
                   leading: const Icon(Icons.person_outline),
-                  title: const Text('Профиль'),
+                  title: Text(AppLocale.tr('Профиль')),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: widget.onOpenProfile,
                 ),
                 ListTile(
                   leading: const Icon(Icons.info_outline),
-                  title: const Text('О приложении'),
+                  title: Text(AppLocale.tr('О приложении')),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: _showAbout,
                 ),
@@ -3327,7 +3489,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     await prefs.setString('vehicle_plate', _vehiclePlate.text.trim());
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Данные автомобиля сохранены на этом телефоне.')),
+      const SnackBar(content: Text(AppLocale.tr('Данные автомобиля сохранены на этом телефоне.'))),
     );
   }
 
@@ -3343,25 +3505,25 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Настройки BAKE Navigator')),
+      appBar: AppBar(title: Text(AppLocale.tr('Настройки BAKE Navigator'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 const SizedBox(height: 4),
-                const Text('Автомобиль', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                Text(AppLocale.tr('Автомобиль'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
-                const Text('Эти сведения сохраняются только на этом телефоне.'),
+                Text(AppLocale.tr('Эти сведения сохраняются только на этом телефоне.')),
                 const SizedBox(height: 10),
                 TextField(controller: _vehicleMake, decoration: const InputDecoration(labelText: 'Марка автомобиля')),
                 TextField(controller: _vehicleModel, decoration: const InputDecoration(labelText: 'Модель')),
                 TextField(controller: _vehicleColor, decoration: const InputDecoration(labelText: 'Цвет')),
                 TextField(controller: _vehiclePlate, decoration: const InputDecoration(labelText: 'Государственный номер')),
                 const SizedBox(height: 12),
-                FilledButton.icon(onPressed: _saveVehicle, icon: const Icon(Icons.save_outlined), label: const Text('Сохранить')),
+                FilledButton.icon(onPressed: _saveVehicle, icon: const Icon(Icons.save_outlined), label: Text(AppLocale.tr('Сохранить'))),
                 const SizedBox(height: 22),
-                const Text('Голосовые подсказки', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                Text(AppLocale.tr('Голосовые подсказки'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
                 Card(
                   child: Padding(
@@ -3391,17 +3553,17 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                           _saveNavigationPreferences();
                         },
                       ),
-                      const Text('Изменения сохраняются на этом телефоне и применяются при следующем запуске навигатора.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                      Text(AppLocale.tr('Изменения сохраняются на этом телефоне и применяются при следующем запуске навигатора.'), style: TextStyle(fontSize: 12, color: Colors.black54)),
                     ]),
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text('Параметры маршрута', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                Text(AppLocale.tr('Параметры маршрута'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
                 Card(
                   child: Column(children: [
                     SwitchListTile(
                       value: _avoidTolls,
-                      title: const Text('Избегать платных дорог'),
+                      title: Text(AppLocale.tr('Избегать платных дорог')),
                       onChanged: (value) {
                         setState(() => _avoidTolls = value);
                         _saveNavigationPreferences();
@@ -3410,7 +3572,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                     const Divider(height: 1),
                     SwitchListTile(
                       value: _avoidUnpaved,
-                      title: const Text('Избегать грунтовых дорог'),
+                      title: Text(AppLocale.tr('Избегать грунтовых дорог')),
                       onChanged: (value) {
                         setState(() => _avoidUnpaved = value);
                         _saveNavigationPreferences();
@@ -3418,12 +3580,12 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                     ),
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 14),
-                      child: Text('Фильтры сохраняются, но текущий тестовый сервис маршрутов OSRM пока не применяет их при расчёте.', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                      child: Text(AppLocale.tr('Фильтры сохраняются, но текущий тестовый сервис маршрутов OSRM пока не применяет их при расчёте.'), style: TextStyle(fontSize: 12, color: Colors.black54)),
                     ),
                   ]),
                 ),
                 const SizedBox(height: 20),
-                const Text('Офлайн-карты', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                Text(AppLocale.tr('Офлайн-карты'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
                 Card(
                   child: Padding(
@@ -3434,7 +3596,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                         ListTile(
                           contentPadding: EdgeInsets.zero,
                           leading: const Icon(Icons.map_outlined),
-                          title: const Text('Офлайн-карта'),
+                          title: Text(AppLocale.tr('Офлайн-карта')),
                           subtitle: Text(_offlineMapPath == null
                               ? 'Готовый MBTiles-файл пока не подключён.'
                               : 'Офлайн-карта подключена на этом устройстве.'),
@@ -3453,7 +3615,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                           TextButton.icon(
                             onPressed: _removeOfflineMap,
                             icon: const Icon(Icons.cloud_outlined),
-                            label: const Text('Отключить офлайн-карту'),
+                            label: Text(AppLocale.tr('Отключить офлайн-карту')),
                           ),
                         const Text(
                           'Исходный OSM PBF не является готовой MBTiles-картой. Для офлайн-режима нужны отдельно подготовленные тайлы.',
