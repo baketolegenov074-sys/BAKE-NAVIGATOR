@@ -1121,154 +1121,189 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (!mounted) return;
     const categories = <Map<String, Object>>[
       {'name': 'АЗС', 'query': 'АЗС', 'icon': Icons.local_gas_station},
-      {'name': 'Где поесть', 'query': 'кафе ресторан', 'icon': Icons.restaurant},
-      {'name': 'Продукты', 'query': 'продуктовый магазин', 'icon': Icons.shopping_basket},
-      {'name': 'Аптеки', 'query': 'аптека', 'icon': Icons.local_pharmacy},
-      {'name': 'Банкоматы', 'query': 'банкомат', 'icon': Icons.atm},
-      {'name': 'Отели', 'query': 'отель', 'icon': Icons.hotel},
-      {'name': 'Автомойки', 'query': 'автомойка', 'icon': Icons.local_car_wash},
-      {'name': 'Автосервисы', 'query': 'автосервис', 'icon': Icons.car_repair},
-      {'name': 'Больницы', 'query': 'больница', 'icon': Icons.local_hospital},
-      {'name': 'Кинотеатры', 'query': 'кинотеатр', 'icon': Icons.movie},
-      {'name': 'Бары и пабы', 'query': 'бар паб', 'icon': Icons.local_bar},
+      {'name': 'Рестораны', 'query': 'ресторан', 'icon': Icons.restaurant},
       {'name': 'Магазины', 'query': 'магазин', 'icon': Icons.store},
+      {'name': 'Гостиницы', 'query': 'гостиница', 'icon': Icons.hotel},
+      {'name': 'Аптеки', 'query': 'аптека', 'icon': Icons.local_pharmacy},
+      {'name': 'Ещё', 'query': '', 'icon': Icons.apps},
     ];
 
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (pageContext) => DefaultTabController(
-          length: 2,
-          child: Scaffold(
+        builder: (pageContext) => Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            title: const Text('Поиск'),
             backgroundColor: Colors.white,
-            appBar: AppBar(
-              title: const Text('Поиск и выбор места'),
-              backgroundColor: Colors.white,
-              surfaceTintColor: Colors.white,
-            ),
-            body: SafeArea(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                    child: TextField(
-                      controller: _searchController,
-                      autofocus: true,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) {
+            surfaceTintColor: Colors.white,
+          ),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              children: [
+                TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) {
+                    Navigator.pop(pageContext);
+                    _searchAddress();
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Куда едем?',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: IconButton(
+                      tooltip: 'Найти',
+                      onPressed: _isSearching
+                          ? null
+                          : () {
+                              Navigator.pop(pageContext);
+                              _searchAddress();
+                            },
+                      icon: const Icon(Icons.arrow_forward),
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                const Text(
+                  'Недавние запросы',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                if (history.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 14),
+                    child: Text(
+                      'Здесь появятся адреса и места, которые вы искали.',
+                      style: TextStyle(color: Color(0xFF7B8792)),
+                    ),
+                  )
+                else
+                  ...history.take(4).map((query) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.history, color: Color(0xFF69737D)),
+                    title: Text(query, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: const Icon(Icons.north_west, size: 18),
+                    onTap: () {
+                      Navigator.pop(pageContext);
+                      _searchController.text = query;
+                      _searchAddress();
+                    },
+                  )),
+                const Divider(height: 24),
+                const Text(
+                  'Категории',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 10),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  crossAxisCount: 3,
+                  childAspectRatio: 1.05,
+                  children: categories.map((category) {
+                    final name = category['name']! as String;
+                    final query = category['query']! as String;
+                    final icon = category['icon']! as IconData;
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
                         Navigator.pop(pageContext);
-                        _searchAddress();
+                        if (name == 'Ещё') {
+                          _openMoreSearchCategories();
+                        } else if (name == 'АЗС') {
+                          _openStationNetworks();
+                        } else {
+                          _searchController.text = query;
+                          _searchAddress();
+                        }
                       },
-                      decoration: InputDecoration(
-                        hintText: 'Адрес, улица или место',
-                        prefixIcon: const Icon(Icons.search),
-                        suffixIcon: IconButton(
-                          tooltip: 'Найти',
-                          onPressed: _isSearching
-                              ? null
-                              : () {
-                                  Navigator.pop(pageContext);
-                                  _searchAddress();
-                                },
-                          icon: const Icon(Icons.arrow_forward),
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircleAvatar(
+                              radius: 27,
+                              backgroundColor: const Color(0xFFF1F3F5),
+                              child: Icon(icon, color: const Color(0xFF343434)),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              name,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ),
-                  const Material(
-                    color: Colors.white,
-                    child: TabBar(
-                      tabs: [
-                        Tab(text: 'Категории'),
-                        Tab(text: 'История'),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      children: [
-                        GridView.count(
-                          padding: const EdgeInsets.all(14),
-                          crossAxisCount: 3,
-                          childAspectRatio: 1.05,
-                          children: categories.map((category) {
-                            final name = category['name']! as String;
-                            final query = category['query']! as String;
-                            final icon = category['icon']! as IconData;
-                            return InkWell(
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () {
-                                Navigator.pop(pageContext);
-                                if (name == 'АЗС') {
-                                  _openStationNetworks();
-                                } else {
-                                  _searchController.text = query;
-                                  _searchAddress();
-                                }
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.all(8),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    CircleAvatar(
-                                      radius: 27,
-                                      backgroundColor: const Color(0xFFF1F3F5),
-                                      child: Icon(
-                                        icon,
-                                        color: const Color(0xFF343434),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      name,
-                                      textAlign: TextAlign.center,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                        history.isEmpty
-                            ? const Center(
-                                child: Text('История поиска пока пуста.'),
-                              )
-                            : ListView.separated(
-                                itemCount: history.length,
-                                separatorBuilder: (_, __) =>
-                                    const Divider(height: 1),
-                                itemBuilder: (context, index) {
-                                  final query = history[index];
-                                  return ListTile(
-                                    leading: const Icon(Icons.history),
-                                    title: Text(query),
-                                    trailing: const Icon(
-                                      Icons.north_west,
-                                      size: 18,
-                                    ),
-                                    onTap: () {
-                                      Navigator.pop(pageContext);
-                                      _searchController.text = query;
-                                      _searchAddress();
-                                    },
-                                  );
-                                },
-                              ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+                    );
+                  }).toList(),
+                ),
+              ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openMoreSearchCategories() async {
+    const categories = <Map<String, Object>>[
+      {'name': 'Кафе', 'query': 'кафе', 'icon': Icons.local_cafe},
+      {'name': 'Банкоматы', 'query': 'банкомат', 'icon': Icons.atm},
+      {'name': 'Автомойки', 'query': 'автомойка', 'icon': Icons.local_car_wash},
+      {'name': 'Автосервисы', 'query': 'автосервис', 'icon': Icons.car_repair},
+      {'name': 'Больницы', 'query': 'больница', 'icon': Icons.local_hospital},
+      {'name': 'Кинотеатры', 'query': 'кинотеатр', 'icon': Icons.movie},
+    ];
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            title: const Text('Ещё категории'),
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+          ),
+          body: GridView.count(
+            padding: const EdgeInsets.all(14),
+            crossAxisCount: 3,
+            childAspectRatio: 1.05,
+            children: categories.map((category) {
+              final name = category['name']! as String;
+              final query = category['query']! as String;
+              final icon = category['icon']! as IconData;
+              return InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () {
+                  Navigator.pop(pageContext);
+                  _searchController.text = query;
+                  _searchAddress();
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 27,
+                        backgroundColor: const Color(0xFFF1F3F5),
+                        child: Icon(icon, color: const Color(0xFF343434)),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
           ),
         ),
       ),
