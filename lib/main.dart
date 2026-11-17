@@ -16,8 +16,10 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  AppLocale.language = prefs.getString('app_language') ?? 'ru';
   runApp(const BakeNavigatorApp());
 }
 
@@ -428,6 +430,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ),
       ),
     );
+    if (mounted) setState(() {});
   }
 
   Future<void> _openOfflineAndVehicleSettings() async {
@@ -518,7 +521,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       value: selectedExists ? selectedKey : '',
                       isExpanded: true,
                       items: <DropdownMenuItem<String>>[
-                        const DropdownMenuItem(value: '', child: Text(AppLocale.tr('Системный голос по умолчанию'))),
+                        DropdownMenuItem(value: '', child: Text(AppLocale.tr('Системный голос по умолчанию'))),
                         ...voices.map((v) {
                           final key = '${v['name']}|${v['locale']}';
                           return DropdownMenuItem(value: key, child: Text(AppLocale.tr('${v[')name']} · ${v['locale']}', overflow: TextOverflow.ellipsis));
@@ -1681,7 +1684,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
           child: StatefulBuilder(
             builder: (sheetContext, refresh) => Column(mainAxisSize: MainAxisSize.min, children: [
-              const Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Параметры маршрута'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+              Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Параметры маршрута'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: avoidTolls,
@@ -1853,7 +1856,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Row(children: [
               const CircleAvatar(radius: 27, backgroundColor: Color(0xFFFFF5D6), child: Icon(Icons.person_outline, size: 31, color: Color(0xFF343434))),
               const SizedBox(width: 14),
-              const Expanded(child: Text(AppLocale.tr('Профиль BAKE'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+              Expanded(child: Text(AppLocale.tr('Профиль BAKE'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
               IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
             ]),
             const SizedBox(height: 10),
@@ -3275,6 +3278,7 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
     if (selected == null) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('app_language', selected);
+    AppLocale.language = selected;
     if (mounted) setState(() => _appLanguage = selected);
   }
 
@@ -3354,8 +3358,8 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
                   value: _avoidTolls,
                   onChanged: _setAvoidTolls,
                 ),
-                const ListTile(
-                  leading: Icon(Icons.straighten_outlined),
+                ListTile(
+                  leading: const Icon(Icons.straighten_outlined),
                   title: Text(AppLocale.tr('Единицы измерения')),
                   subtitle: Text(AppLocale.tr('км, м')),
                 ),
