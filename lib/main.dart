@@ -3842,7 +3842,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               ),
             ),
           Positioned(
-            bottom: 160,
+            bottom: 144,
             right: 14,
             child: Column(
               mainAxisSize: MainAxisSize.min,
