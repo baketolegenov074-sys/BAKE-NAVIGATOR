@@ -1912,9 +1912,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _offRouteSamples = 0;
         _routeDistanceMeters = distance;
         _routeDurationSeconds = duration;
+        // Keep the map clear; route alternatives are presented in the route-search screen.
         _message = automaticReroute
             ? AppLocale.pick('Маршрут перестроен. Продолжаем навигацию.', 'Маршрут қайта құрылды. Навигация жалғасуда.', 'Route recalculated. Continuing navigation.')
-            : AppLocale.pick('Найдено вариантов: ${validRoutes.length}. Выберите подходящий маршрут.', 'Маршрут нұсқалары табылды: ${validRoutes.length}. Қажеттісін таңдаңыз.', 'Routes found: ${validRoutes.length}. Choose your preferred route.');
+            : '';
       });
       if (points.isNotEmpty) {
         unawaited(_syncMapLibreAnnotations());
