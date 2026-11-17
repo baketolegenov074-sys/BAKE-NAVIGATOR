@@ -409,7 +409,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         if (!mounted) return;
         setState(() {
           _currentLocation = LatLng(position.latitude, position.longitude);
-          _currentSpeedKmh = math.max(0, position.speed * 3.6);
+          _currentSpeedKmh = math.max(0, position.speed * 3.6).toDouble();
           // Ignore unstable compass headings while stopped or moving very slowly.
           if (position.speed >= 0.8 && position.heading.isFinite) {
             _gpsHeadingDegrees = position.heading;
