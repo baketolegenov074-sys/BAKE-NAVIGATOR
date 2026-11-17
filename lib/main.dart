@@ -3362,7 +3362,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           if (_navigationActive)
             Positioned(
               left: 14,
-              bottom: 100,
+              bottom: 225,
               child: Material(
                 color: Colors.white,
                 elevation: 5,
@@ -3389,7 +3389,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Positioned(
               left: 14,
               right: 14,
-              bottom: 44,
+              bottom: 120,
               child: SafeArea(
                 top: false,
                 child: Material(
@@ -3462,8 +3462,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           ),
           Positioned(
-            left: 14,
-            bottom: 86,
+            left: _navigationActive ? null : 14,
+            right: _navigationActive ? 14 : null,
+            bottom: _navigationActive ? 225 : 145,
             child: _roundMapButton(
               icon: Icons.my_location,
               tooltip: AppLocale.tr('Моё местоположение'),
@@ -3475,7 +3476,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Positioned(
               left: 16,
               right: 16,
-              bottom: 82,
+              bottom: _navigationActive ? 380 : 125,
               child: IgnorePointer(
                 child: Align(
                   alignment: Alignment.center,
