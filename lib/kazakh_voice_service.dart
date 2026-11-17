@@ -232,7 +232,7 @@ class KazakhVoiceService {
         }
 
         if (response.statusCode == 206) {
-          final contentRange = response.headers.value(Headers.contentRangeHeader);
+          final contentRange = response.headers.value('content-range');
           final match = contentRange == null
               ? null
               : RegExp(r'^bytes (\d+)-(\d+)/(\d+).firstMatch(contentRange);
@@ -257,7 +257,7 @@ class KazakhVoiceService {
           }
         } else if (response.statusCode == 200) {
           final expectedLength = int.tryParse(
-            response.headers.value(Headers.contentLengthHeader) ?? '',
+            response.headers.value('content-length') ?? '',
           );
           final actualLength = await partial.length();
           if (expectedLength == null || actualLength != expectedLength) {
