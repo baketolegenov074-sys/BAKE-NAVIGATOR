@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - navigator-ui-work
+      - valhalla-bridge-prep
 
 permissions:
   contents: read
