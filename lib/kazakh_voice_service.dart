@@ -27,6 +27,85 @@ class KazakhVoiceOption {
   final String gender;
 }
 
+
+// Synchronous worker-isolate implementation. Keeping the compressed and
+// decompressed buffers off the UI isolate prevents the settings sheet from
+// freezing while the 123 MB ISSAI archive is expanded.
+String _extractArchiveInBackground({
+  required String archivePath,
+  required String stagingPath,
+  required String modelPath,
+}) {
+  final staging = Directory(stagingPath);
+  final modelDir = Directory(modelPath);
+  if (staging.existsSync()) staging.deleteSync(recursive: true);
+  staging.createSync(recursive: true);
+
+  try {
+    final compressed = File(archivePath).readAsBytesSync();
+    final tarBytes = BZip2Decoder().decodeBytes(compressed);
+    final tarArchive = TarDecoder().decodeBytes(tarBytes);
+
+    for (final entry in tarArchive.files) {
+      final relative = entry.name.replaceAll(String.fromCharCode(92), '/');
+      if (relative.isEmpty || relative.startsWith('/') ||
+          relative.split('/').contains('..')) {
+        throw Exception('Архив ішінде жарамсыз файл жолы бар.');
+      }
+      final output = File('${staging.path}/$relative');
+      if (entry.isFile) {
+        output.parent.createSync(recursive: true);
+        output.writeAsBytesSync(entry.content as List<int>, flush: false);
+      } else {
+        Directory(output.path).createSync(recursive: true);
+      }
+    }
+
+    Directory? modelRoot;
+    for (final entity in staging.listSync(recursive: true, followLinks: false)) {
+      if (entity is! File || !entity.path.endsWith('/kk_KZ-issai-high.onnx')) continue;
+      final candidate = entity.parent;
+      if (File('${candidate.path}/tokens.txt').existsSync() &&
+          Directory('${candidate.path}/espeak-ng-data').existsSync()) {
+        modelRoot = candidate;
+        break;
+      }
+    }
+    if (modelRoot == null) {
+      throw Exception('Архив ашылды, бірақ kk_KZ-issai-high.onnx, tokens.txt немесе espeak-ng-data табылмады. Толық ISSAI .tar.bz2 архивін таңдаңыз.');
+    }
+
+    if (modelDir.existsSync()) modelDir.deleteSync(recursive: true);
+    modelDir.createSync(recursive: true);
+    for (final entity in modelRoot.listSync(recursive: false, followLinks: false)) {
+      final name = entity.uri.pathSegments.where((part) => part.isNotEmpty).last;
+      final target = '${modelDir.path}/$name';
+      if (entity is Directory) {
+        entity.renameSync(target);
+      } else if (entity is File) {
+        entity.renameSync(target);
+      }
+    }
+
+    if (!File('${modelDir.path}/kk_KZ-issai-high.onnx').existsSync() ||
+        !File('${modelDir.path}/tokens.txt').existsSync() ||
+        !Directory('${modelDir.path}/espeak-ng-data').existsSync()) {
+      throw Exception('ISSAI моделі толық орнатылмады: негізгі файлдар табылған жоқ.');
+    }
+    return modelDir.path;
+  } catch (_) {
+    if (modelDir.existsSync() &&
+        (!File('${modelDir.path}/kk_KZ-issai-high.onnx').existsSync() ||
+         !File('${modelDir.path}/tokens.txt').existsSync() ||
+         !Directory('${modelDir.path}/espeak-ng-data').existsSync())) {
+      modelDir.deleteSync(recursive: true);
+    }
+    rethrow;
+  } finally {
+    if (staging.existsSync()) staging.deleteSync(recursive: true);
+  }
+}
+
 class KazakhVoiceService {
   static const List<KazakhVoiceOption> voices = [
     KazakhVoiceOption(id: 0, label: 'Мужской · ISSAI M2', gender: 'Мужской'),
@@ -67,74 +146,16 @@ class KazakhVoiceService {
 
   Future<String> _extractArchive(File archiveFile) async {
     final support = await getApplicationSupportDirectory();
-    final modelDir = Directory(await _modelDirectory());
-    final staging = Directory('${support.path}/${_kazakhModelName}_extracting');
+    final modelPath = await _modelDirectory();
+    final stagingPath = '${support.path}/${_kazakhModelName}_extracting';
 
-    // Never mix a partially extracted model with an earlier failed attempt.
-    if (await staging.exists()) await staging.delete(recursive: true);
-    await staging.create(recursive: true);
-
-    try {
-      final compressed = await archiveFile.readAsBytes();
-      final tarBytes = BZip2Decoder().decodeBytes(compressed);
-      final tarArchive = TarDecoder().decodeBytes(tarBytes);
-
-      for (final entry in tarArchive.files) {
-        final relative = entry.name.replaceAll(String.fromCharCode(92), '/');
-        if (relative.isEmpty || relative.startsWith('/') ||
-            relative.split('/').contains('..')) {
-          throw Exception('Архив ішінде жарамсыз файл жолы бар.');
-        }
-        final output = File('${staging.path}/$relative');
-        if (entry.isFile) {
-          await output.parent.create(recursive: true);
-          await output.writeAsBytes(entry.content as List<int>, flush: false);
-        } else {
-          await Directory(output.path).create(recursive: true);
-        }
-      }
-
-      // Find the actual model root instead of assuming that the TAR archive
-      // has a particular top-level folder layout.
-      Directory? modelRoot;
-      await for (final entity in staging.list(recursive: true, followLinks: false)) {
-        if (entity is! File || !entity.path.endsWith('/kk_KZ-issai-high.onnx')) continue;
-        final candidate = entity.parent;
-        final hasTokens = await File('${candidate.path}/tokens.txt').exists();
-        final hasEspeak = await Directory('${candidate.path}/espeak-ng-data').exists();
-        if (hasTokens && hasEspeak) {
-          modelRoot = candidate;
-          break;
-        }
-      }
-
-      if (modelRoot == null) {
-        throw Exception('Архив ашылды, бірақ kk_KZ-issai-high.onnx, tokens.txt немесе espeak-ng-data табылмады. Толық ISSAI .tar.bz2 архивін таңдаңыз.');
-      }
-
-      if (await modelDir.exists()) await modelDir.delete(recursive: true);
-      await modelDir.create(recursive: true);
-      await for (final entity in modelRoot.list(recursive: false, followLinks: false)) {
-        final target = '${modelDir.path}/${entity.uri.pathSegments.last}';
-        if (entity is Directory) {
-          await entity.rename(target);
-        } else if (entity is File) {
-          await entity.rename(target);
-        }
-      }
-
-      if (!await isInstalled) {
-        throw Exception('ISSAI моделі толық орнатылмады: негізгі файлдар табылған жоқ.');
-      }
-      return modelDir.path;
-    } catch (error) {
-      if (await modelDir.exists() && !await isInstalled) {
-        await modelDir.delete(recursive: true);
-      }
-      rethrow;
-    } finally {
-      if (await staging.exists()) await staging.delete(recursive: true);
-    }
+    // BZip2/TAR decoding is CPU- and memory-intensive. Run it in a worker
+    // isolate so the Android UI thread remains responsive during extraction.
+    return Isolate.run(() => _extractArchiveInBackground(
+      archivePath: archiveFile.path,
+      stagingPath: stagingPath,
+      modelPath: modelPath,
+    ));
   }
 
   Future<String?> importModelArchive() async {
@@ -165,6 +186,7 @@ class KazakhVoiceService {
 
   Future<String> _downloadAndExtractModel({
     void Function(int received, int total)? onProgress,
+    void Function(String stage)? onStage,
   }) async {
     final modelDir = await _modelDirectory();
     if (await isInstalled) return modelDir;
@@ -176,6 +198,7 @@ class KazakhVoiceService {
     // Reuse a previously completed archive. A failed TTS initialization must
     // never force the user to download the 129 MB package again.
     if (await archiveFile.exists() && await archiveFile.length() > 1024) {
+      onStage?.call('extracting');
       return _extractArchive(archiveFile);
     }
 
@@ -213,6 +236,7 @@ class KazakhVoiceService {
         await partial.rename(archiveFile.path);
         // Keep the completed archive if extraction or model validation fails.
         // The next retry can inspect/re-extract it without another network download.
+        onStage?.call('extracting');
         return await _extractArchive(archiveFile);
       } catch (error) {
         if (attempt == 4) {
@@ -227,9 +251,12 @@ class KazakhVoiceService {
     throw Exception('Жүктеу үзілді, интернетті тексеріңіз.');
   }
 
-  Future<void> ensureReady({void Function(int received, int total)? onProgress}) async {
+  Future<void> ensureReady({
+    void Function(int received, int total)? onProgress,
+    void Function(String stage)? onStage,
+  }) async {
     if (_starting != null) return _starting!;
-    _starting = _start(onProgress: onProgress);
+    _starting = _start(onProgress: onProgress, onStage: onStage);
     try {
       await _starting;
     } catch (_) {
@@ -238,8 +265,12 @@ class KazakhVoiceService {
     }
   }
 
-  Future<void> _start({void Function(int received, int total)? onProgress}) async {
-    final modelDir = await _downloadAndExtractModel(onProgress: onProgress);
+  Future<void> _start({
+    void Function(int received, int total)? onProgress,
+    void Function(String stage)? onStage,
+  }) async {
+    final modelDir = await _downloadAndExtractModel(onProgress: onProgress, onStage: onStage);
+    onStage?.call('initializing');
     final receivePort = ReceivePort();
     _receivePort = receivePort;
     _ready = Completer<void>();
@@ -303,8 +334,9 @@ class KazakhVoiceService {
     required int speakerId,
     double speed = 1.0,
     void Function(int received, int total)? onDownloadProgress,
+    void Function(String stage)? onStage,
   }) async {
-    await ensureReady(onProgress: onDownloadProgress);
+    await ensureReady(onProgress: onDownloadProgress, onStage: onStage);
     final worker = _workerPort;
     if (worker == null) {
       throw Exception('Казахский голосовой движок не запустился: нет связи с аудиомодулем.');
