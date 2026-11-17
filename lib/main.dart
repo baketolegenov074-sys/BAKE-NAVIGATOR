@@ -2179,7 +2179,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Widget _roundMapButton({
     required IconData icon,
     required String tooltip,
-    required VoidCallback onPressed,
+    required VoidCallback? onPressed,
     Color iconColor = const Color(0xFF45484C),
   }) {
     return Material(
