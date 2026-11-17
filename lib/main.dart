@@ -1099,10 +1099,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
 
-  Future<void> _startLiveLocationUpdates({bool backgroundNavigation = false}) async {
+  Future<void> _startLiveLocationUpdates({
+    bool backgroundNavigation = false,
+    bool waitForFirstFix = false,
+  }) async {
     await _positionSubscription?.cancel();
     if (!mounted) return;
 
+    final firstFix = Completer<void>();
     final LocationSettings locationSettings;
     if (backgroundNavigation && defaultTargetPlatform == TargetPlatform.android) {
       locationSettings = AndroidSettings(
@@ -1128,24 +1132,56 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     ).listen(
       (position) {
         if (!mounted) return;
+        final point = LatLng(position.latitude, position.longitude);
         setState(() {
-          _currentLocation = LatLng(position.latitude, position.longitude);
+          _currentLocation = point;
           _currentSpeedKmh = math.max(0, position.speed * 3.6).toDouble();
           // Ignore unstable compass headings while stopped or moving very slowly.
           if (position.speed >= 0.8 && position.heading.isFinite) {
             _gpsHeadingDegrees = position.heading;
           }
         });
-        _updateNavigationProgress(_currentLocation!);
+
+        // Keep the vehicle marker in view while turn-by-turn navigation is active.
+        if (_navigationActive) {
+          final camera = _mapController.camera;
+          if (Geolocator.distanceBetween(
+                camera.center.latitude,
+                camera.center.longitude,
+                point.latitude,
+                point.longitude,
+              ) > 8) {
+            _mapController.move(point, math.max(camera.zoom, 16.0));
+          }
+        }
+
+        if (!firstFix.isCompleted) firstFix.complete();
+        _updateNavigationProgress(point);
         _checkForOffRoute(position);
       },
       onError: (Object error) {
+        if (!firstFix.isCompleted) {
+          firstFix.completeError(error, StackTrace.current);
+        }
         if (!mounted) return;
         setState(() {
           _message = AppLocale.pick('Потеряна связь с GPS. Проверьте геолокацию телефона.', 'GPS байланысы жоғалды. Телефон геолокациясын тексеріңіз.', 'GPS signal lost. Check your phone location settings.');
         });
       },
     );
+
+    if (waitForFirstFix) {
+      await firstFix.future.timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw TimeoutException(
+          AppLocale.pick(
+            'GPS не передал координаты за 15 секунд. Проверьте сигнал и разрешение на геолокацию.',
+            'GPS 15 секунд ішінде координаттарды жібермеді. Сигнал мен геолокация рұқсатын тексеріңіз.',
+            'GPS did not provide a location within 15 seconds. Check the signal and location permission.',
+          ),
+        ),
+      );
+    }
   }
 
 
@@ -1465,7 +1501,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _message = AppLocale.pick('Включаем фоновый GPS и голосовые подсказки…', 'Фондық GPS пен дауыстық нұсқаулар қосылуда…', 'Enabling background GPS and voice guidance…');
     });
     try {
-      await _startLiveLocationUpdates(backgroundNavigation: true);
+      // Do not announce that navigation has started until the background GPS
+      // stream has delivered a fresh position.
+      await _startLiveLocationUpdates(
+        backgroundNavigation: true,
+        waitForFirstFix: true,
+      );
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -1494,9 +1535,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Future<void> _speakCurrentInstruction() async {
     if (!_navigationActive || _instructionIndex >= _instructions.length) return;
     final instruction = _instructions[_instructionIndex];
+    final currentLocation = _currentLocation;
+    if (currentLocation == null) {
+      if (mounted) {
+        setState(() => _message = AppLocale.pick(
+          'Ожидаем координаты GPS перед голосовой подсказкой.',
+          'Дауыстық нұсқауға дейін GPS координаттары күтілуде.',
+          'Waiting for a GPS fix before speaking the instruction.',
+        ));
+      }
+      return;
+    }
     final meters = Geolocator.distanceBetween(
-      _currentLocation!.latitude,
-      _currentLocation!.longitude,
+      currentLocation.latitude,
+      currentLocation.longitude,
       instruction.location.latitude,
       instruction.location.longitude,
     );
