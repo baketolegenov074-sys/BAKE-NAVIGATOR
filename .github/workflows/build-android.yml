@@ -52,7 +52,7 @@ jobs:
               raise SystemExit("Generated Android settings.gradle(.kts) was not found")
 
           content = path.read_text()
-          pattern = r'((?:id|kotlin)\\(["\\']org\\.jetbrains\\.kotlin\\.android["\\']\\)|id\\(["\\']org\\.jetbrains\\.kotlin\\.android["\\']\\))\\s+version\\s+["\\']1\\.8\\.22["\\']'
+          pattern = r'(id\\("org\\.jetbrains\\.kotlin\\.android"\\)\\s+version\\s+)"1\\.8\\.22"'
           updated, count = re.subn(pattern, lambda match: match.group(1) + ' version "2.2.10"', content)
           if count != 1:
               raise SystemExit(
