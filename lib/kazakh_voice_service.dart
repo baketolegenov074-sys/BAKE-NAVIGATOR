@@ -4,7 +4,8 @@ import 'dart:isolate';
 
 import 'package:archive/archive.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
@@ -37,6 +38,13 @@ class KazakhVoiceService {
   ];
 
   final AudioPlayer _player = AudioPlayer();
+  final Dio _dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(minutes: 15),
+    sendTimeout: const Duration(minutes: 2),
+    followRedirects: true,
+    maxRedirects: 8,
+  ));
   final Map<int, Completer<void>> _pending = {};
   ReceivePort? _receivePort;
   Isolate? _isolate;
@@ -57,58 +65,112 @@ class KazakhVoiceService {
         await Directory('$dir/espeak-ng-data').exists();
   }
 
-  Future<String> _downloadAndExtractModel() async {
+  Future<String> _extractArchive(File archiveFile) async {
+    final support = await getApplicationSupportDirectory();
+    final modelDir = await _modelDirectory();
+    final compressed = await archiveFile.readAsBytes();
+    final tarBytes = BZip2Decoder().decodeBytes(compressed);
+    final tarArchive = TarDecoder().decodeBytes(tarBytes);
+    for (final entry in tarArchive.files) {
+      if (!entry.isFile) continue;
+      final relative = entry.name.replaceAll(String.fromCharCode(92), '/');
+      if (relative.startsWith('/') || relative.split('/').contains('..')) {
+        continue;
+      }
+      final output = File('${support.path}/$relative');
+      await output.parent.create(recursive: true);
+      await output.writeAsBytes(entry.content as List<int>, flush: false);
+    }
+    if (!await isInstalled) {
+      throw Exception('Файл толық емес немесе оның құрамы жарамсыз.');
+    }
+    return modelDir;
+  }
+
+  Future<String?> importModelArchive() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['bz2'],
+      allowMultiple: false,
+      withData: false,
+    );
+    if (result == null || result.files.isEmpty) return null;
+    final picked = result.files.single;
+    if (!picked.name.toLowerCase().endsWith('.tar.bz2')) {
+      throw Exception('Тек .tar.bz2 архивін таңдаңыз.');
+    }
+    final path = picked.path;
+    if (path == null) {
+      throw Exception('Файлға қол жеткізу мүмкін болмады. Оны телефонның Download бумасынан таңдаңыз.');
+    }
+    return _extractArchive(File(path));
+  }
+
+  Future<String> _downloadAndExtractModel({
+    void Function(int received, int total)? onProgress,
+  }) async {
     final modelDir = await _modelDirectory();
     if (await isInstalled) return modelDir;
 
     final support = await getApplicationSupportDirectory();
+    final partial = File('${support.path}/$_kazakhModelName.tar.bz2.part');
     final archiveFile = File('${support.path}/$_kazakhModelName.tar.bz2');
-    final client = http.Client();
-    try {
-      final response = await client
-          .send(http.Request('GET', Uri.parse(_kazakhModelUrl)))
-          .timeout(const Duration(minutes: 5));
-      if (response.statusCode != 200) {
-        throw Exception('Не удалось загрузить казахский голос (HTTP ${response.statusCode}).');
-      }
 
-      final sink = archiveFile.openWrite();
+    for (var attempt = 0; attempt < 5; attempt++) {
+      var offset = await partial.exists() ? await partial.length() : 0;
       try {
-        await for (final chunk in response.stream) {
-          sink.add(chunk);
-        }
-        await sink.flush();
-      } finally {
-        await sink.close();
-      }
+        final response = await _dio.download(
+          _kazakhModelUrl,
+          partial.path,
+          options: Options(
+            headers: offset > 0 ? {'Range': 'bytes=$offset-'} : <String, dynamic>{},
+            validateStatus: (status) => status == 200 || status == 206,
+          ),
+          fileAccessMode: offset > 0 ? FileAccessMode.append : FileAccessMode.write,
+          deleteOnError: false,
+          onReceiveProgress: (received, total) {
+            final fullTotal = total > 0 ? total + offset : -1;
+            onProgress?.call(offset + received, fullTotal);
+          },
+        );
 
-      final compressed = await archiveFile.readAsBytes();
-      final tarBytes = BZip2Decoder().decodeBytes(compressed);
-      final tarArchive = TarDecoder().decodeBytes(tarBytes);
-      for (final entry in tarArchive.files) {
-        if (!entry.isFile) continue;
-        final relative = entry.name.replaceAll(String.fromCharCode(92), '/');
-        if (relative.startsWith('/') || relative.split('/').contains('..')) {
+        if (offset > 0 && response.statusCode == 200) {
+          // The server ignored Range; the response was appended, so restart cleanly.
+          await partial.delete();
+          if (attempt == 4) {
+            throw Exception('Сервер не қолдайды жалғастырып жүктеуді.');
+          }
           continue;
         }
-        final output = File('${support.path}/$relative');
-        await output.parent.create(recursive: true);
-        await output.writeAsBytes(entry.content as List<int>, flush: false);
-      }
+        if (response.statusCode != 200 && response.statusCode != 206) {
+          throw Exception('Жүктеу серверінен қате жауап алынды.');
+        }
 
-      if (!await isInstalled) {
-        throw Exception('Архив загрузился, но файлы казахского голоса неполные.');
+        if (await archiveFile.exists()) await archiveFile.delete();
+        await partial.rename(archiveFile.path);
+        try {
+          return await _extractArchive(archiveFile);
+        } catch (_) {
+          // A complete but invalid archive cannot be repaired with a Range retry.
+          if (await archiveFile.exists()) await archiveFile.delete();
+          rethrow;
+        }
+      } catch (error) {
+        if (attempt == 4) {
+          if (error is DioException) {
+            throw Exception('Жүктеу үзілді, интернетті тексеріңіз.');
+          }
+          rethrow;
+        }
+        await Future<void>.delayed(Duration(seconds: 2 << attempt));
       }
-      return modelDir;
-    } finally {
-      client.close();
-      if (await archiveFile.exists()) await archiveFile.delete();
     }
+    throw Exception('Жүктеу үзілді, интернетті тексеріңіз.');
   }
 
-  Future<void> ensureReady() async {
+  Future<void> ensureReady({void Function(int received, int total)? onProgress}) async {
     if (_starting != null) return _starting!;
-    _starting = _start();
+    _starting = _start(onProgress: onProgress);
     try {
       await _starting;
     } catch (_) {
@@ -117,8 +179,8 @@ class KazakhVoiceService {
     }
   }
 
-  Future<void> _start() async {
-    final modelDir = await _downloadAndExtractModel();
+  Future<void> _start({void Function(int received, int total)? onProgress}) async {
+    final modelDir = await _downloadAndExtractModel(onProgress: onProgress);
     final receivePort = ReceivePort();
     _receivePort = receivePort;
     _ready = Completer<void>();
@@ -181,8 +243,9 @@ class KazakhVoiceService {
     required String text,
     required int speakerId,
     double speed = 1.0,
+    void Function(int received, int total)? onDownloadProgress,
   }) async {
-    await ensureReady();
+    await ensureReady(onProgress: onDownloadProgress);
     final worker = _workerPort;
     if (worker == null) {
       throw Exception('Казахский голосовой движок не запустился: нет связи с аудиомодулем.');
