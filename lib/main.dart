@@ -339,7 +339,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   int _offRouteSamples = 0;
   DateTime? _lastAutomaticReroute;
   DateTime? _plannedDeparture;
-  String _message = 'Нажмите «Моё местоположение» или удерживайте точку на карте';
+  String _message = _localized('Нажмите «Моё местоположение» или удерживайте точку на карте', '«Менің орналасқан жерім» түймесін басыңыз немесе картадағы нүктені басып тұрыңыз', 'Tap “My location” or long-press a point on the map');
 
   @override
   void initState() {
@@ -383,7 +383,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       setState(() {
         _routeOrigin = null;
         _destination = destination;
-        _message = 'Последний пункт назначения восстановлен. Начальная точка будет определена по GPS.';
+        _message = _localized('Последний пункт назначения восстановлен. Начальная точка будет определена по GPS.', 'Соңғы межелі орын қалпына келтірілді. Бастапқы нүкте GPS арқылы анықталады.', 'Last destination restored. The starting point will be detected by GPS.');
       });
     } catch (_) {
       // Route planning remains usable if local preferences are unavailable.
@@ -395,7 +395,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(key, _encodePoint(point));
     } catch (_) {
-      if (mounted) setState(() => _message = 'Не удалось сохранить точку маршрута на телефоне.');
+      if (mounted) setState(() => _message = _localized('Не удалось сохранить точку маршрута на телефоне.', 'Маршрут нүктесін телефонға сақтау мүмкін болмады.', 'Could not save the route point on this phone.'));
     }
   }
 
@@ -404,7 +404,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(key);
     } catch (_) {
-      if (mounted) setState(() => _message = 'Не удалось удалить сохранённую точку маршрута.');
+      if (mounted) setState(() => _message = _localized('Не удалось удалить сохранённую точку маршрута.', 'Сақталған маршрут нүктесін жою мүмкін болмады.', 'Could not delete the saved route point.'));
     }
   }
 
@@ -518,13 +518,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (!mounted || selectedPath == null) return;
     if (selectedPath == '__use_online_map__') {
       _offlineTileProvider?.dispose();
-      setState(() { _offlineTileProvider = null; _message = 'Включена онлайн-карта.'; });
+      setState(() { _offlineTileProvider = null; _message = _localized('Включена онлайн-карта.', 'Онлайн карта қосылды.', 'Online map enabled.'); });
       return;
     }
     try {
       final provider = MbTilesTileProvider.fromPath(path: selectedPath);
       _offlineTileProvider?.dispose();
-      setState(() { _offlineTileProvider = provider; _message = 'Офлайн-карта подключена. Для построения маршрута пока нужен интернет.'; });
+      setState(() { _offlineTileProvider = provider; _message = _localized('Офлайн-карта подключена. Для построения маршрута пока нужен интернет.', 'Офлайн карта қосылды. Маршрут құру үшін әзірге интернет қажет.', 'Offline map connected. Internet is still required to build routes.'); });
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = 'Не удалось открыть офлайн-карту: $error');
@@ -691,13 +691,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
     setState(() {
       _isLocating = true;
-      _message = 'Определяем GPS-положение…';
+      _message = _localized('Определяем GPS-положение…', 'GPS орналасқан жерді анықтауда…', 'Detecting GPS location…');
     });
 
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        throw Exception('Включите геолокацию (GPS) на телефоне.');
+        throw Exception(_localized('Включите геолокацию (GPS) на телефоне.', 'Телефонда геолокацияны (GPS) қосыңыз.', 'Turn on location services (GPS) on your phone.'));
       }
 
       var permission = await Geolocator.checkPermission();
@@ -705,10 +705,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         permission = await Geolocator.requestPermission();
       }
       if (permission == LocationPermission.denied) {
-        throw Exception('Разрешите приложению доступ к местоположению.');
+        throw Exception(_localized('Разрешите приложению доступ к местоположению.', 'Қолданбаға орналасқан жерге кіруге рұқсат беріңіз.', 'Allow the app to access your location.'));
       }
       if (permission == LocationPermission.deniedForever) {
-        throw Exception('Доступ к GPS запрещён в настройках телефона.');
+        throw Exception(_localized('Доступ к GPS запрещён в настройках телефона.', 'Телефон баптауларында GPS қолжетімділігіне тыйым салынған.', 'GPS access is denied in your phone settings.'));
       }
 
       final position = await Geolocator.getCurrentPosition(
@@ -726,7 +726,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         if (position.speed >= 0.8 && position.heading.isFinite) {
           _gpsHeadingDegrees = position.heading;
         }
-        _message = 'GPS определён. Положение будет обновляться в реальном времени.';
+        _message = _localized('GPS определён. Положение будет обновляться в реальном времени.', 'GPS анықталды. Орналасқан жер нақты уақытта жаңартылып отырады.', 'GPS located. Your position will update in real time.');
       });
       _mapController.move(point, 15);
       await _startLiveLocationUpdates();
@@ -782,7 +782,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       onError: (Object error) {
         if (!mounted) return;
         setState(() {
-          _message = 'Потеряна связь с GPS. Проверьте геолокацию телефона.';
+          _message = _localized('Потеряна связь с GPS. Проверьте геолокацию телефона.', 'GPS байланысы жоғалды. Телефон геолокациясын тексеріңіз.', 'GPS signal lost. Check your phone location settings.');
         });
       },
     );
@@ -805,7 +805,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     await prefs.setStringList('search_history', history.take(20).toList());
     setState(() {
       _isSearching = true;
-      _message = selectAsOrigin ? 'Ищем начальную точку…' : 'Ищем пункт назначения…';
+      _message = selectAsOrigin ? _localized('Ищем начальную точку…', 'Бастапқы нүкте ізделуде…', 'Searching for starting point…') : _localized('Ищем пункт назначения…', 'Межелі орын ізделуде…', 'Searching for destination…');
     });
     var shouldBuildRoute = false;
     try {
@@ -867,14 +867,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           ),
         );
         if (searchNationwide != true || !mounted) {
-          setState(() => _message = 'Рядом объект не найден. Попробуйте уточнить название или выбрать точку на карте.');
+          setState(() => _message = _localized('Рядом объект не найден. Попробуйте уточнить название или выбрать точку на карте.', 'Жақын жерден нысан табылмады. Атауын нақтылаңыз немесе картадан нүкте таңдаңыз.', 'No nearby place found. Refine the name or select a point on the map.'));
           return;
         }
         results = await requestSearch(bounded: false, limit: '40');
         if (!mounted) return;
       }
       if (results.isEmpty) {
-        setState(() => _message = 'Такой объект не найден в Казахстане. Проверьте название.');
+        setState(() => _message = _localized('Такой объект не найден в Казахстане. Проверьте название.', 'Қазақстаннан мұндай нысан табылмады. Атауын тексеріңіз.', 'This place was not found in Kazakhstan. Check the name.'));
         return;
       }
 
@@ -898,7 +898,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       });
 
       if (valid.isEmpty) {
-        setState(() => _message = 'Поиск вернул некорректные координаты. Попробуйте другое название.');
+        setState(() => _message = _localized('Поиск вернул некорректные координаты. Попробуйте другое название.', 'Іздеу қате координаттарды қайтарды. Басқа атауды қолданып көріңіз.', 'Search returned invalid coordinates. Try another name.'));
         return;
       }
 
@@ -954,7 +954,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final lat = double.tryParse(selected['lat']?.toString() ?? '');
       final lon = double.tryParse(selected['lon']?.toString() ?? '');
       if (lat == null || lon == null || lat < 40 || lat > 56 || lon < 46 || lon > 88) {
-        setState(() => _message = 'Координаты результата не относятся к Казахстану.');
+        setState(() => _message = _localized('Координаты результата не относятся к Казахстану.', 'Нәтиже координаттары Қазақстан аумағына жатпайды.', 'The result coordinates are outside Kazakhstan.'));
         return;
       }
       final point = LatLng(lat, lon);
@@ -966,8 +966,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       }
       _mapController.move(point, 16);
       setState(() => _message = selectAsOrigin
-          ? 'Начальная точка выбрана. Теперь введите пункт назначения.'
-          : 'Адрес найден. Автоматически строим маршрут от вашего GPS-положения…');
+          ? _localized('Начальная точка выбрана. Теперь введите пункт назначения.', 'Бастапқы нүкте таңдалды. Енді межелі орынды енгізіңіз.', 'Starting point selected. Now enter your destination.')
+          : _localized('Адрес найден. Автоматически строим маршрут от вашего GPS-положения…', 'Мекенжай табылды. GPS орналасқан жеріңізден маршрут автоматты түрде құрылады…', 'Address found. Building a route from your GPS location…'));
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
@@ -991,7 +991,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _instructionIndex = 0;
       _routeDistanceMeters = null;
       _routeDurationSeconds = null;
-      _message = 'Начальная точка выбрана на карте. Выберите пункт назначения.';
+      _message = _localized('Начальная точка выбрана на карте. Выберите пункт назначения.', 'Бастапқы нүкте картадан таңдалды. Межелі орынды таңдаңыз.', 'Starting point selected on the map. Choose a destination.');
     });
     unawaited(_saveRoutePoint(_savedRouteOriginKey, point));
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
@@ -1004,7 +1004,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _instructions = [];
       _routeDistanceMeters = null;
       _routeDurationSeconds = null;
-      _message = 'Начальная точка снова определяется по GPS.';
+      _message = _localized('Начальная точка снова определяется по GPS.', 'Бастапқы нүкте қайтадан GPS арқылы анықталады.', 'Starting point will be detected by GPS again.');
     });
     unawaited(_removeSavedRoutePoint(_savedRouteOriginKey));
   }
@@ -1019,7 +1019,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _instructionIndex = 0;
       _routeDistanceMeters = null;
       _routeDurationSeconds = null;
-      _message = 'Точка назначения выбрана. Нажмите «Построить маршрут».';
+      _message = _localized('Точка назначения выбрана. Нажмите «Построить маршрут».', 'Межелі нүкте таңдалды. «Маршрут құру» түймесін басыңыз.', 'Destination selected. Tap “Build route”.');
     });
     unawaited(_saveRoutePoint(_savedRouteDestinationKey, point));
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
@@ -1204,20 +1204,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _buildRoute({bool automaticReroute = false}) async {
     if (_destination == null) {
-      setState(() => _message = 'Сначала выберите конечную точку на карте.');
+      setState(() => _message = _localized('Сначала выберите конечную точку на карте.', 'Алдымен картадан соңғы нүктені таңдаңыз.', 'First select the destination point on the map.'));
       return;
     }
     if (_routeOrigin == null && _currentLocation == null) await _locateMe();
     final routeOrigin = _routeOrigin ?? _currentLocation;
     if (routeOrigin == null || _destination == null) {
-      if (mounted) setState(() => _message = 'Не удалось определить начальную точку. Выберите её на карте или включите GPS.');
+      if (mounted) setState(() => _message = _localized('Не удалось определить начальную точку. Выберите её на карте или включите GPS.', 'Бастапқы нүктені анықтау мүмкін болмады. Оны картадан таңдаңыз немесе GPS қосыңыз.', 'Could not determine the starting point. Select it on the map or enable GPS.'));
       return;
     }
 
     final resumeNavigation = automaticReroute && _navigationActive;
     setState(() {
       _isBuildingRoute = true;
-      _message = automaticReroute ? 'Вы отклонились от маршрута. Перестраиваем…' : 'Строим варианты маршрута…';
+      _message = automaticReroute ? _localized('Вы отклонились от маршрута. Перестраиваем…', 'Маршруттан ауытқыдыңыз. Қайта құрудамыз…', 'You left the route. Recalculating…') : _localized('Строим варианты маршрута…', 'Маршрут нұсқалары құрылуда…', 'Building route options…');
     });
 
     try {
@@ -1273,8 +1273,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _routeDistanceMeters = distance;
         _routeDurationSeconds = duration;
         _message = automaticReroute
-            ? 'Маршрут перестроен. Продолжаем навигацию.'
-            : 'Найдено вариантов: ${validRoutes.length}. Выберите подходящий маршрут.';
+            ? _localized('Маршрут перестроен. Продолжаем навигацию.', 'Маршрут қайта құрылды. Навигация жалғасуда.', 'Route recalculated. Continuing navigation.')
+            : _localized('Найдено вариантов: ${validRoutes.length}. Выберите подходящий маршрут.', 'Маршрут нұсқалары табылды: ${validRoutes.length}. Қажеттісін таңдаңыз.', 'Routes found: ${validRoutes.length}. Choose your preferred route.');
       });
       if (points.isNotEmpty) {
         _mapController.fitCamera(CameraFit.coordinates(
@@ -1318,7 +1318,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _instructionIndex = 0;
       _routeDistanceMeters = (route['distance'] as num).toDouble();
       _routeDurationSeconds = (route['duration'] as num).toDouble();
-      _message = 'Выбран вариант маршрута ${index + 1}.';
+      _message = _localized('Выбран вариант маршрута ${index + 1}.', '${index + 1}-маршрут нұсқасы таңдалды.', 'Route option ${index + 1} selected.');
     });
     if (points.isNotEmpty) {
       _mapController.fitCamera(CameraFit.coordinates(
@@ -1899,7 +1899,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 Text(
                   _offlineTileProvider == null
                       ? 'Офлайн-карта не подключена. Размер и покрытие файла проверяются после выбора; готовые пакеты для скачивания пока не предоставляются.'
-                      : 'Офлайн-карта подключена. Для построения маршрута пока нужен интернет.',
+                      : _localized('Офлайн-карта подключена. Для построения маршрута пока нужен интернет.', 'Офлайн карта қосылды. Маршрут құру үшін әзірге интернет қажет.', 'Offline map connected. Internet is still required to build routes.'),
                   style: const TextStyle(fontSize: 12, color: Colors.black54),
                 ),
                 const SizedBox(height: 12),
