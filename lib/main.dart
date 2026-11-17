@@ -34,6 +34,11 @@ class BakeNavigatorApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFFFFCC00),
           brightness: Brightness.light,
+        ).copyWith(
+          primary: const Color(0xFFFFCC00),
+          onPrimary: const Color(0xFF171717),
+          secondary: const Color(0xFF171717),
+          surface: const Color(0xFFFFFFFF),
         ),
         scaffoldBackgroundColor: const Color(0xFFFFFFFF),
       ),
@@ -1872,6 +1877,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final originController = TextEditingController();
     var searchAfterClose = false;
     var searchOriginAfterClose = false;
+    var buildRouteAfterClose = false;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1982,9 +1988,27 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () { setState(() => _plannedDeparture = null); refreshSheet(() {}); }, child: const Text('Сбросить время'))),
                   const Text('Выбранное время сохраняется как план. Оно пока не учитывается тестовым сервисом расчёта маршрута и пробок.', style: TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
                   const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: () { Navigator.pop(sheetContext); },
-                    child: const Text('Готово'),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFCC00),
+                      foregroundColor: const Color(0xFF171717),
+                      minimumSize: const Size.fromHeight(52),
+                    ),
+                    onPressed: _isBuildingRoute || (_destination == null && destinationController.text.trim().isEmpty)
+                        ? null
+                        : () {
+                            buildRouteAfterClose = true;
+                            Navigator.pop(sheetContext);
+                          },
+                    icon: _isBuildingRoute
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.alt_route),
+                    label: const Text('Построить маршрут', style: TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    child: const Text('Готово без построения'),
                   ),
                 ],
               ),
@@ -2003,6 +2027,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     } else if (searchAfterClose && destinationQuery.isNotEmpty && mounted) {
       _searchController.text = destinationQuery;
       await _searchAddress();
+    }
+    if (buildRouteAfterClose && mounted) {
+      if (destinationQuery.isNotEmpty) {
+        _searchController.text = destinationQuery;
+        await _searchAddress();
+      }
+      if (mounted) await _buildRoute();
     }
   }
 
@@ -2025,6 +2056,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             _menuTile(sheetContext, Icons.tune, 'Параметры маршрута', () { Navigator.pop(sheetContext); _openRoutePreferences(); }),
             _menuTile(sheetContext, Icons.share_outlined, 'Поделиться маршрутом', () { Navigator.pop(sheetContext); _shareRoute(); }),
             _menuTile(sheetContext, Icons.flag_outlined, 'Сообщить об ошибке', () { Navigator.pop(sheetContext); _reportRouteIssue(); }),
+            const Divider(height: 18),
+            _menuTile(sheetContext, Icons.place_outlined, 'Мои места', () { Navigator.pop(sheetContext); _openMyPlaces(); }),
+            _menuTile(sheetContext, Icons.layers_outlined, 'Слои и офлайн-карты', () { Navigator.pop(sheetContext); _openMapLayers(); }),
+            _menuTile(sheetContext, Icons.warning_amber_outlined, 'События на дороге', () { Navigator.pop(sheetContext); _openRoadEvents(); }),
+            _menuTile(sheetContext, Icons.settings_outlined, 'Настройки', () { Navigator.pop(sheetContext); _openSettings(); }),
           ]),
         ),
       ),
