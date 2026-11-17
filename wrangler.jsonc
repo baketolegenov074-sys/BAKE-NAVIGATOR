@@ -1,0 +1,10 @@
+{
+  "$schema": "https://developers.cloudflare.com/workers/wrangler/config-schema.json",
+  "name": "bake-routing-proxy",
+  "main": "server/routing-worker.js",
+  "compatibility_date": "2026-11-17",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  }
+}
