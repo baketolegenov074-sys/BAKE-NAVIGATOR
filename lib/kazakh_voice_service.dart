@@ -67,24 +67,74 @@ class KazakhVoiceService {
 
   Future<String> _extractArchive(File archiveFile) async {
     final support = await getApplicationSupportDirectory();
-    final modelDir = await _modelDirectory();
-    final compressed = await archiveFile.readAsBytes();
-    final tarBytes = BZip2Decoder().decodeBytes(compressed);
-    final tarArchive = TarDecoder().decodeBytes(tarBytes);
-    for (final entry in tarArchive.files) {
-      if (!entry.isFile) continue;
-      final relative = entry.name.replaceAll(String.fromCharCode(92), '/');
-      if (relative.startsWith('/') || relative.split('/').contains('..')) {
-        continue;
+    final modelDir = Directory(await _modelDirectory());
+    final staging = Directory('${support.path}/${_kazakhModelName}_extracting');
+
+    // Never mix a partially extracted model with an earlier failed attempt.
+    if (await staging.exists()) await staging.delete(recursive: true);
+    await staging.create(recursive: true);
+
+    try {
+      final compressed = await archiveFile.readAsBytes();
+      final tarBytes = BZip2Decoder().decodeBytes(compressed);
+      final tarArchive = TarDecoder().decodeBytes(tarBytes);
+
+      for (final entry in tarArchive.files) {
+        final relative = entry.name.replaceAll(String.fromCharCode(92), '/');
+        if (relative.isEmpty || relative.startsWith('/') ||
+            relative.split('/').contains('..')) {
+          throw Exception('Архив ішінде жарамсыз файл жолы бар.');
+        }
+        final output = File('${staging.path}/$relative');
+        if (entry.isFile) {
+          await output.parent.create(recursive: true);
+          await output.writeAsBytes(entry.content as List<int>, flush: false);
+        } else {
+          await Directory(output.path).create(recursive: true);
+        }
       }
-      final output = File('${support.path}/$relative');
-      await output.parent.create(recursive: true);
-      await output.writeAsBytes(entry.content as List<int>, flush: false);
+
+      // Find the actual model root instead of assuming that the TAR archive
+      // has a particular top-level folder layout.
+      Directory? modelRoot;
+      await for (final entity in staging.list(recursive: true, followLinks: false)) {
+        if (entity is! File || !entity.path.endsWith('/kk_KZ-issai-high.onnx')) continue;
+        final candidate = entity.parent;
+        final hasTokens = await File('${candidate.path}/tokens.txt').exists();
+        final hasEspeak = await Directory('${candidate.path}/espeak-ng-data').exists();
+        if (hasTokens && hasEspeak) {
+          modelRoot = candidate;
+          break;
+        }
+      }
+
+      if (modelRoot == null) {
+        throw Exception('Архив ашылды, бірақ kk_KZ-issai-high.onnx, tokens.txt немесе espeak-ng-data табылмады. Толық ISSAI .tar.bz2 архивін таңдаңыз.');
+      }
+
+      if (await modelDir.exists()) await modelDir.delete(recursive: true);
+      await modelDir.create(recursive: true);
+      await for (final entity in modelRoot.list(recursive: false, followLinks: false)) {
+        final target = '${modelDir.path}/${entity.uri.pathSegments.last}';
+        if (entity is Directory) {
+          await entity.rename(target);
+        } else if (entity is File) {
+          await entity.rename(target);
+        }
+      }
+
+      if (!await isInstalled) {
+        throw Exception('ISSAI моделі толық орнатылмады: негізгі файлдар табылған жоқ.');
+      }
+      return modelDir.path;
+    } catch (error) {
+      if (await modelDir.exists() && !await isInstalled) {
+        await modelDir.delete(recursive: true);
+      }
+      rethrow;
+    } finally {
+      if (await staging.exists()) await staging.delete(recursive: true);
     }
-    if (!await isInstalled) {
-      throw Exception('Файл толық емес немесе оның құрамы жарамсыз.');
-    }
-    return modelDir;
   }
 
   Future<String?> importModelArchive() async {
@@ -96,14 +146,21 @@ class KazakhVoiceService {
     );
     if (result == null || result.files.isEmpty) return null;
     final picked = result.files.single;
-    if (!picked.name.toLowerCase().endsWith('.tar.bz2')) {
-      throw Exception('Тек .tar.bz2 архивін таңдаңыз.');
-    }
     final path = picked.path;
     if (path == null) {
       throw Exception('Файлға қол жеткізу мүмкін болмады. Оны телефонның Download бумасынан таңдаңыз.');
     }
-    return _extractArchive(File(path));
+    final archiveFile = File(path);
+    if (!await archiveFile.exists()) {
+      throw Exception('Таңдалған архив табылмады. Файлды қайта таңдаңыз.');
+    }
+    if (!picked.name.toLowerCase().endsWith('.tar.bz2')) {
+      throw Exception('Тек толық .tar.bz2 архивін таңдаңыз.');
+    }
+    if (await archiveFile.length() < 1024) {
+      throw Exception('Архив бос немесе толық жүктелмеген.');
+    }
+    return _extractArchive(archiveFile);
   }
 
   Future<String> _downloadAndExtractModel({
