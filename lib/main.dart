@@ -2546,7 +2546,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Закладки'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
             if (saved.isEmpty)
-              Padding(padding: const EdgeInsets.all(22), child: Text(AppLocale.tr('Пока нет сохранённых точек. Удерживайте место на карте и выберите «Сохранить в закладки».' ))))
+              Padding(padding: const EdgeInsets.all(22), child: Text(AppLocale.tr('Пока нет сохранённых точек. Удерживайте место на карте и выберите «Сохранить в закладки».')))
             else
               ...saved.map((raw) {
                 final item = jsonDecode(raw) as Map<String, dynamic>;
@@ -3598,10 +3598,10 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                 const SizedBox(height: 6),
                 Text(AppLocale.tr('Эти сведения сохраняются только на этом телефоне.')),
                 const SizedBox(height: 10),
-                TextField(controller: _vehicleMake, decoration: const InputDecoration(labelText: AppLocale.tr('Марка автомобиля'))),
-                TextField(controller: _vehicleModel, decoration: const InputDecoration(labelText: AppLocale.tr('Модель'))),
-                TextField(controller: _vehicleColor, decoration: const InputDecoration(labelText: AppLocale.tr('Цвет'))),
-                TextField(controller: _vehiclePlate, decoration: const InputDecoration(labelText: AppLocale.tr('Государственный номер'))),
+                TextField(controller: _vehicleMake, decoration: InputDecoration(labelText: AppLocale.tr('Марка автомобиля'))),
+                TextField(controller: _vehicleModel, decoration: InputDecoration(labelText: AppLocale.tr('Модель'))),
+                TextField(controller: _vehicleColor, decoration: InputDecoration(labelText: AppLocale.tr('Цвет'))),
+                TextField(controller: _vehiclePlate, decoration: InputDecoration(labelText: AppLocale.tr('Государственный номер'))),
                 const SizedBox(height: 12),
                 FilledButton.icon(onPressed: _saveVehicle, icon: const Icon(Icons.save_outlined), label: Text(AppLocale.tr('Сохранить'))),
                 const SizedBox(height: 22),
