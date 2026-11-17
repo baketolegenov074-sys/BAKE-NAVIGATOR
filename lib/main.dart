@@ -681,7 +681,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _speakText(String text) async {
     try {
-      if (_navigationLanguage == 'kk-KZ' && await _kazakhVoiceService.isInstalled) {
+      // Kazakh navigation speech is provided by BAKE's bundled ISSAI engine.
+      // It must never depend on a Kazakh voice installed in Android.
+      if (_navigationLanguage == 'kk-KZ') {
         await _kazakhVoiceService.speak(
           text: text,
           speakerId: _kazakhVoiceId,
@@ -689,24 +691,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         );
         return;
       }
-      if (!await _prepareSpeechVoice()) {
-        if (mounted) {
-          setState(() => _message = AppLocale.pick(
-            'Для казахской озвучки установите казахский голос в настройках Android.',
-            'Қазақша дыбыстау үшін Android баптауларынан қазақ дауысын орнатыңыз.',
-            'Install a Kazakh voice in Android settings for Kazakh navigation speech.',
-          ));
-        }
-        return;
-      }
+      if (!await _prepareSpeechVoice()) return;
       await _tts.speak(text);
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        setState(() => _message = AppLocale.pick(
-          'Не удалось запустить выбранный голос навигации.',
-          'Таңдалған навигация дауысын іске қосу мүмкін болмады.',
-          'Could not start the selected navigation voice.',
-        ));
+        setState(() => _message = _navigationLanguage == 'kk-KZ'
+            ? AppLocale.pick(
+                'Қазақша дауыс пакетін жүктеу немесе іске қосу мүмкін болмады. Интернетті тексеріп, дыбыс баптауларынан «Қазақша офлайн дауысы» батырмасын басыңыз.',
+                'Қазақша дауыс пакетін жүктеу немесе іске қосу мүмкін болмады. Интернетті тексеріп, дыбыс баптауларынан «Қазақша офлайн дауысы» батырмасын басыңыз.',
+                'Could not download or start the built-in Kazakh voice. Check the internet and use the Kazakh offline voice button in sound settings.',
+              )
+            : AppLocale.pick(
+                'Не удалось запустить выбранный голос навигации.',
+                'Таңдалған навигация дауысын іске қосу мүмкін болмады.',
+                'Could not start the selected navigation voice.',
+              ));
       }
     }
   }
