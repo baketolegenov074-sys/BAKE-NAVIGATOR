@@ -479,10 +479,14 @@ class RouteInstruction {
     required this.location,
     required this.text,
     required this.distanceMeters,
+    required this.maneuverType,
+    required this.maneuverModifier,
   });
   final LatLng location;
   final String text;
   final double distanceMeters;
+  final String maneuverType;
+  final String maneuverModifier;
 }
 
 class NavigatorScreen extends StatefulWidget {
@@ -1443,52 +1447,84 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         return;
       }
 
-      final selected = await showDialog<Map<String, dynamic>>(
+      final selected = await showModalBottomSheet<Map<String, dynamic>>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text(selectAsOrigin ? AppLocale.tr('Выберите начальную точку') : AppLocale.tr('Выберите пункт назначения')),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView.separated(
-              shrinkWrap: true,
-              itemCount: valid.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
-              itemBuilder: (context, index) {
-                final item = valid[index];
-                final point = LatLng(
-                  double.parse(item['lat'].toString()),
-                  double.parse(item['lon'].toString()),
-                );
-                final distance = _distanceKm(anchor, point);
-                final distanceLabel = distance < 1
-                    ? '${(distance * 1000).round()} м от точки поиска'
-                    : '${distance.toStringAsFixed(1)} км от точки поиска';
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.location_on_outlined, color: Color(0xFF343434)),
-                  title: Text(
-                    item['name']?.toString().isNotEmpty == true
-                        ? item['name'].toString()
-                        : (item['display_name']?.toString() ?? 'Адрес'),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (sheetContext) => SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * 0.72,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD6D9DE),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
-                  subtitle: Text(
-                    '${item['display_name'] ?? ''}\n$distanceLabel',
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  selectAsOrigin
+                      ? AppLocale.tr('Выберите начальную точку')
+                      : AppLocale.tr('Выберите пункт назначения'),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: ListView.separated(
+                    itemCount: valid.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final item = valid[index];
+                      final point = LatLng(
+                        double.parse(item['lat'].toString()),
+                        double.parse(item['lon'].toString()),
+                      );
+                      final distance = _distanceKm(anchor, point);
+                      final distanceLabel = distance < 1
+                          ? '${(distance * 1000).round()} м от точки поиска'
+                          : '${distance.toStringAsFixed(1)} км от точки поиска';
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(
+                          Icons.location_on_outlined,
+                          color: Color(0xFF343434),
+                        ),
+                        title: Text(
+                          item['name']?.toString().isNotEmpty == true
+                              ? item['name'].toString()
+                              : (item['display_name']?.toString() ?? 'Адрес'),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          '${item['display_name'] ?? ''}\\n$distanceLabel',
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        onTap: () => Navigator.of(sheetContext).pop(item),
+                      );
+                    },
                   ),
-                  onTap: () => Navigator.of(dialogContext).pop(item),
-                );
-              },
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                  child: Text(AppLocale.tr('Отмена')),
+                ),
+              ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(AppLocale.tr('Отмена')),
-            ),
-          ],
         ),
       );
       if (selected == null || !mounted) return;
@@ -1573,6 +1609,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
 
+  IconData _maneuverIcon(RouteInstruction? instruction) {
+    if (instruction == null) return Icons.navigation;
+    final modifier = instruction.maneuverModifier;
+    if (modifier.contains('left')) return Icons.turn_left;
+    if (modifier.contains('right')) return Icons.turn_right;
+    if (modifier == 'uturn') return Icons.u_turn_left;
+    if (modifier == 'straight') return Icons.straight;
+    if (instruction.maneuverType == 'roundabout' ||
+        instruction.maneuverType == 'rotary') {
+      return Icons.roundabout_left;
+    }
+    if (instruction.maneuverType == 'arrive') return Icons.flag_outlined;
+    return Icons.navigation;
+  }
+
   String _instructionText(Map<String, dynamic> step) {
     final maneuver = step['maneuver'] as Map<String, dynamic>? ?? {};
     final type = maneuver['type']?.toString() ?? '';
@@ -1621,6 +1672,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           ),
           text: _instructionText(step),
           distanceMeters: (step['distance'] as num?)?.toDouble() ?? 0,
+          maneuverType: maneuver['type']?.toString() ?? '',
+          maneuverModifier: maneuver['modifier']?.toString() ?? '',
         ));
       }
     }
@@ -3684,7 +3737,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       padding: const EdgeInsets.all(14),
                       child: Row(
                         children: [
-                          const Icon(Icons.turn_right, size: 34, color: Color(0xFF343434)),
+                          Icon(
+                            _maneuverIcon(
+                              _instructionIndex < _instructions.length
+                                  ? _instructions[_instructionIndex]
+                                  : null,
+                            ),
+                            size: 34,
+                            color: const Color(0xFF343434),
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -3695,14 +3756,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                   _instructionIndex < _instructions.length
                                       ? _instructions[_instructionIndex].text
                                       : 'Продолжайте по маршруту',
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                                  maxLines: 3,
+                                  softWrap: true,
+                                  overflow: TextOverflow.fade,
+                                  style: const TextStyle(fontSize: 15, height: 1.15, fontWeight: FontWeight.w800),
                                 ),
                                 if (_instructionIndex < _instructions.length)
                                   Text(
-                                    'Следующий манёвр · ${_distanceToNextManeuverMeters == null ? '—' : (_distanceToNextManeuverMeters! >= 1000 ? '${(_distanceToNextManeuverMeters! / 1000).toStringAsFixed(1)} км' : '${_distanceToNextManeuverMeters!.round()} м')}',
-                                    style: const TextStyle(fontSize: 12, color: Color(0xFF626A73)),
+                                    '${_localized('Следующий манёвр', 'Келесі маневр', 'Next maneuver')} · ${_distanceToNextManeuverMeters == null ? '—' : (_distanceToNextManeuverMeters! >= 1000 ? '${(_distanceToNextManeuverMeters! / 1000).toStringAsFixed(1)} км' : '${_distanceToNextManeuverMeters!.round()} м')}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 11, color: Color(0xFF626A73)),
                                   ),
                               ],
                             ),
@@ -3779,15 +3843,25 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        FilledButton(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFCC00),
-                            foregroundColor: const Color(0xFF171717),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                        SizedBox(
+                          width: 112,
+                          height: 42,
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFCC00),
+                              foregroundColor: const Color(0xFF171717),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                            ),
+                            onPressed: _finishNavigation,
+                            child: Text(
+                              AppLocale.tr('Завершить'),
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.fade,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                            ),
                           ),
-                          onPressed: _finishNavigation,
-                          child: Text(AppLocale.tr('Завершить'), style: const TextStyle(fontWeight: FontWeight.w800)),
                         ),
                       ],
                     ),
@@ -3796,7 +3870,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               ),
             ),
           Positioned(
-            bottom: _routeReady ? 250 : 144,
+            bottom: _navigationActive ? 150 : (_routeReady ? 250 : 144),
             right: 14,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -3847,7 +3921,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           Positioned(
             left: 14,
-            top: 68,
+            top: _navigationActive ? null : 68,
+            bottom: _navigationActive ? 380 : null,
             child: _roundMapButton(
               icon: Icons.my_location,
               tooltip: AppLocale.tr('Моё местоположение'),
@@ -3855,11 +3930,44 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               onPressed: _isLocating ? null : () => unawaited(_locateMe()),
             ),
           ),
-          if (_message.isNotEmpty)
+          if (_navigationActive && _message.isNotEmpty)
+            Positioned(
+              top: 0,
+              left: 14,
+              right: 14,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: IgnorePointer(
+                    child: Material(
+                      color: const Color(0xF2FFFFFF),
+                      elevation: 3,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        child: Text(
+                          _message,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            height: 1.15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (!_navigationActive && _message.isNotEmpty)
             Positioned(
               left: 16,
               right: 16,
-              bottom: _navigationActive ? 380 : (_routeReady ? 340 : 125),
+              bottom: _routeReady ? 340 : 125,
               child: IgnorePointer(
                 child: Align(
                   alignment: Alignment.center,
@@ -3871,9 +3979,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       borderRadius: BorderRadius.circular(14),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                        child: Text(_message, maxLines: 2, overflow: TextOverflow.ellipsis,
+                        child: Text(
+                          _message,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ),
                   ),
