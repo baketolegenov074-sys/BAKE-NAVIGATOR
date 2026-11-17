@@ -2466,9 +2466,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         child: Padding(
           padding: const EdgeInsets.all(18),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Закладки'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+            Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Закладки'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
             if (saved.isEmpty)
-              const Padding(padding: EdgeInsets.all(22), child: Text(AppLocale.tr('Пока нет сохранённых точек. Удерживайте место на карте и выберите «Сохранить в закладки».')))
+              Padding(padding: const EdgeInsets.all(22), child: Text(AppLocale.tr('Пока нет сохранённых точек. Удерживайте место на карте и выберите «Сохранить в закладки».')))
             else
               ...saved.map((raw) {
                 final item = jsonDecode(raw) as Map<String, dynamic>;
@@ -2509,7 +2509,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Row(children: [
-                const Expanded(child: Text(AppLocale.tr('Время отправления'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+                Expanded(child: Text(AppLocale.tr('Время отправления'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
                 TextButton(onPressed: () { setState(() => _plannedDeparture = null); refreshPlanner(() {}); Navigator.pop(sheetContext); }, child: Text(AppLocale.tr('Сбросить'))),
               ]),
               const SizedBox(height: 10),
@@ -2629,7 +2629,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     Text('${_routeStops.length}/5', style: const TextStyle(color: Color(0xFF687786))),
                   ]),
                   if (_routeStops.isEmpty)
-                    const Padding(padding: EdgeInsets.fromLTRB(36, 6, 0, 8), child: Text(AppLocale.tr('Добавьте остановку долгим нажатием на нужное место карты.'), style: TextStyle(fontSize: 12, color: Color(0xFF7B8792))))
+                    Padding(padding: const EdgeInsets.fromLTRB(36, 6, 0, 8), child: Text(AppLocale.tr('Добавьте остановку долгим нажатием на нужное место карты.'), style: TextStyle(fontSize: 12, color: Color(0xFF7B8792))))
                   else
                     ..._routeStops.asMap().entries.map((entry) => ListTile(
                       dense: true,
@@ -3493,7 +3493,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     await prefs.setString('vehicle_plate', _vehiclePlate.text.trim());
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text(AppLocale.tr('Данные автомобиля сохранены на этом телефоне.'))),
+      SnackBar(content: Text(AppLocale.tr('Данные автомобиля сохранены на этом телефоне.'))),
     );
   }
 
