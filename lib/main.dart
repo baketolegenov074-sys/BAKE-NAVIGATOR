@@ -446,6 +446,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _isSearching = true;
       _message = selectAsOrigin ? 'Ищем начальную точку…' : 'Ищем пункт назначения…';
     });
+    var shouldBuildRoute = false;
     try {
       // Prefer the live GPS position; use Shymkent only before GPS is available.
       final anchor = selectAsOrigin
@@ -600,16 +601,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _selectRouteOrigin(point);
       } else {
         _selectDestination(point);
+        shouldBuildRoute = true;
       }
       _mapController.move(point, 16);
       setState(() => _message = selectAsOrigin
-          ? 'Начальная точка выбрана поиском. Теперь выберите пункт назначения.'
-          : 'Точка назначения выбрана. Проверьте её на карте и постройте маршрут.');
+          ? 'Начальная точка выбрана. Теперь введите пункт назначения.'
+          : 'Адрес найден. Автоматически строим маршрут от вашего GPS-положения…');
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isSearching = false);
+    }
+    // Once a destination is selected, calculate the route automatically.
+    // The user only needs to review it and tap «Поехали».
+    if (shouldBuildRoute && mounted) {
+      await _buildRoute();
     }
   }
 
@@ -915,7 +922,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         final distanceKm = (distance / 1000).toStringAsFixed(1);
         final minutes = (duration / 60).round();
         if (_voiceMode >= 3) await _tts.speak('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.');
-        if (validRoutes.length > 1) unawaited(_openRouteAlternatives());
+        // Always show the route summary, including the «Поехали» action,
+        // even when the routing service returns only one valid route.
+        unawaited(_openRouteAlternatives());
       }
     } catch (error) {
       if (!mounted) return;
