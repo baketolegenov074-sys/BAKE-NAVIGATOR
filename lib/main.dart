@@ -212,6 +212,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           onOpenSoundSettings: _openSoundSettings,
           onOpenRoutePreferences: _openRoutePreferences,
           onOpenProfile: _openProfileMenu,
+          onVoiceChanged: (enabled) {
+            setState(() => _voiceMode = enabled ? 3 : 0);
+            if (!enabled) unawaited(_tts.stop());
+          },
         ),
       ),
     );
@@ -2476,11 +2480,13 @@ class NavigatorPreferencesScreen extends StatefulWidget {
     required this.onOpenSoundSettings,
     required this.onOpenRoutePreferences,
     required this.onOpenProfile,
+    required this.onVoiceChanged,
   });
 
   final Future<void> Function() onOpenSoundSettings;
   final Future<void> Function() onOpenRoutePreferences;
   final Future<void> Function() onOpenProfile;
+  final ValueChanged<bool> onVoiceChanged;
 
   @override
   State<NavigatorPreferencesScreen> createState() => _NavigatorPreferencesScreenState();
@@ -2513,6 +2519,7 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
     await prefs.setInt('voice_mode', mode);
     if (!mounted) return;
     setState(() => _voiceEnabled = value);
+    widget.onVoiceChanged(value);
   }
 
   Future<void> _setAvoidTolls(bool value) async {
