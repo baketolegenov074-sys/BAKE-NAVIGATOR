@@ -3842,7 +3842,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               ),
             ),
           Positioned(
-            top: 112,
+            bottom: 160,
             right: 14,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -3873,9 +3873,27 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               ],
             ),
           ),
+          if (!_navigationActive)
+            Positioned(
+              left: 14,
+              bottom: 92,
+              child: Material(
+                color: Colors.white,
+                elevation: 4,
+                shape: const CircleBorder(),
+                child: IconButton(
+                  tooltip: 'Парковки',
+                  onPressed: () {
+                    _searchController.text = 'парковка';
+                    _searchAddress();
+                  },
+                  icon: const Text('P', style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900, color: Color(0xFF1769AA))),
+                ),
+              ),
+            ),
           Positioned(
-            left: _navigationActive ? null : 14,
-            right: _navigationActive ? 14 : null,
+            left: _navigationActive ? null : null,
+            right: 14,
             bottom: _navigationActive ? 225 : 92,
             child: _roundMapButton(
               icon: Icons.my_location,
