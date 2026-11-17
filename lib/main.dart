@@ -32,10 +32,10 @@ class BakeNavigatorApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1769AA),
+          seedColor: const Color(0xFFFFCC00),
           brightness: Brightness.light,
         ),
-        scaffoldBackgroundColor: const Color(0xFFF5F7FA),
+        scaffoldBackgroundColor: const Color(0xFFFFFFFF),
       ),
       home: const NavigatorScreen(),
     );
@@ -561,7 +561,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     : '${distance.toStringAsFixed(1)} км от точки поиска';
                 return ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.location_on_outlined, color: Color(0xFF2468A0)),
+                  leading: const Icon(Icons.location_on_outlined, color: Color(0xFF343434)),
                   title: Text(
                     item['name']?.toString().isNotEmpty == true
                         ? item['name'].toString()
@@ -978,7 +978,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               final km = ((route['distance'] as num).toDouble() / 1000).toStringAsFixed(1);
               final minutes = (((route['duration'] as num).toDouble()) / 60).round();
               return Card(
-                color: index == _selectedRouteIndex ? const Color(0xFFEAF3FC) : Colors.white,
+                color: index == _selectedRouteIndex ? const Color(0xFFFFF4CC) : Colors.white,
                 child: ListTile(
                   leading: Icon(index == _selectedRouteIndex ? Icons.radio_button_checked : Icons.alt_route, color: const Color(0xFF2468A0)),
                   title: Text('$minutes мин · $km км', style: const TextStyle(fontWeight: FontWeight.w800)),
@@ -1329,7 +1329,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8))),
             const SizedBox(height: 18),
             Row(children: [
-              const CircleAvatar(radius: 27, backgroundColor: Color(0xFFEAF2FA), child: Icon(Icons.person_outline, size: 31, color: Color(0xFF2468A0))),
+              const CircleAvatar(radius: 27, backgroundColor: Color(0xFFFFF5D6), child: Icon(Icons.person_outline, size: 31, color: Color(0xFF2468A0))),
               const SizedBox(width: 14),
               const Expanded(child: Text('Профиль BAKE', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
               IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
