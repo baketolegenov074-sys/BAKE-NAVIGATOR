@@ -261,6 +261,16 @@ class AppLocale {
       'На север': 'Солтүстікке',
       'Моё местоположение': 'Менің орналасқан жерім',
       'Координаты: ': 'Координаттар: ',
+      'Варианты маршрута': 'Маршрут нұсқалары',
+      'Недавние запросы': 'Соңғы іздеулер',
+      'Здесь появятся адреса и места, которые вы искали.': 'Мұнда іздеген мекенжайлар мен орындар көрсетіледі.',
+      'Категории': 'Санаттар',
+      'Слои карты': 'Карта қабаттары',
+      'Избранное': 'Таңдаулылар',
+      'Выбери сети, которые нужно учитывать при поиске заправок.': 'Жанармай іздеу кезінде ескерілетін желілерді таңдаңыз.',
+      'Примечание: поиск использует названия сетей в OpenStreetMap. Если бренд не указан в данных карты, заправка может не попасть в отфильтрованный список.': 'Ескерту: іздеу OpenStreetMap картасындағы желі атауларын пайдаланады. Егер бренд карта деректерінде көрсетілмесе, жанармай құю станциясы сүзілген тізімге кірмеуі мүмкін.',
+      'Сохранённых пользовательских мест пока нет.': 'Әзірге сақталған жеке орындар жоқ.',
+      'Сначала постройте маршрут.': 'Алдымен маршрут құрыңыз.',
       'Поддержка BAKE': 'BAKE қолдауы',
       'Разместить объект': 'Нысанды орналастыру',
       'Бронирования и история': 'Брондаулар және тарих',
@@ -485,6 +495,16 @@ class AppLocale {
       'На север': 'North up',
       'Моё местоположение': 'My location',
       'Координаты: ': 'Coordinates: ',
+      'Варианты маршрута': 'Route options',
+      'Недавние запросы': 'Recent searches',
+      'Здесь появятся адреса и места, которые вы искали.': 'Addresses and places you search for will appear here.',
+      'Категории': 'Categories',
+      'Слои карты': 'Map layers',
+      'Избранное': 'Favorites',
+      'Выбери сети, которые нужно учитывать при поиске заправок.': 'Choose which fuel station networks to include in search.',
+      'Примечание: поиск использует названия сетей в OpenStreetMap. Если бренд не указан в данных карты, заправка может не попасть в отфильтрованный список.': 'Note: search uses network names in OpenStreetMap. If a brand is not listed in the map data, a station may not appear in the filtered results.',
+      'Сохранённых пользовательских мест пока нет.': 'There are no saved custom places yet.',
+      'Сначала постройте маршрут.': 'Build a route first.'
       'Поддержка BAKE': 'BAKE Support',
       'Разместить объект': 'Add a place',
       'Бронирования и история': 'Bookings and history',
@@ -1765,8 +1785,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   ),
                 ),
                 const SizedBox(height: 22),
-                const Text(
-                  'Недавние запросы',
+                Text(
+                  AppLocale.tr('Недавние запросы'),
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 6),
@@ -1791,8 +1811,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     },
                   )),
                 const Divider(height: 24),
-                const Text(
-                  'Категории',
+                Text(
+                  AppLocale.tr('Категории'),
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 10),
@@ -2035,8 +2055,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             body: ListView(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
               children: [
-                const Text(
-                  'Слои карты',
+                Text(
+                  AppLocale.tr('Слои карты'),
                   style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
@@ -2526,8 +2546,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   },
                 ),
                 const SizedBox(height: 18),
-                const Text(
-                  'Избранное',
+                Text(
+                  AppLocale.tr('Избранное'),
                   style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 6),
@@ -3103,8 +3123,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             body: ListView(
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
               children: [
-                const Text(
-                  'Выбери сети, которые нужно учитывать при поиске заправок.',
+                Text(
+                  AppLocale.tr('Выбери сети, которые нужно учитывать при поиске заправок.'),
                   style: TextStyle(color: Color(0xFF65717D), fontSize: 14),
                 ),
                 const SizedBox(height: 12),
@@ -3139,8 +3159,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   child: Text(AppLocale.tr(initial.length == networks.length ? 'Снять все отметки' : 'Выбрать все сети')),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Примечание: поиск использует названия сетей в OpenStreetMap. Если бренд не указан в данных карты, заправка может не попасть в отфильтрованный список.',
+                Text(
+                  AppLocale.tr('Примечание: поиск использует названия сетей в OpenStreetMap. Если бренд не указан в данных карты, заправка может не попасть в отфильтрованный список.'),
                   style: TextStyle(fontSize: 12, color: Color(0xFF7B8792)),
                 ),
               ],
@@ -3921,8 +3941,8 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                             icon: const Icon(Icons.cloud_outlined),
                             label: Text(AppLocale.tr('Отключить офлайн-карту')),
                           ),
-                        const Text(
-                          'Исходный OSM PBF не является готовой MBTiles-картой. Для офлайн-режима нужны отдельно подготовленные тайлы.',
+                        Text(
+                          AppLocale.tr('Исходный OSM PBF не является готовой MBTiles-картой. Для офлайн-режима нужны отдельно подготовленные тайлы.'),
                           style: TextStyle(fontSize: 12, color: Colors.black54),
                         ),
                       ],
