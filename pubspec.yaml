@@ -24,6 +24,7 @@ dependencies:
   audioplayers: ^5.2.1
   sherpa_onnx: 2.0.1
   http: 1.2.2
+  dio: ^5.7.0
   shared_preferences: 2.3.2
 
 dev_dependencies:
