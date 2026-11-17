@@ -156,8 +156,20 @@ class KazakhVoiceService {
       }
     });
 
-    _isolate = await Isolate.spawn(_kazakhTtsWorker, receivePort.sendPort);
-    await _ready!.future.timeout(const Duration(minutes: 3));
+    try {
+      _isolate = await Isolate.spawn(_kazakhTtsWorker, receivePort.sendPort);
+      await _ready!.future.timeout(const Duration(minutes: 3));
+    } catch (error) {
+      // A failed native model initialization must not leave a dead worker
+      // and ReceivePort behind. Otherwise the next test can appear to do nothing.
+      _isolate?.kill(priority: Isolate.immediate);
+      _isolate = null;
+      _workerPort = null;
+      _receivePort?.close();
+      _receivePort = null;
+      _ready = null;
+      rethrow;
+    }
   }
 
   Future<void> speak({
@@ -166,27 +178,59 @@ class KazakhVoiceService {
     double speed = 1.0,
   }) async {
     await ensureReady();
+    final worker = _workerPort;
+    if (worker == null) {
+      throw Exception('Казахский голосовой движок не запустился: нет связи с аудиомодулем.');
+    }
+
     final id = _requestId++;
     final temp = await getTemporaryDirectory();
     final wavPath = '${temp.path}/bake_kazakh_voice_$id.wav';
+    final wavFile = File(wavPath);
     final completer = Completer<void>();
     _pending[id] = completer;
-    _workerPort!.send({
-      'command': 'speak',
-      'id': id,
-      'text': text,
-      'speakerId': speakerId.clamp(0, 5).toInt(),
-      'speed': speed,
-      'wavPath': wavPath,
-    });
-    await completer.future.timeout(const Duration(seconds: 45));
-    await _player.stop();
-    final completed = _player.onPlayerComplete.first;
-    await _player.play(DeviceFileSource(wavPath));
     try {
-      await completed.timeout(const Duration(seconds: 20));
-    } on TimeoutException {
-      // Do not block the next navigation event if Android delays completion.
+      worker.send({
+        'command': 'speak',
+        'id': id,
+        'text': text,
+        'speakerId': speakerId.clamp(0, 5).toInt(),
+        'speed': speed,
+        'wavPath': wavPath,
+      });
+
+      await completer.future.timeout(
+        const Duration(seconds: 45),
+        onTimeout: () => throw TimeoutException('Казахский голос не успел создать аудио за 45 секунд.'),
+      );
+
+      if (!await wavFile.exists()) {
+        throw Exception('Голосовой движок сообщил об успехе, но аудиофайл не создан.');
+      }
+      final audioBytes = await wavFile.length();
+      if (audioBytes <= 44) {
+        throw Exception('Создан пустой или повреждённый аудиофайл ($audioBytes байт).');
+      }
+
+      await _player.stop();
+      final completed = _player.onPlayerComplete.first;
+      try {
+        await _player.play(DeviceFileSource(wavPath));
+      } catch (error) {
+        throw Exception('Аудио создано ($audioBytes байт), но Android не смог его воспроизвести: $error');
+      }
+      try {
+        await completed.timeout(const Duration(seconds: 30));
+      } on TimeoutException {
+        // Android may not report completion reliably; stop playback before cleanup.
+        await _player.stop();
+        throw TimeoutException('Аудиофайл создан, но воспроизведение не подтвердилось за 30 секунд.');
+      }
+    } finally {
+      _pending.remove(id);
+      if (await wavFile.exists()) {
+        await wavFile.delete();
+      }
     }
   }
 
