@@ -1509,133 +1509,56 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _reportMapItem(LatLng point, String title) async {
     final controller = TextEditingController();
+    const eventTypes = ['ДТП', 'Ремонт дороги', 'Камера', 'Другое'];
+    var selectedType = eventTypes.first;
     final accepted = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          maxLines: 4,
-          decoration: const InputDecoration(hintText: 'Опишите объект или событие', border: OutlineInputBorder()),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, refreshDialog) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (title == 'Дорожное событие') ...[
+                const Text('Тип события'),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                  value: selectedType,
+                  items: eventTypes.map((type) => DropdownMenuItem(value: type, child: Text(type))).toList(),
+                  onChanged: (value) { if (value != null) refreshDialog(() => selectedType = value); },
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextField(
+                controller: controller,
+                maxLines: 4,
+                decoration: const InputDecoration(hintText: 'Добавьте описание (необязательно)', border: OutlineInputBorder()),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Сохранить')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Скопировать')),
-        ],
       ),
     );
     if (accepted != true || !mounted) { controller.dispose(); return; }
     final detail = controller.text.trim();
-    final report = '$title\\nКоординаты: ${point.latitude}, ${point.longitude}\\n$detail';
+    final eventTitle = title == 'Дорожное событие' ? selectedType : title;
+    final report = '$eventTitle\nКоординаты: ${point.latitude}, ${point.longitude}\n$detail';
     if (title == 'Дорожное событие') {
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getStringList('road_event_reports') ?? <String>[];
-      saved.add(jsonEncode({'kind': 'Дорожное событие', 'detail': detail, 'lat': point.latitude, 'lon': point.longitude, 'date': DateTime.now().toLocal().toString().substring(0, 16)}));
+      saved.add(jsonEncode({'kind': selectedType, 'detail': detail, 'lat': point.latitude, 'lon': point.longitude, 'date': DateTime.now().toLocal().toString().substring(0, 16)}));
       await prefs.setStringList('road_event_reports', saved);
     }
     await Clipboard.setData(ClipboardData(text: report));
     controller.dispose();
-    if (mounted) setState(() => _message = 'Отчёт скопирован. Отправка на сервер пока не подключена.');
-  }
-
-  Future<void> _openPointMenu(LatLng point) async {
-    final coordinates = '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}';
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8))),
-            const SizedBox(height: 16),
-            Row(children: [
-              const Expanded(child: Text('Точка на карте', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800))),
-              IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
-            ]),
-            Align(alignment: Alignment.centerLeft, child: Text('Координаты: $coordinates', style: const TextStyle(color: Color(0xFF687786), fontSize: 15))),
-            const SizedBox(height: 12),
-            ListTile(
-              leading: const Icon(Icons.copy_outlined),
-              title: const Text('Скопировать координаты'),
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: coordinates));
-                Navigator.pop(sheetContext);
-                setState(() => _message = 'Координаты скопированы: $coordinates');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.place_outlined),
-              title: const Text('Посмотреть, что здесь'),
-              subtitle: const Text('Открыть поиск места рядом с выбранной точкой'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _mapController.move(point, 17);
-                _showPointDetails(point);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.add_business_outlined),
-              title: const Text('Сообщить о новом объекте'),
-              onTap: () { Navigator.pop(sheetContext); _reportMapItem(point, 'Новый объект на карте'); },
-            ),
-            ListTile(
-              leading: const Icon(Icons.warning_amber_outlined),
-              title: const Text('Добавить дорожное событие'),
-              onTap: () { Navigator.pop(sheetContext); _reportMapItem(point, 'Дорожное событие'); },
-            ),
-            ListTile(
-              leading: const Icon(Icons.share_outlined),
-              title: const Text('Поделиться точкой'),
-              onTap: () { Navigator.pop(sheetContext); _sharePoint(point); },
-            ),
-            ListTile(
-              leading: const Icon(Icons.trip_origin, color: Color(0xFF269B68)),
-              title: const Text('Отсюда'),
-              subtitle: const Text('Сделать эту точку началом маршрута'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _selectRouteOrigin(point);
-                _mapController.move(point, 16);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.flag_outlined),
-              title: const Text('Сюда'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _selectDestination(point);
-                _mapController.move(point, 16);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.add_location_alt_outlined),
-              title: const Text('Добавить как промежуточную остановку'),
-              onTap: () {
-                Navigator.pop(sheetContext);
-                _addRouteStop(point);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.bookmark_border),
-              title: const Text('Сохранить в закладки'),
-              onTap: () async {
-                final prefs = await SharedPreferences.getInstance();
-                final saved = prefs.getStringList('map_bookmarks') ?? <String>[];
-                final entry = jsonEncode({'lat': point.latitude, 'lon': point.longitude, 'label': 'Точка $coordinates'});
-                if (!saved.contains(entry)) saved.add(entry);
-                await prefs.setStringList('map_bookmarks', saved);
-                if (!sheetContext.mounted) return;
-                Navigator.pop(sheetContext);
-                setState(() => _message = 'Точка сохранена в закладки.');
-              },
-            ),
-          ]),
-        ),
-      ),
-    );
+    if (mounted) setState(() => _message = title == 'Дорожное событие'
+      ? 'Событие сохранено на устройстве. Отправка другим водителям пока не подключена.'
+      : 'Отчёт скопирован. Отправка на сервер пока не подключена.');
   }
 
   Future<void> _openMyPlaces() async {
