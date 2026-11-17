@@ -2796,6 +2796,26 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     status: 'Подписка BAKE Plus пока не создана. Оплата и платные функции не включены.',
   );
 
+  Future<void> _selectMapDestination(LatLng point) async {
+    if (point.latitude < 40 || point.latitude > 56 ||
+        point.longitude < 46 || point.longitude > 88) {
+      if (mounted) {
+        setState(() => _message = AppLocale.tr('Выберите точку на территории Казахстана.'));
+      }
+      return;
+    }
+    _selectDestination(point);
+    _moveMapCamera(point, 15);
+    if (mounted) {
+      setState(() => _message = AppLocale.pick(
+        'Пункт назначения выбран на карте. Строим маршрут…',
+        'Межелі орын картадан таңдалды. Маршрут құрылуда…',
+        'Destination selected on map. Building route…',
+      ));
+    }
+    await _buildRoute();
+  }
+
   Future<void> _openPointMenu(LatLng point) async {
     if (!mounted) return;
     await showModalBottomSheet<void>(
@@ -2809,6 +2829,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               onTap: () {
                 Navigator.pop(sheetContext);
                 unawaited(_showPointDetails(point));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined, color: Colors.red),
+              title: Text(AppLocale.tr('Выбрать как пункт назначения')),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                unawaited(_selectMapDestination(point));
               },
             ),
             ListTile(
@@ -3773,6 +3801,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               styleString: 'https://tiles.openfreemap.org/styles/liberty',
               onMapCreated: _onMapLibreCreated,
               onStyleLoadedCallback: _onMapLibreStyleLoaded,
+              onMapClick: (_, point) => _selectMapDestination(LatLng(point.latitude, point.longitude)),
               onMapLongClick: (_, point) => _openPointMenu(LatLng(point.latitude, point.longitude)),
               compassEnabled: false,
               trackCameraPosition: true,
@@ -3788,6 +3817,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               options: MapOptions(
                 initialCenter: _shymkent,
                 initialZoom: 13,
+                onTap: (_, point) => _selectMapDestination(point),
                 onLongPress: (_, point) => _openPointMenu(point),
               ),
               children: [
