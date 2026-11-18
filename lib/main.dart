@@ -535,6 +535,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   double? _routeDurationSeconds;
   StreamSubscription<Position>? _positionSubscription;
   bool _isLocating = false;
+  bool _gpsAvailable = false;
   bool _isSearching = false;
   bool _isBuildingRoute = false;
   int _voiceMode = 3;
@@ -1389,6 +1390,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
     setState(() {
       _isLocating = true;
+      _gpsAvailable = false;
       _message = AppLocale.pick('Определяем GPS-положение…', 'GPS орналасқан жерді анықтауда…', 'Detecting GPS location…');
     });
 
@@ -1420,6 +1422,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (!mounted) return;
       setState(() {
         _currentLocation = point;
+        _gpsAvailable = true;
         _currentSpeedKmh = math.max(0, position.speed * 3.6).toDouble();
         if (position.speed >= 0.8 && position.heading.isFinite) {
           _gpsHeadingDegrees = position.heading;
@@ -1432,7 +1435,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       await _startLiveLocationUpdates();
     } catch (error) {
       if (!mounted) return;
-      setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
+      setState(() {
+        _gpsAvailable = false;
+        _message = error.toString().replaceFirst('Exception: ', '');
+      });
     } finally {
       if (mounted) setState(() => _isLocating = false);
     }
@@ -1477,6 +1483,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         final point = LatLng(position.latitude, position.longitude);
         setState(() {
           _currentLocation = point;
+          _gpsAvailable = true;
           _currentSpeedKmh = math.max(0, position.speed * 3.6).toDouble();
           // Ignore unstable compass headings while stopped or moving very slowly.
           if (position.speed >= 0.8 && position.heading.isFinite) {
@@ -1533,6 +1540,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         }
         if (!mounted) return;
         setState(() {
+          _gpsAvailable = false;
           _message = AppLocale.pick('Потеряна связь с GPS. Проверьте геолокацию телефона.', 'GPS байланысы жоғалды. Телефон геолокациясын тексеріңіз.', 'GPS signal lost. Check your phone location settings.');
         });
       },
@@ -4617,33 +4625,37 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               onPressed: _isLocating ? null : () => unawaited(_locateMe()),
             ),
           ),
-          if (_navigationActive && _message.isNotEmpty)
+          if (_navigationActive)
             Positioned(
               top: 0,
-              left: 14,
-              right: 14,
+              left: 12,
               child: SafeArea(
                 bottom: false,
                 child: Padding(
-                  // Keep status messages below the maneuver banner and speed-limit tile.
-                  padding: const EdgeInsets.only(top: 104),
-                  child: IgnorePointer(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Tooltip(
+                    message: 'GPS ${_gpsAvailable ? 'включён' : 'выключен'} · Голос ${_voiceMode > 0 ? 'включён' : 'выключен'}',
                     child: Material(
-                      color: const Color(0xF2FFFFFF),
-                      elevation: 3,
+                      color: Colors.white,
+                      elevation: 4,
                       borderRadius: BorderRadius.circular(10),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        child: Text(
-                          _message,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            height: 1.15,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.gps_fixed,
+                              size: 18,
+                              color: _gpsAvailable ? const Color(0xFF1976D2) : const Color(0xFF9AA0A6),
+                            ),
+                            const SizedBox(width: 5),
+                            Icon(
+                              Icons.volume_up,
+                              size: 18,
+                              color: _voiceMode > 0 ? const Color(0xFF169B55) : const Color(0xFF9AA0A6),
+                            ),
+                          ],
                         ),
                       ),
                     ),
