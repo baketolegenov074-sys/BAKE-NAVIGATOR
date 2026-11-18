@@ -1883,11 +1883,75 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     return result;
   }
 
+  Future<bool> _ensureBackgroundLocationPermission() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return true;
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (!mounted) return false;
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      setState(() => _message = AppLocale.pick(
+        'Для фоновой навигации разрешите доступ к местоположению в настройках приложения.',
+        'Фондық навигация үшін қолданба баптауларында орналасқан жерге рұқсат беріңіз.',
+        'Allow location access in app settings to use background navigation.',
+      ));
+      return false;
+    }
+
+    if (permission == LocationPermission.always) return true;
+
+    final openSettings = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(AppLocale.pick(
+          'Разрешите GPS в фоне',
+          'Фондық GPS-ке рұқсат беріңіз',
+          'Allow background GPS',
+        )),
+        content: Text(AppLocale.pick(
+          'Сейчас доступ к GPS разрешён только при открытом приложении. Откройте настройки приложения, выберите «Местоположение» и установите «Разрешить всегда». Затем вернитесь в BAKE Navigator и снова нажмите «Поехали».',
+          'Қазір GPS тек қолданба ашық кезде қолжетімді. Қолданба баптауларын ашып, «Орналасқан жер» бөлімінен «Әрқашан рұқсат ету» таңдаңыз. Содан кейін BAKE Navigator-ға оралып, «Жолға шығу» түймесін қайта басыңыз.',
+          'GPS is currently allowed only while the app is open. Open app settings, choose Location, and set it to Allow all the time. Then return to BAKE Navigator and tap Go again.',
+        )),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(AppLocale.pick('Отмена', 'Бас тарту', 'Cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(AppLocale.pick('Открыть настройки', 'Баптауларды ашу', 'Open settings')),
+          ),
+        ],
+      ),
+    );
+
+    if (openSettings != true) return false;
+    await Geolocator.openAppSettings();
+    if (mounted) {
+      setState(() => _message = AppLocale.pick(
+        'Включите «Разрешить всегда» для местоположения, вернитесь в приложение и снова нажмите «Поехали».',
+        'Орналасқан жер үшін «Әрқашан рұқсат ету» параметрін қосып, қолданбаға оралып, «Жолға шығу» түймесін қайта басыңыз.',
+        'Enable Allow all the time for Location, return to the app, and tap Go again.',
+      ));
+    }
+    return false;
+  }
+
   Future<void> _startNavigation() async {
     if (_routePoints.length < 2 || _destination == null) {
       if (mounted) setState(() => _message = AppLocale.pick('Сначала постройте маршрут до пункта назначения.', 'Алдымен межелі орынға маршрут құрыңыз.', 'Build a route to the destination first.'));
       return;
     }
+
+    // Android requires an explicit background location grant for reliable
+    // navigation while the app is minimized.
+    final backgroundPermissionGranted = await _ensureBackgroundLocationPermission();
+    if (!backgroundPermissionGranted || !mounted) return;
 
     // A manually selected route origin does not guarantee that GPS is ready.
     if (_currentLocation == null) {
