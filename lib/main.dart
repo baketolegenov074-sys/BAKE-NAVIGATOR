@@ -542,6 +542,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   int _voiceMode = 3;
   double? _gpsHeadingDegrees;
   double? _lastCameraHeadingDegrees;
+  bool _northUpLocked = false;
   int _announcedManeuverStage = 0;
   int _offRouteSamples = 0;
   DateTime? _lastAutomaticReroute;
@@ -1604,9 +1605,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 point.latitude, point.longitude,
               ) > 3;
           final heading = _gpsHeadingDegrees;
-          var normalizedHeading = _lastCameraHeadingDegrees ?? 0.0;
+          var normalizedHeading = _northUpLocked
+              ? 0.0
+              : (_lastCameraHeadingDegrees ?? 0.0);
           var shouldRotate = false;
-          if (heading != null && position.speed >= 1.5) {
+          if (!_northUpLocked && heading != null && position.speed >= 1.5) {
             normalizedHeading = (heading % 360 + 360) % 360;
             final previousHeading = _lastCameraHeadingDegrees;
             final difference = previousHeading == null
@@ -4724,7 +4727,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 _roundMapButton(
                   icon: Icons.explore_outlined,
                   tooltip: AppLocale.tr('На север'),
-                  onPressed: () => _rotateMapCamera(0),
+                  onPressed: () {
+                    setState(() => _northUpLocked = !_northUpLocked);
+                    if (_northUpLocked) {
+                      _lastCameraHeadingDegrees = 0;
+                      _rotateMapCamera(0);
+                    } else {
+                      final heading = _gpsHeadingDegrees ?? 0.0;
+                      _lastCameraHeadingDegrees = heading;
+                      final point = _currentLocation;
+                      if (point != null) {
+                        _updateNavigationCamera(
+                          point,
+                          math.max(_mapCameraZoom, 17.0).toDouble(),
+                          heading,
+                        );
+                      }
+                    }
+                  },
                 ),
               ],
             ),
@@ -4766,32 +4786,58 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 bottom: false,
                 child: Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: Tooltip(
-                    message: 'GPS ${_gpsAvailable ? 'включён' : 'выключен'} · Голос ${_voiceMode > 0 ? 'включён' : 'выключен'}',
-                    child: Material(
-                      color: Colors.white,
-                      elevation: 4,
-                      borderRadius: BorderRadius.circular(10),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 8),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Material(
+                        color: Colors.white,
+                        elevation: 4,
+                        borderRadius: BorderRadius.circular(13),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(13),
+                          onTap: _isLocating ? null : () => unawaited(_locateMe()),
+                          child: SizedBox(
+                            width: 54,
+                            height: 54,
+                            child: Icon(
                               Icons.gps_fixed,
-                              size: 18,
+                              size: 27,
                               color: _gpsAvailable ? const Color(0xFF1976D2) : const Color(0xFF9AA0A6),
                             ),
-                            const SizedBox(width: 5),
-                            Icon(
-                              Icons.volume_up,
-                              size: 18,
-                              color: _voiceMode > 0 ? const Color(0xFF169B55) : const Color(0xFF9AA0A6),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 8),
+                      Material(
+                        color: Colors.white,
+                        elevation: 4,
+                        borderRadius: BorderRadius.circular(13),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(13),
+                          onTap: () async {
+                            final enabled = _voiceMode == 0;
+                            setState(() => _voiceMode = enabled ? 3 : 0);
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setInt('voice_mode', _voiceMode);
+                            if (!enabled) {
+                              await _tts.stop();
+                              await _kazakhVoiceService.stop();
+                            } else if (_navigationActive) {
+                              unawaited(_speakCurrentInstruction());
+                            }
+                          },
+                          child: SizedBox(
+                            width: 54,
+                            height: 54,
+                            child: Icon(
+                              Icons.volume_up,
+                              size: 27,
+                              color: _voiceMode > 0 ? const Color(0xFF169B55) : const Color(0xFF9AA0A6),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
