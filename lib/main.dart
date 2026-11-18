@@ -1580,34 +1580,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         return jsonDecode(response.body) as List<dynamic>;
       }
 
-      // First search strictly around the driver to prevent distant-city matches.
-      var results = await requestSearch(bounded: true);
+      // Search Kazakhstan without a hard 50 km cutoff. Keep the local area
+      // as the ranking anchor so nearby streets appear before distant matches.
+      final results = await requestSearch(bounded: false, limit: '40');
       if (!mounted) return;
-      if (results.isEmpty) {
-        final searchNationwide = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            title: Text(AppLocale.tr('Рядом не найдено')),
-            content: Text(AppLocale.tr('Поблизости такого объекта нет в карте. Искать его по всему Казахстану?')),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: Text(AppLocale.tr('Не сейчас')),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: Text(AppLocale.tr('По всему Казахстану')),
-              ),
-            ],
-          ),
-        );
-        if (searchNationwide != true || !mounted) {
-          setState(() => _message = AppLocale.pick('Рядом объект не найден. Попробуйте уточнить название или выбрать точку на карте.', 'Жақын жерден нысан табылмады. Атауын нақтылаңыз немесе картадан нүкте таңдаңыз.', 'No nearby place found. Refine the name or select a point on the map.'));
-          return;
-        }
-        results = await requestSearch(bounded: false, limit: '40');
-        if (!mounted) return;
-      }
       if (results.isEmpty) {
         setState(() => _message = AppLocale.pick('Такой объект не найден в Казахстане. Проверьте название.', 'Қазақстаннан мұндай нысан табылмады. Атауын тексеріңіз.', 'This place was not found in Kazakhstan. Check the name.'));
         return;
@@ -1946,28 +1922,26 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final backgroundPermissionGranted = await _ensureBackgroundLocationPermission();
     if (!backgroundPermissionGranted || !mounted) return;
 
-    // A manually selected route origin does not guarantee that GPS is ready.
+    // GPS can take time to acquire a fix, especially indoors or after launch.
+    // Try a one-shot fix, but do not discard a valid planned route on timeout.
     if (_currentLocation == null) {
-      await _locateMe();
+      try { await _locateMe(); } catch (_) { /* Stream below keeps waiting. */ }
     }
     if (!mounted) return;
-    if (_currentLocation == null) {
-      setState(() => _message = AppLocale.pick('Не удалось получить GPS. Включите геолокацию и нажмите «Поехали» ещё раз.', 'GPS алынбады. Геолокацияны қосып, «Жолға шығу» түймесін қайта басыңыз.', 'GPS location is unavailable. Enable location and tap “Go” again.'));
-      return;
-    }
 
     setState(() {
       _navigationActive = true;
       _announcedManeuverStage = 0;
       _instructionIndex = _instructions.isNotEmpty && _instructions.length > 1 ? 1 : 0;
-      _message = AppLocale.pick('Включаем фоновый GPS и голосовые подсказки…', 'Фондық GPS пен дауыстық нұсқаулар қосылуда…', 'Enabling background GPS and voice guidance…');
+      _message = _currentLocation == null
+          ? AppLocale.pick('Маршрут запущен. Ожидаем сигнал GPS — движение и подсказки начнутся после получения координат.', 'Маршрут басталды. GPS сигналы күтілуде — координат алынған соң қозғалыс пен нұсқаулар басталады.', 'Route started. Waiting for GPS; tracking and guidance will begin when a location fix arrives.')
+          : AppLocale.pick('Включаем фоновый GPS и голосовые подсказки…', 'Фондық GPS пен дауыстық нұсқаулар қосылуда…', 'Enabling background GPS and voice guidance…');
     });
     try {
-      // Do not announce that navigation has started until the background GPS
-      // stream has delivered a fresh position.
+      // Keep the location stream active without blocking route start on first fix.
       await _startLiveLocationUpdates(
         backgroundNavigation: true,
-        waitForFirstFix: true,
+        waitForFirstFix: false,
       );
     } catch (error) {
       await _positionSubscription?.cancel();
@@ -1977,25 +1951,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _navigationActive = false;
         _message = AppLocale.pick('Не удалось включить фоновый GPS: $error', 'Фондық GPS қосылмады: $error', 'Could not enable background GPS: $error');
       });
-      // Keep ordinary foreground location updates available after a failed start.
       unawaited(_startLiveLocationUpdates());
       return;
     }
     if (!mounted) return;
-    final livePoint = _currentLocation!;
-    _moveMapCamera(livePoint, 17);
-    final initialHeading = _gpsHeadingDegrees;
-    if (initialHeading != null && _currentSpeedKmh >= 5.4) {
-      _rotateMapCamera(-initialHeading);
-      _lastCameraHeadingDegrees = initialHeading;
-    } else {
-      // Enter navigation mode with a forward-looking 3D camera even before heading stabilizes.
-      _rotateMapCamera(0);
+    final livePoint = _currentLocation;
+    if (livePoint != null) {
+      _moveMapCamera(livePoint, 17);
+      final initialHeading = _gpsHeadingDegrees;
+      if (initialHeading != null && _currentSpeedKmh >= 5.4) {
+        _rotateMapCamera(-initialHeading);
+        _lastCameraHeadingDegrees = initialHeading;
+      } else {
+        _rotateMapCamera(0);
+      }
+      await _speakCurrentInstruction();
     }
-    setState(() {
-      _message = AppLocale.pick('Навигация началась. GPS продолжит работать при свёрнутом приложении.', 'Навигация басталды. Қолданба кішірейтілгенде де GPS жұмысын жалғастырады.', 'Navigation started. GPS will keep running when the app is minimized.');
-    });
-    await _speakCurrentInstruction();
   }
 
   Future<void> _finishNavigation() async {
@@ -2003,11 +1974,27 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     setState(() {
       _navigationActive = false;
       _routeActionDismissed = true;
+      _routeReady = false;
+      _routePoints = <LatLng>[];
+      _routeOrigin = null;
+      _destination = null;
+      _routeStops.clear();
+      _routeAlternatives = <Map<String, dynamic>>[];
+      _selectedRouteIndex = 0;
+      _instructions = <RouteInstruction>[];
+      _instructionIndex = 0;
+      _routeDistanceMeters = null;
+      _routeDurationSeconds = null;
+      _announcedManeuverStage = 0;
+      _offRouteSamples = 0;
       _message = AppLocale.tr('Навигация завершена.');
     });
     await _tts.stop();
+    await _removeSavedRoutePoint(_savedRouteDestinationKey);
     _lastCameraHeadingDegrees = null;
     _rotateMapCamera(0);
+    // Force MapLibre to remove the old blue line and route markers.
+    await _syncMapLibreAnnotations(updateRoute: true);
     await _startLiveLocationUpdates();
   }
 
