@@ -1460,6 +1460,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     ).listen(
       (position) {
         if (!mounted) return;
+        final wasWaitingForNavigationFix =
+            _navigationActive && _currentLocation == null;
         final point = LatLng(position.latitude, position.longitude);
         setState(() {
           _currentLocation = point;
@@ -1470,6 +1472,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           }
         });
         unawaited(_syncMapLibreAnnotations());
+
+        // The first GPS fix may arrive after navigation has already started.
+        // Initialize the camera and speak the current instruction exactly once.
+        if (wasWaitingForNavigationFix && _navigationActive) {
+          _moveMapCamera(point, 17);
+          final initialHeading = _gpsHeadingDegrees;
+          if (initialHeading != null && position.speed >= 1.5) {
+            _rotateMapCamera(-initialHeading);
+            _lastCameraHeadingDegrees = initialHeading;
+          } else {
+            _rotateMapCamera(0);
+          }
+          unawaited(_speakCurrentInstruction());
+        }
 
         // Follow the live GPS position and rotate/pitch the MapLibre camera in navigation mode.
         if (_navigationActive) {
