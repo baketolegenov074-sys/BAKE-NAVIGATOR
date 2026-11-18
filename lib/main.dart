@@ -478,10 +478,14 @@ class RouteInstruction {
     required this.location,
     required this.text,
     required this.distanceMeters,
+    required this.maneuverType,
+    required this.modifier,
   });
   final LatLng location;
   final String text;
   final double distanceMeters;
+  final String maneuverType;
+  final String modifier;
 }
 
 class NavigatorScreen extends StatefulWidget {
@@ -1433,6 +1437,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           ),
           text: _instructionText(step),
           distanceMeters: (step['distance'] as num?)?.toDouble() ?? 0,
+          maneuverType: maneuver['type']?.toString() ?? '',
+          modifier: maneuver['modifier']?.toString() ?? '',
         ));
       }
     }
@@ -3338,15 +3344,64 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
   }
 
+  IconData _maneuverIcon(RouteInstruction instruction) {
+    if (instruction.maneuverType == 'roundabout' ||
+        instruction.maneuverType == 'rotary') {
+      return Icons.roundabout_left;
+    }
+    switch (instruction.modifier) {
+      case 'left':
+        return Icons.turn_left;
+      case 'slight left':
+        return Icons.turn_slight_left;
+      case 'sharp left':
+        return Icons.turn_sharp_left;
+      case 'right':
+        return Icons.turn_right;
+      case 'slight right':
+        return Icons.turn_slight_right;
+      case 'sharp right':
+        return Icons.turn_sharp_right;
+      case 'uturn':
+        return Icons.u_turn_left;
+      case 'straight':
+        return Icons.straight;
+      default:
+        return Icons.navigation;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final markers = <Marker>[
-      if (_routeOrigin != null)
+      if (_routeOrigin != null && !_navigationActive)
         Marker(
           point: _routeOrigin!,
           width: 46,
           height: 46,
           child: const Icon(Icons.trip_origin, color: Color(0xFF269B68), size: 34),
+        ),
+      if (_navigationActive && _instructionIndex < _instructions.length)
+        Marker(
+          point: _instructions[_instructionIndex].location,
+          width: 58,
+          height: 58,
+          alignment: Alignment.center,
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF20A568),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: const [
+                BoxShadow(color: Color(0x55000000), blurRadius: 8, offset: Offset(0, 3)),
+              ],
+            ),
+            child: Icon(
+              _maneuverIcon(_instructions[_instructionIndex]),
+              color: Colors.white,
+              size: 31,
+            ),
+          ),
         ),
       if (_currentLocation != null)
         Marker(
