@@ -923,12 +923,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           geometry: [_directionArrowPolygon(
             _currentLocation!,
             gpsBearing,
-            lengthMeters: 21,
-            halfWidthMeters: 8,
+            lengthMeters: 36,
+            halfWidthMeters: 14,
           )],
-          fillColor: '#1769AA',
+          // High-contrast amber separates the GPS arrow from the blue route line.
+          fillColor: '#FFC400',
           fillOpacity: 1,
-          fillOutlineColor: '#FFFFFF',
+          fillOutlineColor: '#172B4D',
         ));
       }
       for (var i = 0; i < _routeStops.length; i++) {
@@ -967,12 +968,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             geometry: [_directionArrowPolygon(
               point,
               bearing,
-              lengthMeters: 21,
-              halfWidthMeters: 8,
+              lengthMeters: 36,
+              halfWidthMeters: 14,
             )],
-            fillColor: '#1769AA',
+            fillColor: '#FFC400',
             fillOpacity: 1,
-            fillOutlineColor: '#FFFFFF',
+            fillOutlineColor: '#172B4D',
           ));
         } catch (fallbackError, fallbackStackTrace) {
           debugPrint('BAKE Navigator: GPS marker fallback failed: $fallbackError');
@@ -4224,13 +4225,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (_currentLocation != null)
         Marker(
           point: _currentLocation!,
-          width: 44,
-          height: 44,
+          width: 56,
+          height: 56,
           child: Transform.rotate(
             angle: (_gpsHeadingDegrees ??
               (_routePoints.length > 1 ? _routeBearingAt(_currentLocation!) : 0.0)) *
               math.pi / 180,
-            child: const Icon(Icons.navigation, color: Color(0xFF1769AA), size: 36),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF172B4D), width: 2.5),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x55000000), blurRadius: 7, offset: Offset(0, 2)),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: const Icon(Icons.navigation, color: Color(0xFFFFB800), size: 40),
+            ),
           ),
         ),
       ..._routeStops.asMap().entries.map((entry) => Marker(
