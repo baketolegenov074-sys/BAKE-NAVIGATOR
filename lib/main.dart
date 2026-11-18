@@ -977,64 +977,40 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         await controller.clearCircles();
         await controller.clearFills();
 
-        // Place direction indicators at the route service's actual maneuver coordinates.
-        // The active maneuver is shown by the existing live guidance cue, so only future
-        // maneuvers are marked here while navigation is running.
+        // Show only real upcoming turns. Each white arrow floats directly
+        // above the blue route ribbon, a short distance before its intersection.
+        // The dark offset copy creates a raised 3D/shadow effect. The separate
+        // blue lane-guidance banner elsewhere in the UI is intentionally untouched.
         if (visibleRoutePoints.length > 1) {
-          // Floating direction cues sit beside the route ribbon, not on top
-          // of it. Keep straight-ahead cues sparse and reserve turn cues for
-          // actual maneuver locations returned by the routing engine.
-          var distanceSinceArrow = 0.0;
-          for (var i = 1; i < visibleRoutePoints.length - 1; i++) {
-            final previous = visibleRoutePoints[i - 1];
-            final current = visibleRoutePoints[i];
-            distanceSinceArrow += Geolocator.distanceBetween(
-              previous.latitude, previous.longitude,
-              current.latitude, current.longitude,
-            );
-            if (distanceSinceArrow < 650) continue;
-            distanceSinceArrow = 0;
-            final nearTurn = _instructions.any((instruction) =>
-                _isRouteManeuverMarker(instruction) &&
-                Geolocator.distanceBetween(
-                  current.latitude, current.longitude,
-                  instruction.location.latitude, instruction.location.longitude,
-                ) < 90);
-            if (nearTurn) continue;
-            final bearing = Geolocator.bearingBetween(
-              current.latitude, current.longitude,
-              visibleRoutePoints[i + 1].latitude,
-              visibleRoutePoints[i + 1].longitude,
-            );
-            final sidePoint = _offsetRouteCue(current, bearing, 13);
-            await controller.addSymbol(ml.SymbolOptions(
-              geometry: _toMapLibrePoint(sidePoint),
-              textField: '↑',
-              textSize: 27,
-              textColor: '#0878F9',
-              textHaloColor: '#FFFFFF',
-              textHaloWidth: 3,
-              textHaloBlur: 1,
-              textAllowOverlap: true,
-              textIgnorePlacement: true,
-            ));
-          }
-
           for (var i = 0; i < _instructions.length; i++) {
             final instruction = _instructions[i];
             if (!_isRouteManeuverMarker(instruction)) continue;
             if (_navigationActive && i <= _instructionIndex) continue;
             final bearing = _routeBearingAt(instruction.location);
-            final sidePoint = _offsetRouteCue(instruction.location, bearing, 16);
+            final arrowPoint = _offsetAlongRoute(
+              instruction.location,
+              bearing,
+              -24,
+            );
             final glyph = _maneuverArrowGlyph(instruction);
             await controller.addSymbol(ml.SymbolOptions(
-              geometry: _toMapLibrePoint(sidePoint),
+              geometry: _toMapLibrePoint(arrowPoint),
               textField: glyph,
-              textSize: 29,
-              textColor: '#075FE4',
-              textHaloColor: '#FFFFFF',
-              textHaloWidth: 4,
-              textHaloBlur: 1,
+              textSize: 35,
+              textOffset: const Offset(0, 0.55),
+              textColor: '#123B69',
+              textHaloColor: '#123B69',
+              textHaloWidth: 2.5,
+              textAllowOverlap: true,
+              textIgnorePlacement: true,
+            ));
+            await controller.addSymbol(ml.SymbolOptions(
+              geometry: _toMapLibrePoint(arrowPoint),
+              textField: glyph,
+              textSize: 33,
+              textColor: '#FFFFFF',
+              textHaloColor: '#64748B',
+              textHaloWidth: 1.6,
               textAllowOverlap: true,
               textIgnorePlacement: true,
             ));
@@ -1095,20 +1071,35 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ));
       }
       if (_destination != null) {
-        // Draw a recognizable finish flag from native map polygons, not a
-        // font glyph, so the destination marker is reliable in every map style.
+        // The marker's ground anchor is exactly point B. Red glow rings are
+        // drawn first so the smaller checkered flag remains clear above them.
+        await controller.addCircle(ml.CircleOptions(
+          geometry: _toMapLibrePoint(_destination!),
+          circleRadius: 25,
+          circleColor: '#FF2028',
+          circleOpacity: 0.16,
+          circleStrokeColor: '#FF3038',
+          circleStrokeWidth: 2.5,
+        ));
+        await controller.addCircle(ml.CircleOptions(
+          geometry: _toMapLibrePoint(_destination!),
+          circleRadius: 13,
+          circleColor: '#FF3038',
+          circleOpacity: 0.22,
+          circleStrokeColor: '#FFFFFF',
+          circleStrokeWidth: 1.5,
+        ));
         final flagPolygons = _destinationFlagPolygons(_destination!);
-        // Draw a dark flag pole and a compact black/white checkered finish flag.
         await controller.addFill(ml.FillOptions(
           geometry: [flagPolygons.first],
-          fillColor: '#263238',
+          fillColor: '#E32636',
           fillOpacity: 1,
           fillOutlineColor: '#FFFFFF',
         ));
         for (var i = 1; i < flagPolygons.length; i++) {
           await controller.addFill(ml.FillOptions(
             geometry: [flagPolygons[i]],
-            fillColor: i.isEven ? '#FFFFFF' : '#E53935',
+            fillColor: i.isEven ? '#FFFFFF' : '#171717',
             fillOpacity: 1,
             fillOutlineColor: '#FFFFFF',
           ));
@@ -1973,16 +1964,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
 
   List<List<ml.LatLng>> _destinationFlagPolygons(LatLng anchor) {
+    // Scale the reference flag down by about 35%, while keeping its base
+    // point pinned to the exact destination coordinate (point B).
+    const scale = 0.65;
     ml.LatLng offset(double eastMeters, double northMeters) {
-      final latitude = anchor.latitude + northMeters / 111320.0;
+      final latitude = anchor.latitude + (northMeters * scale) / 111320.0;
       final longitudeScale =
           111320.0 * math.cos(anchor.latitude * math.pi / 180);
-      final longitude =
-          anchor.longitude + eastMeters / math.max(1.0, longitudeScale);
+      final longitude = anchor.longitude +
+          (eastMeters * scale) / math.max(1.0, longitudeScale);
       return ml.LatLng(latitude, longitude);
     }
 
-    // Tall red finish pole, anchored at the destination, with a visible base.
     final pole = <ml.LatLng>[
       offset(-1.5, 0),
       offset(1.5, 0),
@@ -2018,6 +2011,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       }
     }
     return <List<ml.LatLng>>[pole, base, ...cells];
+  }
+
+  LatLng _offsetAlongRoute(
+    LatLng point,
+    double bearingDegrees,
+    double distanceMeters,
+  ) {
+    final radians = bearingDegrees * math.pi / 180;
+    final east = math.sin(radians) * distanceMeters;
+    final north = math.cos(radians) * distanceMeters;
+    final latitude = point.latitude + north / 111320.0;
+    final longitudeScale =
+        111320.0 * math.cos(point.latitude * math.pi / 180);
+    final longitude =
+        point.longitude + east / math.max(1.0, longitudeScale);
+    return LatLng(latitude, longitude);
   }
 
   LatLng _offsetRouteCue(LatLng point, double bearingDegrees, double sideMeters) {
