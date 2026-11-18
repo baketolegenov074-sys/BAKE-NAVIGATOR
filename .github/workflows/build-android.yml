@@ -2,12 +2,6 @@ name: Build BAKE Navigator APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - navigator-ui-work
-      - valhalla-bridge-prep
-      - fix/background-location-permission
-      - fix/address-gps-route-reset
 
 permissions:
   contents: read
