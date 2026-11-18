@@ -890,6 +890,39 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
     if (_routePoints.length > 1) _fitMapCamera(_routePoints);
     _applyMapViewMode();
+    unawaited(_ensure3DBuildingsLayer());
+  }
+
+  Future<void> _ensure3DBuildingsLayer() async {
+    final controller = _mapLibreController;
+    if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+
+    try {
+      // Liberty may already include its own 3D building layer. Avoid
+      // duplicating it; add a fallback only when the style has no such layer.
+      final layerIds = await controller.getLayerIds();
+      if (layerIds.contains('building-3d') || layerIds.contains('bake-buildings-3d')) {
+        return;
+      }
+
+      await controller.addFillExtrusionLayer(
+        'openmaptiles',
+        'bake-buildings-3d',
+        FillExtrusionLayerProperties(
+          fillExtrusionColor: 'hsl(35, 8%, 85%)',
+          fillExtrusionHeight: ['coalesce', ['get', 'render_height'], 8],
+          fillExtrusionBase: ['coalesce', ['get', 'render_min_height'], 0],
+          fillExtrusionOpacity: 0.82,
+        ),
+        sourceLayer: 'building',
+        minzoom: 14,
+        filter: ['all', ['has', 'render_height'], ['!=', ['get', 'hide_3d'], true]],
+        enableInteraction: false,
+      );
+    } catch (error) {
+      // A style without the OpenMapTiles building source remains usable.
+      debugPrint('BAKE 3D buildings unavailable: $error');
+    }
   }
 
   Future<void> _syncMapLibreAnnotations({bool updateRoute = false}) async {
