@@ -890,8 +890,30 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ));
       }
       } while (_mapLibreAnnotationSyncPending);
-    } catch (_) {
-      // Ignore a style recreation racing with a GPS or route update.
+    } catch (error, stackTrace) {
+      // Do not silently lose the user's GPS marker when MapLibre rejects an
+      // annotation update. Keep a visible symbol fallback at the latest fix.
+      debugPrint('BAKE Navigator: GPS/map annotation update failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+
+      final controller = _mapLibreController;
+      final point = _currentLocation;
+      if (controller != null && _mapLibreStyleReady &&
+          _offlineTileProvider == null && point != null) {
+        try {
+          await controller.addSymbol(ml.SymbolOptions(
+            geometry: _toMapLibrePoint(point),
+            textField: '●',
+            textSize: 28,
+            textColor: '#1769AA',
+            textHaloColor: '#FFFFFF',
+            textHaloWidth: 3,
+          ));
+        } catch (fallbackError, fallbackStackTrace) {
+          debugPrint('BAKE Navigator: GPS marker fallback failed: $fallbackError');
+          debugPrintStack(stackTrace: fallbackStackTrace);
+        }
+      }
     } finally {
       _mapLibreAnnotationSyncInProgress = false;
       if (_mapLibreAnnotationSyncPending) {
