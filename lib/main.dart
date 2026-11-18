@@ -505,6 +505,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _mapLibreStyleReady = false;
   bool _mapLibreAnnotationSyncInProgress = false;
   bool _mapLibreAnnotationSyncPending = false;
+  bool _mapLibreRouteSyncPending = false;
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   int _kazakhVoiceId = 0;
@@ -828,23 +829,28 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     // more with the newest position instead of allowing overlapping clears.
     if (_mapLibreAnnotationSyncInProgress) {
       _mapLibreAnnotationSyncPending = true;
+      if (updateRoute) _mapLibreRouteSyncPending = true;
       return;
     }
     _mapLibreAnnotationSyncInProgress = true;
     try {
       do {
         _mapLibreAnnotationSyncPending = false;
+        final syncRoute = updateRoute || _mapLibreRouteSyncPending;
+        _mapLibreRouteSyncPending = false;
         final controller = _mapLibreController;
         if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
         // GPS refreshes must never remove the already-rendered route line.
         // Only route/style changes are allowed to replace route geometry.
-        if (updateRoute) {
+        if (syncRoute) {
           await controller.clearLines();
           if (_routePoints.length > 1) {
-        await controller.addLine(ml.LineOptions(
-          geometry: _routePoints.map(_toMapLibrePoint).toList(),
-            lineColor: '#2378C8', lineWidth: 6, lineOpacity: 0.96,
-          ));
+            await controller.addLine(ml.LineOptions(
+              geometry: _routePoints.map(_toMapLibrePoint).toList(),
+              lineColor: '#2378C8',
+              lineWidth: 6,
+              lineOpacity: 0.96,
+            ));
           }
         }
         await controller.clearSymbols();
@@ -889,7 +895,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     } finally {
       _mapLibreAnnotationSyncInProgress = false;
       if (_mapLibreAnnotationSyncPending) {
-        unawaited(_syncMapLibreAnnotations());
+        final syncRoute = _mapLibreRouteSyncPending;
+        _mapLibreRouteSyncPending = false;
+        unawaited(_syncMapLibreAnnotations(updateRoute: syncRoute));
       }
     }
   }
