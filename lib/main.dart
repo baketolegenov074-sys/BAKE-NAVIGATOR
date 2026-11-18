@@ -1763,6 +1763,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final wasNavigating = _navigationActive;
     setState(() {
       _routeOrigin = point;
+      _routeProgressSegmentIndex = 0;
       _routePoints = [];
       _routeReady = false;
       _instructions = [];
@@ -1780,6 +1781,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   void _resetRouteOrigin() {
     setState(() {
       _routeOrigin = null;
+      _routeProgressSegmentIndex = 0;
       _routePoints = [];
       _routeReady = false;
       _instructions = [];
@@ -1795,6 +1797,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final wasNavigating = _navigationActive;
     setState(() {
       _destination = point;
+      _routeProgressSegmentIndex = 0;
       _routePoints = [];
       _routeReady = false;
       _instructions = [];
@@ -2010,6 +2013,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _navigationActive = false;
       _routeActionDismissed = true;
       _routeReady = false;
+      _routeProgressSegmentIndex = 0;
       _routePoints = <LatLng>[];
       _routeOrigin = null;
       _destination = null;
@@ -2399,8 +2403,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       setState(() {
         _routeAlternatives = validRoutes;
         _selectedRouteIndex = 0;
-        _routeProgressSegmentIndex = 0;
-       _routePoints = points;
+         _routeProgressSegmentIndex = 0;
+        _routePoints = points;
         _routeReady = points.length >= 2;
         _routeActionDismissed = false;
         _instructions = instructions;
@@ -2456,6 +2460,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final instructions = _readInstructions(route);
     setState(() {
       _selectedRouteIndex = index;
+      _routeProgressSegmentIndex = 0;
       _routePoints = points;
       _routeReady = points.length >= 2;
       _instructions = instructions;
