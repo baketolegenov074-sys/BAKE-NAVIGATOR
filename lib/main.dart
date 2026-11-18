@@ -3914,12 +3914,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   @override
   Widget build(BuildContext context) {
     final markers = <Marker>[
-      if (_routeOrigin != null)
+      if (_navigationActive && _instructionIndex < _instructions.length)
         Marker(
-          point: _routeOrigin!,
-          width: 46,
-          height: 46,
-          child: const Icon(Icons.trip_origin, color: Color(0xFF269B68), size: 34),
+          point: _instructions[_instructionIndex].location,
+          width: 54,
+          height: 54,
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF169B55),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 5, offset: Offset(0, 2))],
+            ),
+            child: Icon(
+              _maneuverIcon(_instructions[_instructionIndex]),
+              color: Colors.white,
+              size: 29,
+            ),
+          ),
         ),
       if (_currentLocation != null)
         Marker(
