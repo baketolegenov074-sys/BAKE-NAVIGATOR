@@ -2100,7 +2100,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         final tags = item['tags'] as Map<String, dynamic>? ?? const {};
         final raw = tags['maxspeed']?.toString().trim();
         if (raw == null || raw.isEmpty || raw == 'signals' ||
-            raw == 'none' || raw == 'variable') continue;
+            raw == 'none' || raw == 'variable') {
+          continue;
+        }
 
         final center = item['center'] as Map<String, dynamic>?;
         if (center == null) continue;
@@ -2113,7 +2115,31 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         if (nearestDistance != null && distance >= nearestDistance) continue;
 
         final match = RegExp(
-          r'^(\d+(?:\.\d+)?)\s*(mph|km/h)?
+          r'^(\d+(?:\.\d+)?)\s*(mph|km/h)?$',
+          caseSensitive: false,
+        ).firstMatch(raw);
+        if (match == null) continue;
+        var value = double.parse(match.group(1)!);
+        if ((match.group(2) ?? '').toLowerCase() == 'mph') {
+          value *= 1.60934;
+        }
+        nearestDistance = distance;
+        foundLimit = value.round().toString();
+      }
+
+      if (!mounted) return;
+      setState(() => _speedLimitKmh = foundLimit);
+    } catch (_) {
+      // Keep the last known value when road data is temporarily unavailable.
+    } finally {
+      _speedLimitLookupInProgress = false;
+    }
+  }
+
+  void _updateNavigationProgress(LatLng position) {
+    if (!_navigationActive || _instructionIndex >= _instructions.length) return;
+
+    final target = _instructions[_instructionIndex];
     final meters = Geolocator.distanceBetween(
       position.latitude,
       position.longitude,
@@ -2145,7 +2171,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           _routeActionDismissed = true;
           _message = AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.');
         });
-        if (_voiceMode >= 1) _speakText(AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.'));
+        if (_voiceMode >= 1) {
+          _speakText(AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.'));
+        }
         unawaited(_startLiveLocationUpdates());
         return;
       }
@@ -2153,7 +2181,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _instructionIndex++;
         _announcedManeuverStage = 0;
       });
-      _speakCurrentInstruction();
+      unawaited(_speakCurrentInstruction());
     }
   }
 
