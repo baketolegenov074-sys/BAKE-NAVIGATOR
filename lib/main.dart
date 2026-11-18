@@ -3996,39 +3996,62 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ),
               ],
             ),
+          Positioned(
+            top: 0,
+            right: 14,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Material(
+                  color: Colors.white,
+                  elevation: 5,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: _navigationActive ? null : _openRouteMenu,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(color: const Color(0xFF202020), width: 2.2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            alignment: Alignment.center,
+                            child: const Text('—', style: TextStyle(fontSize: 25, height: 1, fontWeight: FontWeight.w900, color: Color(0xFF202020))),
+                          ),
+                          const Text('км/ч', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF343434))),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
           if (!_navigationActive)
             Positioned(
               top: 0,
-              left: 0,
-              right: 0,
+              left: 12,
               child: SafeArea(
                 bottom: false,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                  child: Row(
-                    children: [
-                      Material(
-                        color: Colors.white,
-                        elevation: 5,
-                        shape: const CircleBorder(),
-                        child: IconButton(
-                          tooltip: AppLocale.tr('Профиль'),
-                          onPressed: _openProfileMenu,
-                          icon: const Icon(Icons.person_outline, color: Color(0xFF343434)),
-                        ),
-                      ),
-                      const Spacer(),
-                      Material(
-                        color: Colors.white,
-                        elevation: 5,
-                        shape: const CircleBorder(),
-                        child: IconButton(
-                          tooltip: AppLocale.tr('Меню маршрута'),
-                          onPressed: _openRouteMenu,
-                          icon: const Icon(Icons.alt_route, color: Color(0xFF343434)),
-                        ),
-                      ),
-                    ],
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Material(
+                    color: Colors.white,
+                    elevation: 5,
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      tooltip: AppLocale.tr('Профиль'),
+                      onPressed: _openProfileMenu,
+                      icon: const Icon(Icons.person_outline, color: Color(0xFF343434)),
+                    ),
                   ),
                 ),
               ),
@@ -4036,30 +4059,26 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           if (_navigationActive)
             Positioned(
               top: 0,
-              left: 0,
-              right: 0,
+              left: 68,
+              right: 76,
               child: SafeArea(
                 bottom: false,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 74, 14, 0),
+                  padding: const EdgeInsets.only(top: 8),
                   child: Material(
-                    color: Colors.white,
-                    elevation: 5,
-                    borderRadius: BorderRadius.circular(16),
+                    color: const Color(0xF5FFFFFF),
+                    elevation: 4,
+                    borderRadius: BorderRadius.circular(13),
                     child: Padding(
-                      padding: const EdgeInsets.all(14),
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
                       child: Row(
                         children: [
                           Icon(
-                            _maneuverIcon(
-                              _instructionIndex < _instructions.length
-                                  ? _instructions[_instructionIndex]
-                                  : null,
-                            ),
-                            size: 34,
-                            color: const Color(0xFF343434),
+                            _maneuverIcon(_instructionIndex < _instructions.length ? _instructions[_instructionIndex] : null),
+                            size: 27,
+                            color: const Color(0xFF169B55),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -4069,23 +4088,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                   _instructionIndex < _instructions.length
                                       ? _instructions[_instructionIndex].text
                                       : _localized('Продолжайте по маршруту', 'Бағыт бойынша жүре беріңіз', 'Continue on the route'),
-                                  softWrap: true,
-                                  style: const TextStyle(fontSize: 15, height: 1.15, fontWeight: FontWeight.w800),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12, height: 1.1, fontWeight: FontWeight.w800),
                                 ),
-                                if (_instructionIndex < _instructions.length)
-                                  Text(
-                                    '${_localized('Следующий манёвр', 'Келесі маневр', 'Next maneuver')} · ${_distanceToNextManeuverMeters == null ? '—' : (_distanceToNextManeuverMeters! >= 1000 ? '${(_distanceToNextManeuverMeters! / 1000).toStringAsFixed(1)} км' : '${_distanceToNextManeuverMeters!.round()} м')}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 11, color: Color(0xFF626A73)),
-                                  ),
+                                Text(
+                                  _distanceToNextManeuverMeters == null ? '—' : (_distanceToNextManeuverMeters! >= 1000 ? '${(_distanceToNextManeuverMeters! / 1000).toStringAsFixed(1)} км' : '${_distanceToNextManeuverMeters!.round()} м'),
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF626A73)),
+                                ),
                               ],
                             ),
                           ),
                           IconButton(
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+                            padding: EdgeInsets.zero,
                             tooltip: AppLocale.tr('Завершить навигацию'),
                             onPressed: _finishNavigation,
-                            icon: const Icon(Icons.close),
+                            icon: const Icon(Icons.close, size: 18),
                           ),
                         ],
                       ),
@@ -4100,21 +4120,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               bottom: 225,
               child: Material(
                 color: Colors.white,
-                elevation: 5,
-                borderRadius: BorderRadius.circular(14),
+                elevation: 4,
+                borderRadius: BorderRadius.circular(12),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        _currentSpeedKmh.round().toString(),
-                        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800),
-                      ),
-                      Text(AppLocale.tr('км/ч'), style: TextStyle(fontSize: 11)),
-                      const Divider(height: 10),
-                      Text(AppLocale.tr('60'), style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                      Text(AppLocale.tr('лимит'), style: TextStyle(fontSize: 10)),
+                      Text(_currentSpeedKmh.round().toString(), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                      const Text('км/ч', style: TextStyle(fontSize: 10)),
                     ],
                   ),
                 ),
