@@ -4625,7 +4625,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               child: SafeArea(
                 bottom: false,
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 4),
+                  // Keep status messages below the maneuver banner and speed-limit tile.
+                  padding: const EdgeInsets.only(top: 84),
                   child: IgnorePointer(
                     child: Material(
                       color: const Color(0xF2FFFFFF),
