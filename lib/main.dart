@@ -526,6 +526,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _routeReady = false;
   bool _routeActionDismissed = false;
   double _currentSpeedKmh = 0;
+  String? _speedLimitKmh;
+  DateTime? _lastSpeedLimitLookup;
+  LatLng? _lastSpeedLimitLookupPoint;
+  bool _speedLimitLookupInProgress = false;
   double? _routeDistanceMeters;
   double? _routeDurationSeconds;
   StreamSubscription<Position>? _positionSubscription;
@@ -1472,6 +1476,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           }
         });
         unawaited(_syncMapLibreAnnotations());
+        unawaited(_refreshRoadSpeedLimit(point));
 
         // The first GPS fix may arrive after navigation has already started.
         // Initialize the camera and speak the current instruction exactly once.
@@ -2051,6 +2056,2830 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       target.latitude,
       target.longitude,
     );
+  }
+
+  Future<void> _refreshRoadSpeedLimit(LatLng point, {bool force = false}) async {
+    if (_speedLimitLookupInProgress) return;
+    final now = DateTime.now();
+    final lastPoint = _lastSpeedLimitLookupPoint;
+    final movedMeters = lastPoint == null
+        ? double.infinity
+        : Geolocator.distanceBetween(
+            lastPoint.latitude, lastPoint.longitude,
+            point.latitude, point.longitude,
+          );
+    if (!force &&
+        _lastSpeedLimitLookup != null &&
+        now.difference(_lastSpeedLimitLookup!) < const Duration(seconds: 30) &&
+        movedMeters < 100) {
+      return;
+    }
+
+    _speedLimitLookupInProgress = true;
+    _lastSpeedLimitLookup = now;
+    _lastSpeedLimitLookupPoint = point;
+    try {
+      final query = '[out:json][timeout:10];way(around:40,'
+          '${point.latitude},${point.longitude})[highway];out tags center;';
+      final response = await http.post(
+        Uri.parse('https://overpass-api.de/api/interpreter'),
+        headers: const {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'User-Agent': 'BAKE-Navigator/1.0',
+        },
+        body: {'data': query},
+      ).timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200) return;
+
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      final elements = decoded['elements'] as List<dynamic>? ?? const [];
+      double? nearestDistance;
+      String? foundLimit;
+      for (final item in elements) {
+        if (item is! Map<String, dynamic>) continue;
+        final tags = item['tags'] as Map<String, dynamic>? ?? const {};
+        final raw = tags['maxspeed']?.toString().trim();
+        if (raw == null || raw.isEmpty || raw == 'signals' ||
+            raw == 'none' || raw == 'variable') continue;
+
+        final center = item['center'] as Map<String, dynamic>?;
+        if (center == null) continue;
+        final lat = (center['lat'] as num?)?.toDouble();
+        final lon = (center['lon'] as num?)?.toDouble();
+        if (lat == null || lon == null) continue;
+        final distance = Geolocator.distanceBetween(
+          point.latitude, point.longitude, lat, lon,
+        );
+        if (nearestDistance != null && distance >= nearestDistance) continue;
+
+        final match = RegExp(r'^(\\d+(?:\\.\\d+)?)\\s*(mph|km/h)?    if (!_navigationActive || _instructionIndex >= _instructions.length) return;
+    final target = _instructions[_instructionIndex];
+    final meters = Geolocator.distanceBetween(
+      position.latitude,
+      position.longitude,
+      target.location.latitude,
+      target.location.longitude,
+    );
+
+    // Announce the upcoming maneuver in stages instead of speaking only once.
+    final isArrivalInstruction = _instructionIndex + 1 >= _instructions.length;
+    final stage = isArrivalInstruction
+        ? (meters <= 150 ? 2 : meters <= 500 ? 1 : 0)
+        : (meters <= 35 ? 3 : meters <= 150 ? 2 : meters <= 500 ? 1 : 0);
+    if (stage > _announcedManeuverStage) {
+      _announcedManeuverStage = stage;
+      if (_voiceMode >= 2) {
+        final announcement = stage == 1
+            ? _localized('Через 500 метров: ${target.text}', '500 метрден кейін: ${target.text}', 'In 500 meters: ${target.text}')
+            : stage == 2
+                ? _localized('Через 150 метров: ${target.text}', '150 метрден кейін: ${target.text}', 'In 150 meters: ${target.text}')
+                : target.text;
+        unawaited(_speakText(announcement));
+      }
+    }
+
+    if (meters <= 35) {
+      if (_instructionIndex + 1 >= _instructions.length) {
+        setState(() {
+          _navigationActive = false;
+          _routeActionDismissed = true;
+          _message = AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.');
+        });
+        if (_voiceMode >= 1) _speakText(AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.'));
+        unawaited(_startLiveLocationUpdates());
+        return;
+      }
+      setState(() {
+        _instructionIndex++;
+        _announcedManeuverStage = 0;
+      });
+      _speakCurrentInstruction();
+    }
+  }
+
+  double _distanceToRouteMeters(LatLng position) {
+    if (_routePoints.length < 2) return double.infinity;
+    const latScale = 110540.0;
+    final lonScale = 111320.0 * math.cos(position.latitude * math.pi / 180);
+    final px = position.longitude * lonScale;
+    final py = position.latitude * latScale;
+    var best = double.infinity;
+    for (var i = 0; i < _routePoints.length - 1; i++) {
+      final a = _routePoints[i];
+      final b = _routePoints[i + 1];
+      final ax = a.longitude * lonScale;
+      final ay = a.latitude * latScale;
+      final bx = b.longitude * lonScale;
+      final by = b.latitude * latScale;
+      final dx = bx - ax;
+      final dy = by - ay;
+      final lengthSquared = dx * dx + dy * dy;
+      final t = lengthSquared == 0
+          ? 0.0
+          : (((px - ax) * dx + (py - ay) * dy) / lengthSquared)
+              .clamp(0.0, 1.0);
+      final nearestX = ax + t * dx;
+      final nearestY = ay + t * dy;
+      final distance = math.sqrt(
+        (px - nearestX) * (px - nearestX) +
+            (py - nearestY) * (py - nearestY),
+      );
+      if (distance < best) best = distance;
+    }
+    return best;
+  }
+
+  void _checkForOffRoute(Position position) {
+    if (!_navigationActive || _isBuildingRoute || _destination == null) return;
+    // Ignore poor fixes; a bad GPS point must not trigger a false reroute.
+    if (position.accuracy > 45 || _routePoints.length < 2) return;
+    final now = DateTime.now();
+    if (_lastAutomaticReroute != null &&
+        now.difference(_lastAutomaticReroute!) < const Duration(seconds: 25)) {
+      return;
+    }
+    final distance = _distanceToRouteMeters(
+      LatLng(position.latitude, position.longitude),
+    );
+    final offRouteLimit = math.max(55.0, position.accuracy * 2.0);
+    if (distance > offRouteLimit) {
+      _offRouteSamples++;
+    } else {
+      _offRouteSamples = 0;
+    }
+    if (_offRouteSamples >= 3) {
+      _offRouteSamples = 0;
+      _lastAutomaticReroute = now;
+      _buildRoute(automaticReroute: true);
+    }
+  }
+
+  Future<void> _buildRoute({bool automaticReroute = false}) async {
+    if (_destination == null) {
+      setState(() => _message = AppLocale.pick('Сначала выберите конечную точку на карте.', 'Алдымен картадан соңғы нүктені таңдаңыз.', 'First select the destination point on the map.'));
+      return;
+    }
+    if (_routeOrigin == null && _currentLocation == null) await _locateMe();
+    // During an automatic reroute, always start from the latest live GPS fix;
+    // a manually saved/planned origin must never pull the driver backwards.
+    final routeOrigin = automaticReroute
+        ? _currentLocation
+        : (_routeOrigin ?? _currentLocation);
+    if (routeOrigin == null || _destination == null) {
+      if (mounted) setState(() => _message = AppLocale.pick('Не удалось определить начальную точку. Выберите её на карте или включите GPS.', 'Бастапқы нүктені анықтау мүмкін болмады. Оны картадан таңдаңыз немесе GPS қосыңыз.', 'Could not determine the starting point. Select it on the map or enable GPS.'));
+      return;
+    }
+
+    final resumeNavigation = automaticReroute && _navigationActive;
+    setState(() {
+      _isBuildingRoute = true;
+      _message = automaticReroute ? AppLocale.pick('Вы отклонились от маршрута. Перестраиваем…', 'Маршруттан ауытқыдыңыз. Қайта құрудамыз…', 'You left the route. Recalculating…') : AppLocale.pick('Строим варианты маршрута…', 'Маршрут нұсқалары құрылуда…', 'Building route options…');
+    });
+
+    try {
+      final coordinates = <LatLng>[routeOrigin, ..._routeStops, _destination!]
+          .map((point) => '${point.longitude},${point.latitude}')
+          .join(';');
+      final uri = Uri.parse(
+        'https://router.project-osrm.org/route/v1/driving/$coordinates'
+        '?overview=full&geometries=geojson&steps=true&alternatives=true',
+      );
+      // Public OSRM demo endpoint is for testing, not production traffic.
+      final response = await http.get(uri).timeout(const Duration(seconds: 25));
+      if (response.statusCode != 200) throw Exception(AppLocale.pick('Сервис маршрутов временно недоступен.', 'Маршрут қызметі уақытша қолжетімсіз.', 'Route service is temporarily unavailable.'));
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final routes = (data['routes'] as List?) ?? const [];
+      if (data['code'] != 'Ok' || routes.isEmpty) {
+        throw Exception(AppLocale.pick('Маршрут не найден. Попробуйте изменить выбранные точки.', 'Маршрут табылмады. Таңдалған нүктелерді өзгертіп көріңіз.', 'Route not found. Try changing the selected points.'));
+      }
+
+      final validRoutes = routes.cast<Map<String, dynamic>>().where((route) {
+        final distance = (route['distance'] as num).toDouble();
+        final directDistance = Geolocator.distanceBetween(
+          routeOrigin.latitude, routeOrigin.longitude,
+          _destination!.latitude, _destination!.longitude,
+        );
+        return distance <= math.max(5000.0, directDistance * 8.0);
+      }).toList();
+      if (validRoutes.isEmpty) {
+        throw Exception(AppLocale.pick('Сервис вернул слишком длинный маршрут. Проверьте выбранные точки.', 'Қызмет тым ұзын маршрут қайтарды. Таңдалған нүктелерді тексеріңіз.', 'The service returned a route that is too long. Check the selected points.'));
+      }
+
+      final first = validRoutes.first;
+      final geometry = first['geometry'] as Map<String, dynamic>;
+      final coordinatesList = geometry['coordinates'] as List<dynamic>;
+      final points = coordinatesList.map((coordinate) {
+        final pair = coordinate as List<dynamic>;
+        return LatLng((pair[1] as num).toDouble(), (pair[0] as num).toDouble());
+      }).toList();
+      final instructions = _readInstructions(first);
+      final distance = (first['distance'] as num).toDouble();
+      final duration = (first['duration'] as num).toDouble();
+
+      if (!mounted) return;
+      setState(() {
+        _routeAlternatives = validRoutes;
+        _selectedRouteIndex = 0;
+        _routePoints = points;
+        _routeReady = points.length >= 2;
+        _routeActionDismissed = false;
+        _instructions = instructions;
+        _navigationActive = resumeNavigation;
+        _instructionIndex = resumeNavigation && instructions.length > 1 ? 1 : 0;
+        _offRouteSamples = 0;
+        _routeDistanceMeters = distance;
+        _routeDurationSeconds = duration;
+        // Keep the map clear; route alternatives are presented in the route-search screen.
+        _message = automaticReroute
+            ? AppLocale.pick('Маршрут перестроен. Продолжаем навигацию.', 'Маршрут қайта құрылды. Навигация жалғасуда.', 'Route recalculated. Continuing navigation.')
+            : '';
+      });
+      if (points.isNotEmpty) {
+        unawaited(_syncMapLibreAnnotations(updateRoute: true));
+        _fitMapCamera(points);
+        if (automaticReroute && resumeNavigation && _currentLocation != null) {
+          _moveMapCamera(_currentLocation!, 17);
+          final heading = _gpsHeadingDegrees;
+          if (heading != null && _currentSpeedKmh >= 5.4) {
+            _rotateMapCamera(-heading);
+            _lastCameraHeadingDegrees = heading;
+          }
+        }
+      }
+      if (automaticReroute && resumeNavigation) {
+        if (_voiceMode >= 1) await _speakText(AppLocale.pick('Вы отклонились от маршрута. Маршрут перестроен.', 'Бағыттан ауытқыдыңыз. Маршрут қайта құрылды.', 'You left the route. The route has been recalculated.'));
+        await _speakCurrentInstruction();
+      } else {
+        final distanceKm = (distance / 1000).toStringAsFixed(1);
+        final minutes = (duration / 60).round();
+        if (_voiceMode >= 3) await _speakText(AppLocale.pick('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.', 'Маршрут құрылды. Қашықтық $distanceKm километр. Жол уақыты шамамен $minutes минут.', 'Route built. Distance $distanceKm kilometers. Estimated travel time $minutes minutes.'));
+        // Stay on the map: its persistent «Поехали» button starts navigation.
+        // Route alternatives remain available from the Route menu.
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _isBuildingRoute = false);
+    }
+  }
+
+  void _selectRouteAlternative(int index) {
+    if (index < 0 || index >= _routeAlternatives.length) return;
+    final route = _routeAlternatives[index];
+    final geometry = route['geometry'] as Map<String, dynamic>;
+    final coordinates = geometry['coordinates'] as List<dynamic>;
+    final points = coordinates.map((coordinate) {
+      final pair = coordinate as List<dynamic>;
+      return LatLng((pair[1] as num).toDouble(), (pair[0] as num).toDouble());
+    }).toList();
+    final instructions = _readInstructions(route);
+    setState(() {
+      _selectedRouteIndex = index;
+      _routePoints = points;
+      _routeReady = points.length >= 2;
+      _instructions = instructions;
+      _instructionIndex = 0;
+      _routeDistanceMeters = (route['distance'] as num).toDouble();
+      _routeDurationSeconds = (route['duration'] as num).toDouble();
+      _message = _localized('Выбран вариант маршрута ${index + 1}.', '${index + 1}-маршрут нұсқасы таңдалды.', 'Route option ${index + 1} selected.');
+    });
+    if (points.isNotEmpty) {
+      unawaited(_syncMapLibreAnnotations(updateRoute: true));
+      _fitMapCamera(points);
+    }
+  }
+
+  Future<void> _openRouteAlternatives() async {
+    if (_routeAlternatives.isEmpty) {
+      await _openRoutePlanner();
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD5D9DE),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                AppLocale.tr('Варианты маршрута'),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              ...List.generate(_routeAlternatives.length, (index) {
+                final route = _routeAlternatives[index];
+                final km = ((route['distance'] as num).toDouble() / 1000).toStringAsFixed(1);
+                final minutes = (((route['duration'] as num).toDouble()) / 60).round();
+                final selected = index == _selectedRouteIndex;
+                return ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  leading: Icon(
+                    selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                    color: selected ? const Color(0xFFB88A00) : const Color(0xFF69737D),
+                  ),
+                  title: Text('$minutes мин · $km км', style: const TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text('${AppLocale.tr('Вариант ')}${index + 1}'),
+                  onTap: () {
+                    _selectRouteAlternative(index);
+                    Navigator.pop(sheetContext);
+                  },
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addRouteStop(LatLng point) async {
+    if (_routeStops.length >= 5) {
+      setState(() => _message = AppLocale.tr('Можно добавить не более пяти промежуточных остановок.'));
+      return;
+    }
+    setState(() {
+      _routeStops.add(point);
+      _message = AppLocale.tr('Промежуточная остановка добавлена. Перестройте маршрут.');
+    });
+  }
+
+
+
+  Future<void> _openSearchPanel() async {
+    final prefs = await SharedPreferences.getInstance();
+    final history = prefs.getStringList('search_history') ?? <String>[];
+    if (!mounted) return;
+    const categories = <Map<String, Object>>[
+      {'name': 'АЗС', 'query': 'АЗС', 'icon': Icons.local_gas_station},
+      {'name': 'Рестораны', 'query': 'ресторан', 'icon': Icons.restaurant},
+      {'name': 'Магазины', 'query': 'магазин', 'icon': Icons.store},
+      {'name': 'Гостиницы', 'query': 'гостиница', 'icon': Icons.hotel},
+      {'name': 'Аптеки', 'query': 'аптека', 'icon': Icons.local_pharmacy},
+      {'name': 'Ещё', 'query': '', 'icon': Icons.apps},
+    ];
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            title: Text(AppLocale.tr('Поиск')),
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+          ),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              children: [
+                TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) {
+                    Navigator.pop(pageContext);
+                    _searchAddress();
+                  },
+                  decoration: InputDecoration(
+                    hintText: AppLocale.tr('Куда едем?'),
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: IconButton(
+                      tooltip: AppLocale.tr('Найти'),
+                      onPressed: _isSearching
+                          ? null
+                          : () {
+                              Navigator.pop(pageContext);
+                              _searchAddress();
+                            },
+                      icon: const Icon(Icons.arrow_forward),
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  AppLocale.tr('Недавние запросы'),
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                if (history.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 14),
+                    child: Text(
+                      'Здесь появятся адреса и места, которые вы искали.',
+                      style: TextStyle(color: Color(0xFF7B8792)),
+                    ),
+                  )
+                else
+                  ...history.take(4).map((query) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.history, color: Color(0xFF69737D)),
+                    title: Text(query, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: const Icon(Icons.north_west, size: 18),
+                    onTap: () {
+                      Navigator.pop(pageContext);
+                      _searchController.text = query;
+                      _searchAddress();
+                    },
+                  )),
+                const Divider(height: 24),
+                Text(
+                  AppLocale.tr('Категории'),
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 10),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  crossAxisCount: 3,
+                  childAspectRatio: 1.05,
+                  children: categories.map((category) {
+                    final name = category['name']! as String;
+                    final query = category['query']! as String;
+                    final icon = category['icon']! as IconData;
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
+                        Navigator.pop(pageContext);
+                        if (name == 'Ещё') {
+                          _openMoreSearchCategories();
+                        } else if (name == 'АЗС') {
+                          _openStationNetworks();
+                        } else {
+                          _searchController.text = query;
+                          _searchAddress();
+                        }
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircleAvatar(
+                              radius: 27,
+                              backgroundColor: const Color(0xFFF1F3F5),
+                              child: Icon(icon, color: const Color(0xFF343434)),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              name,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openMoreSearchCategories() async {
+    const categories = <Map<String, Object>>[
+      {'name': 'Кафе', 'query': 'кафе', 'icon': Icons.local_cafe},
+      {'name': 'Банкоматы', 'query': 'банкомат', 'icon': Icons.atm},
+      {'name': 'Автомойки', 'query': 'автомойка', 'icon': Icons.local_car_wash},
+      {'name': 'Автосервисы', 'query': 'автосервис', 'icon': Icons.car_repair},
+      {'name': 'Больницы', 'query': 'больница', 'icon': Icons.local_hospital},
+      {'name': 'Кинотеатры', 'query': 'кинотеатр', 'icon': Icons.movie},
+    ];
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            title: Text(AppLocale.tr('Ещё категории')),
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+          ),
+          body: GridView.count(
+            padding: const EdgeInsets.all(14),
+            crossAxisCount: 3,
+            childAspectRatio: 1.05,
+            children: categories.map((category) {
+              final name = category['name']! as String;
+              final query = category['query']! as String;
+              final icon = category['icon']! as IconData;
+              return InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () {
+                  Navigator.pop(pageContext);
+                  _searchController.text = query;
+                  _searchAddress();
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 27,
+                        backgroundColor: const Color(0xFFF1F3F5),
+                        child: Icon(icon, color: const Color(0xFF343434)),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(AppLocale.tr(name), textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showUnavailableFeature(String title, String detail) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(detail),
+        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(AppLocale.tr('Понятно')))],
+      ),
+    );
+  }
+
+  Future<void> _shareCurrentLocation() async {
+    final point = _currentLocation;
+    if (point == null) {
+      await _showUnavailableFeature('Геопозиция', AppLocale.pick('Сначала дождитесь определения GPS.', 'Алдымен GPS анықталғанын күтіңіз.', 'Wait for GPS to determine your location first.'));
+      return;
+    }
+    final value = 'Моя геопозиция BAKE: https://www.openstreetmap.org/?mlat=${point.latitude}&mlon=${point.longitude}#map=17/${point.latitude}/${point.longitude}';
+    await Clipboard.setData(ClipboardData(text: value));
+    if (mounted) setState(() => _message = AppLocale.pick('Ссылка на геопозицию скопирована.', 'Геолокация сілтемесі көшірілді.', 'Location link copied.'));
+  }
+
+  Future<void> _shareRoute() async {
+    if (_destination == null || _routePoints.isEmpty) {
+      await _showUnavailableFeature('Поделиться маршрутом', AppLocale.pick('Сначала постройте маршрут.', 'Алдымен маршрут құрыңыз.', 'Build a route first.'));
+      return;
+    }
+    final origin = _routeOrigin ?? _currentLocation;
+    final value = 'Маршрут BAKE Navigator\\n'
+        'Откуда: ${origin == null ? 'текущее местоположение' : '${origin.latitude}, ${origin.longitude}'}\\n'
+        'Куда: ${_destination!.latitude}, ${_destination!.longitude}\\n'
+        '${_routeSummary()}\\n'
+        'https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${origin?.latitude}%2C${origin?.longitude}%3B${_destination!.latitude}%2C${_destination!.longitude}';
+    await Clipboard.setData(ClipboardData(text: value));
+    if (mounted) setState(() => _message = AppLocale.pick('Описание маршрута скопировано для отправки.', 'Маршрут сипаттамасы жіберу үшін көшірілді.', 'Route description copied for sharing.'));
+  }
+
+  Future<void> _reportRouteIssue() async {
+    final controller = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(AppLocale.tr('Сообщить об ошибке маршрута')),
+        content: TextField(
+          controller: controller,
+          maxLines: 4,
+          decoration: InputDecoration(hintText: AppLocale.tr('Опишите, что не так'), border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(AppLocale.tr('Отмена'))),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text(AppLocale.tr('Скопировать отчёт'))),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted) { controller.dispose(); return; }
+    final report = 'Ошибка маршрута BAKE Navigator\\n${controller.text.trim()}\\n${_routeSummary()}';
+    await Clipboard.setData(ClipboardData(text: report));
+    controller.dispose();
+    if (mounted) setState(() => _message = AppLocale.pick(AppLocale.pick(AppLocale.pick('Отчёт скопирован. Отправка на сервер пока не подключена.', 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'), 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'), 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'));
+  }
+
+  Future<void> _openRoutePreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    var avoidTolls = prefs.getBool('avoid_tolls') ?? false;
+    var avoidUnpaved = prefs.getBool('avoid_unpaved') ?? false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
+          child: StatefulBuilder(
+            builder: (sheetContext, refresh) => Column(mainAxisSize: MainAxisSize.min, children: [
+              Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Параметры маршрута'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: avoidTolls,
+                title: Text(AppLocale.tr('Избегать платных дорог')),
+                onChanged: (value) async { avoidTolls = value; refresh(() {}); await prefs.setBool('avoid_tolls', value); },
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: avoidUnpaved,
+                title: Text(AppLocale.tr('Избегать плохих и грунтовых дорог')),
+                onChanged: (value) async { avoidUnpaved = value; refresh(() {}); await prefs.setBool('avoid_unpaved', value); },
+              ),
+              Text(AppLocale.tr('Эти параметры сохраняются на телефоне. Текущий тестовый сервис OSRM пока не применяет их при расчёте.'), style: TextStyle(fontSize: 12, color: Colors.black54)),
+              Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () => Navigator.pop(sheetContext), child: Text(AppLocale.tr('Готово')))),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openMapLayers() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    var traffic = prefs.getBool('layer_traffic') ?? false;
+    var roadEvents = prefs.getBool('layer_road_events') ?? true;
+    var parking = prefs.getBool('layer_parking') ?? false;
+    var satellite = prefs.getBool('layer_satellite') ?? false;
+
+    Future<void> saveLayer(String key, bool value) async {
+      await prefs.setBool(key, value);
+      if (!mounted) return;
+      setState(() {
+        _message = AppLocale.pick('Настройка сохранена. Для отображения этого слоя нужен подключённый источник данных.', 'Баптау сақталды. Бұл қабатты көрсету үшін деректер көзі қосылуы керек.', 'Setting saved. A connected data source is required to display this layer.');
+      });
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => StatefulBuilder(
+          builder: (pageContext, refresh) => Scaffold(
+            backgroundColor: Colors.white,
+            appBar: AppBar(
+              title: Text(AppLocale.tr('Слои и офлайн-карты')),
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
+            ),
+            body: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+              children: [
+                Text(
+                  AppLocale.tr('Слои карты'),
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.traffic_outlined),
+                  title: Text(AppLocale.tr('Пробки')),
+                  value: traffic,
+                  onChanged: (value) async {
+                    refresh(() => traffic = value);
+                    await saveLayer('layer_traffic', value);
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.warning_amber_outlined),
+                  title: Text(AppLocale.tr('Дорожные события')),
+                  value: roadEvents,
+                  onChanged: (value) async {
+                    refresh(() => roadEvents = value);
+                    await saveLayer('layer_road_events', value);
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.local_parking_outlined),
+                  title: Text(AppLocale.tr('Парковки')),
+                  value: parking,
+                  onChanged: (value) async {
+                    refresh(() => parking = value);
+                    await saveLayer('layer_parking', value);
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.satellite_alt_outlined),
+                  title: Text(AppLocale.tr('Спутниковая карта')),
+                  value: satellite,
+                  onChanged: (value) async {
+                    refresh(() => satellite = value);
+                    await saveLayer('layer_satellite', value);
+                  },
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: Text(
+                    AppLocale.pick('Переключатели пока сохраняют выбор. Пробки, парковки, спутниковые снимки и общий слой дорожных событий ещё не подключены к источникам данных и не отображаются на карте.', 'Ауыстырғыштар әзірге таңдауды ғана сақтайды. Кептелістер, тұрақтар, спутниктік суреттер және жол оқиғалары қабаты деректер көздеріне қосылмаған, сондықтан картада көрсетілмейді.', 'These switches currently only save your selection. Traffic, parking, satellite imagery, and the road events layer are not connected to data sources and are not displayed on the map.'),
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ),
+                const Divider(),
+                const SizedBox(height: 10),
+                Text(
+                  AppLocale.tr('Офлайн-карты'),
+                  style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.map_outlined),
+                  title: Text(AppLocale.tr('Карта Казахстана')),
+                  subtitle: Text(AppLocale.tr('Импортировать MBTiles-файл с телефона')),
+                  trailing: const Icon(Icons.download_for_offline_outlined),
+                  onTap: () {
+                    Navigator.pop(pageContext);
+                    _openOfflineAndVehicleSettings();
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.location_city_outlined),
+                  title: Text(AppLocale.tr('Шымкент и область')),
+                  subtitle: Text(AppLocale.tr('Импортировать MBTiles-файл с телефона')),
+                  trailing: const Icon(Icons.download_for_offline_outlined),
+                  onTap: () {
+                    Navigator.pop(pageContext);
+                    _openOfflineAndVehicleSettings();
+                  },
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _offlineTileProvider == null
+                      ? AppLocale.pick('Офлайн-карта не подключена. Размер и покрытие файла проверяются после выбора; готовые пакеты для скачивания пока не предоставляются.', 'Офлайн карта қосылмаған. Файл таңдалғаннан кейін оның өлшемі мен қамту аумағы тексеріледі; дайын жүктеу пакеттері әзірге берілмейді.', 'No offline map is connected. File size and coverage are checked after selection; ready-made download packages are not provided yet.')
+                      : AppLocale.pick('Офлайн-карта подключена. Для построения маршрута пока нужен интернет.', 'Офлайн карта қосылды. Маршрут құру үшін әзірге интернет қажет.', 'Offline map connected. Internet is still required to build routes.'),
+                  style: const TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(pageContext);
+                    _openOfflineAndVehicleSettings();
+                  },
+                  icon: const Icon(Icons.folder_open_outlined),
+                  label: Text(AppLocale.tr('Выбрать MBTiles-файл')),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openProfileMenu() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (sheetContext) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetContext).size.height * 0.88),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8))),
+              const SizedBox(height: 18),
+              Row(children: [
+                const CircleAvatar(radius: 27, backgroundColor: Color(0xFFFFF5D6), child: Icon(Icons.person_outline, size: 31, color: Color(0xFF343434))),
+                const SizedBox(width: 14),
+                Expanded(child: Text(AppLocale.tr('Профиль BAKE'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+                IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
+              ]),
+              const SizedBox(height: 10),
+              _menuTile(sheetContext, Icons.settings_outlined, AppLocale.tr('Настройки'), () { Navigator.pop(sheetContext); _openSettings(); }),
+              _menuTile(sheetContext, Icons.download_for_offline_outlined, AppLocale.tr('Загрузка карт'), () { Navigator.pop(sheetContext); _openOfflineAndVehicleSettings(); }),
+              _menuTile(sheetContext, Icons.support_agent_outlined, AppLocale.tr('Поддержка'), () { Navigator.pop(sheetContext); _openSupportPage(); }),
+              _menuTile(sheetContext, Icons.map_outlined, AppLocale.tr('Изменить карту и слои'), () { Navigator.pop(sheetContext); _openMapLayers(); }),
+              _menuTile(sheetContext, Icons.add_location_alt_outlined, AppLocale.tr('Разместить объект'), () { Navigator.pop(sheetContext); _openPlaceSubmissionPage(); }),
+              _menuTile(sheetContext, Icons.share_location_outlined, AppLocale.tr('Поделиться геопозицией'), () { Navigator.pop(sheetContext); _shareCurrentLocation(); }),
+              _menuTile(sheetContext, Icons.bookmark_border, AppLocale.tr('Закладки'), () { Navigator.pop(sheetContext); _openBookmarks(); }),
+              _menuTile(sheetContext, Icons.place_outlined, AppLocale.tr('Мои места'), () { Navigator.pop(sheetContext); _openMyPlaces(); }),
+              _menuTile(sheetContext, Icons.warning_amber_outlined, AppLocale.tr('События на дороге'), () { Navigator.pop(sheetContext); _openRoadEvents(); }),
+              _menuTile(sheetContext, Icons.local_gas_station_outlined, AppLocale.tr('Заправки'), () { Navigator.pop(sheetContext); _openStationNetworks(); }),
+              _menuTile(sheetContext, Icons.local_parking_outlined, AppLocale.tr('Парковки'), () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
+              _menuTile(sheetContext, Icons.history, AppLocale.tr('Бронирования и история заказов'), () { Navigator.pop(sheetContext); _openBookingsPage(); }),
+              _menuTile(sheetContext, Icons.rate_review_outlined, AppLocale.tr('Лента отзывов и исправлений'), () { Navigator.pop(sheetContext); _openFeedbackPage(); }),
+              _menuTile(sheetContext, Icons.workspace_premium_outlined, AppLocale.tr('BAKE Plus'), () { Navigator.pop(sheetContext); _openBakePlusPage(); }),
+              _menuTile(sheetContext, Icons.music_note_outlined, AppLocale.tr('Музыка'), () { Navigator.pop(sheetContext); _openMusicPage(); }),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openFeaturePage({
+    required String title,
+    required IconData icon,
+    required String description,
+    required String status,
+    String? actionLabel,
+    Future<void> Function()? onAction,
+  }) async {
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => Scaffold(
+          backgroundColor: const Color(0xFFFFFFFF),
+          appBar: AppBar(
+            title: Text(AppLocale.tr(title), maxLines: 1, overflow: TextOverflow.ellipsis),
+            backgroundColor: const Color(0xFFFFFFFF),
+          ),
+          body: SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(22),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CircleAvatar(
+                        radius: 28,
+                        backgroundColor: const Color(0xFFFFF5D6),
+                        child: Icon(icon, size: 30, color: const Color(0xFF343434)),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(AppLocale.tr(title), style: const TextStyle(fontSize: 23, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 10),
+                      Text(AppLocale.tr(description), style: const TextStyle(fontSize: 16, height: 1.45)),
+                      const SizedBox(height: 18),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F4F7),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Text(AppLocale.tr(status), style: const TextStyle(fontSize: 14, color: Color(0xFF555B63))),
+                      ),
+                    ],
+                  ),
+                ),
+                if (actionLabel != null && onAction != null) ...[
+                  const SizedBox(height: 18),
+                  FilledButton.icon(
+                    onPressed: () async {
+                      await onAction();
+                      if (pageContext.mounted) Navigator.pop(pageContext);
+                    },
+                    icon: const Icon(Icons.copy),
+                    label: Text(AppLocale.tr(actionLabel)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSupportPage() => _openFeaturePage(
+    title: 'Поддержка BAKE',
+    icon: Icons.support_agent_outlined,
+    description: 'Здесь будет раздел помощи по поиску, маршрутам, GPS и офлайн-картам. Можно подготовить обращение и скопировать его, чтобы отправить удобным способом.',
+    status: 'Канал отправки обращений на сервер ещё не подключён. Эта страница не отправляет сообщения автоматически.',
+    actionLabel: 'Подготовить обращение',
+    onAction: () async {
+      await Clipboard.setData(const ClipboardData(text: 'Обращение в поддержку BAKE Navigator. Опишите проблему и приложите скриншот.'));
+      if (mounted) setState(() => _message = 'Шаблон обращения скопирован.');
+    },
+  );
+
+  Future<void> _openPlaceSubmissionPage() => _openFeaturePage(
+    title: 'Разместить объект',
+    icon: Icons.add_location_alt_outlined,
+    description: 'Раздел предназначен для подготовки карточки нового места: название, категория, адрес и координаты. Для добавления объекта на общую карту потребуется серверная проверка.',
+    status: 'Публикация объектов пока не подключена. Ничего не будет отправлено без сервера.',
+  );
+
+  Future<void> _openBookingsPage() => _openFeaturePage(
+    title: 'Бронирования и история',
+    icon: Icons.history,
+    description: 'Здесь будет история поездок и сохранённые бронирования BAKE, когда приложение получит соответствующий сервис.',
+    status: 'История пока пуста: сервис бронирований и учёт поездок ещё не подключены.',
+  );
+
+  Future<void> _openFeedbackPage() => _openFeaturePage(
+    title: 'Отзывы и исправления',
+    icon: Icons.rate_review_outlined,
+    description: 'Раздел для просмотра сообщений об ошибках карты и предложенных исправлений.',
+    status: 'Лента пока недоступна: серверный источник отзывов и модерация ещё не подключены.',
+  );
+
+  Future<void> _openMusicPage() => _openFeaturePage(
+    title: 'Музыка BAKE',
+    icon: Icons.music_note_outlined,
+    description: 'Отдельная музыкальная панель должна показывать только реально доступное управление воспроизведением на телефоне или подключённом музыкальном сервисе. В ней будут текущий трек и доступные системные действия, если Android предоставит их.',
+    status: 'Музыкальный провайдер и управление медиасессией пока не подключены. BAKE не показывает вымышленные треки, исполнителей и обложки.',
+  );
+
+  Future<void> _openBakePlusPage() => _openFeaturePage(
+    title: 'BAKE Plus',
+    icon: Icons.workspace_premium_outlined,
+    description: 'Будущий раздел дополнительных возможностей BAKE Navigator. Здесь будут описаны условия, если будет создана собственная подписка.',
+    status: 'Подписка BAKE Plus пока не создана. Оплата и платные функции не включены.',
+  );
+
+  Future<void> _selectMapDestination(LatLng point) async {
+    if (point.latitude < 40 || point.latitude > 56 ||
+        point.longitude < 46 || point.longitude > 88) {
+      if (mounted) {
+        setState(() => _message = AppLocale.tr('Выберите точку на территории Казахстана.'));
+      }
+      return;
+    }
+    _selectDestination(point);
+    _moveMapCamera(point, 15);
+    if (mounted) {
+      setState(() => _message = AppLocale.pick(
+        'Пункт назначения выбран на карте. Строим маршрут…',
+        'Межелі орын картадан таңдалды. Маршрут құрылуда…',
+        'Destination selected on map. Building route…',
+      ));
+    }
+    await _buildRoute();
+  }
+
+  Future<void> _openPointMenu(LatLng point) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: Text(AppLocale.tr('Что здесь')),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                unawaited(_showPointDetails(point));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined, color: Colors.red),
+              title: Text(AppLocale.tr('Выбрать как пункт назначения')),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                unawaited(_selectMapDestination(point));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.add_location_alt_outlined),
+              title: Text(AppLocale.tr('Добавить точку маршрута')),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                unawaited(_addRouteStop(point));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share_outlined),
+              title: Text(AppLocale.tr('Скопировать ссылку на точку')),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                unawaited(_sharePoint(point));
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showPointDetails(LatLng point) async {
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+        'lat': point.latitude.toString(),
+        'lon': point.longitude.toString(),
+        'format': 'jsonv2',
+        'zoom': '18',
+        'accept-language': 'ru,kk',
+      });
+      final response = await http.get(uri, headers: const {'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)'}).timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) throw Exception('Сервис адресов временно недоступен.');
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final address = data['display_name']?.toString() ?? 'Адрес не найден в OpenStreetMap.';
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(AppLocale.tr('Что здесь')),
+          content: Text('$address\\n\\n${AppLocale.tr('Координаты: ')}${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(AppLocale.tr('Закрыть')))],
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _sharePoint(LatLng point) async {
+    final url = 'https://www.openstreetmap.org/?mlat=${point.latitude}&mlon=${point.longitude}#map=17/${point.latitude}/${point.longitude}';
+    await Clipboard.setData(ClipboardData(text: url));
+    if (mounted) setState(() => _message = AppLocale.pick('Ссылка на точку скопирована.', 'Нүкте сілтемесі көшірілді.', 'Point link copied.'));
+  }
+
+  Future<void> _reportMapItem(LatLng point, String title) async {
+    final controller = TextEditingController();
+    const eventTypes = ['ДТП', 'Ремонт дороги', 'Камера', 'Опасность', 'Другое'];
+    var selectedType = eventTypes.first;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, refreshDialog) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (title == 'Дорожное событие') ...[
+                Text(AppLocale.tr('Тип события')),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                  value: selectedType,
+                  items: eventTypes.map((type) => DropdownMenuItem(value: type, child: Text(AppLocale.tr(type)))).toList(),
+                  onChanged: (value) { if (value != null) refreshDialog(() => selectedType = value); },
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextField(
+                controller: controller,
+                maxLines: 4,
+                decoration: InputDecoration(hintText: AppLocale.tr('Добавьте описание (необязательно)'), border: OutlineInputBorder()),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(AppLocale.tr('Отмена'))),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text(AppLocale.tr('Сохранить'))),
+          ],
+        ),
+      ),
+    );
+    if (accepted != true || !mounted) { controller.dispose(); return; }
+    final detail = controller.text.trim();
+    final eventTitle = title == 'Дорожное событие' ? selectedType : title;
+    final report = '$eventTitle\nКоординаты: ${point.latitude}, ${point.longitude}\n$detail';
+    if (title == 'Дорожное событие') {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList('road_event_reports') ?? <String>[];
+      saved.add(jsonEncode({'kind': selectedType, 'detail': detail, 'lat': point.latitude, 'lon': point.longitude, 'date': DateTime.now().toLocal().toString().substring(0, 16)}));
+      await prefs.setStringList('road_event_reports', saved);
+    }
+    await Clipboard.setData(ClipboardData(text: report));
+    controller.dispose();
+    if (mounted) {
+      setState(() => _message = title == 'Дорожное событие'
+        ? AppLocale.pick('Событие сохранено на устройстве. Отправка другим водителям пока не подключена.', 'Оқиға құрылғыда сақталды. Басқа жүргізушілерге жіберу әлі қосылмаған.', 'Event saved on this device. Sharing with other drivers is not connected yet.')
+        : AppLocale.pick(AppLocale.pick(AppLocale.pick('Отчёт скопирован. Отправка на сервер пока не подключена.', 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'), 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'), 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'));
+    }
+  }
+
+  Future<void> _openMyPlaces() async {
+    final prefs = await SharedPreferences.getInstance();
+    var home = prefs.getString('my_place_home') ?? '';
+    var work = prefs.getString('my_place_work') ?? '';
+    var customPlaces = prefs.getStringList('my_custom_places') ?? <String>[];
+    if (!mounted) return;
+
+    Future<void> editAddress({
+      required String title,
+      required String currentValue,
+      required Future<void> Function(String) onSave,
+    }) async {
+      final controller = TextEditingController(text: currentValue);
+      final value = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              hintText: AppLocale.tr('Введите адрес'),
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(AppLocale.tr('Отмена')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+              child: Text(AppLocale.tr('Сохранить')),
+            ),
+          ],
+        ),
+      );
+      controller.dispose();
+      if (value == null) return;
+      await onSave(value);
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => StatefulBuilder(
+          builder: (pageContext, refresh) => Scaffold(
+            backgroundColor: Colors.white,
+            appBar: AppBar(
+              title: Text(AppLocale.tr('Мои места')),
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
+            ),
+            body: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+              children: [
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFFFF3C4),
+                    child: Icon(Icons.home_outlined, color: Color(0xFF343434)),
+                  ),
+                  title: Text(AppLocale.tr('Дом'), style: TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(home.isEmpty ? AppLocale.tr('Добавьте домашний адрес') : home),
+                  trailing: const Icon(Icons.edit_outlined),
+                  onTap: () async {
+                    await editAddress(
+                      title: AppLocale.tr('Адрес дома'),
+                      currentValue: home,
+                      onSave: (value) async {
+                        home = value;
+                        await prefs.setString('my_place_home', value);
+                        refresh(() {});
+                      },
+                    );
+                  },
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xFFEAF4FF),
+                    child: Icon(Icons.work_outline, color: Color(0xFF343434)),
+                  ),
+                  title: Text(AppLocale.tr('Работа'), style: TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(work.isEmpty ? AppLocale.tr('Добавьте адрес работы') : work),
+                  trailing: const Icon(Icons.edit_outlined),
+                  onTap: () async {
+                    await editAddress(
+                      title: AppLocale.tr('Адрес работы'),
+                      currentValue: work,
+                      onSave: (value) async {
+                        work = value;
+                        await prefs.setString('my_place_work', value);
+                        refresh(() {});
+                      },
+                    );
+                  },
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  AppLocale.tr('Избранное'),
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                if (customPlaces.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    child: Text(AppLocale.tr('Сохранённых пользовательских мест пока нет.')),
+                  )
+                else
+                  ...customPlaces.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final parts = entry.value.split('|');
+                    final name = parts.isNotEmpty ? parts.first : 'Место';
+                    final address = parts.length > 1 ? parts.sublist(1).join('|') : '';
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.favorite_outline, color: Color(0xFFE45D52)),
+                      title: Text(name),
+                      subtitle: Text(address),
+                      onTap: address.isEmpty
+                          ? null
+                          : () {
+                              Navigator.pop(pageContext);
+                              _searchController.text = address;
+                              _searchAddress();
+                            },
+                      trailing: IconButton(
+                        tooltip: AppLocale.tr('Удалить место'),
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () async {
+                          customPlaces.removeAt(index);
+                          await prefs.setStringList('my_custom_places', customPlaces);
+                          refresh(() {});
+                        },
+                      ),
+                    );
+                  }),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final nameController = TextEditingController();
+                    final addressController = TextEditingController();
+                    final accepted = await showDialog<bool>(
+                      context: pageContext,
+                      builder: (dialogContext) => AlertDialog(
+                        title: Text(AppLocale.tr('Добавить место')),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            TextField(
+                              controller: nameController,
+                              decoration: InputDecoration(
+                                labelText: AppLocale.tr('Название'),
+                                hintText: AppLocale.tr('Например, спортзал'),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: addressController,
+                              decoration: InputDecoration(
+                                labelText: AppLocale.tr('Адрес'),
+                                hintText: AppLocale.tr('Улица, дом или место'),
+                              ),
+                            ),
+                          ],
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, false),
+                            child: Text(AppLocale.tr('Отмена')),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(
+                              dialogContext,
+                              nameController.text.trim().isNotEmpty &&
+                                  addressController.text.trim().isNotEmpty,
+                            ),
+                            child: Text(AppLocale.tr('Сохранить')),
+                          ),
+                        ],
+                      ),
+                    );
+                    final name = nameController.text.trim();
+                    final address = addressController.text.trim();
+                    nameController.dispose();
+                    addressController.dispose();
+                    if (accepted != true || name.isEmpty || address.isEmpty) return;
+                    customPlaces = [...customPlaces, '$name|$address'];
+                    await prefs.setStringList('my_custom_places', customPlaces);
+                    refresh(() {});
+                  },
+                  icon: const Icon(Icons.add),
+                  label: Text(AppLocale.tr('Добавить место')),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.bookmark_border),
+                  title: Text(AppLocale.tr('Точки, сохранённые на карте')),
+                  subtitle: Text(AppLocale.tr('Открыть закладки с координатами')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(pageContext);
+                    _openBookmarks();
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRoadEvents() async {
+    final prefs = await SharedPreferences.getInstance();
+    final reports = prefs.getStringList('road_event_reports') ?? <String>[];
+    if (!mounted) return;
+
+    IconData iconFor(String kind) {
+      switch (kind) {
+        case 'ДТП':
+          return Icons.warning_rounded;
+        case 'Ремонт дороги':
+          return Icons.construction_rounded;
+        case 'Камера':
+          return Icons.camera_alt_rounded;
+        case 'Опасность':
+          return Icons.error_rounded;
+        default:
+          return Icons.report_problem_outlined;
+      }
+    }
+
+    Color colorFor(String kind) {
+      switch (kind) {
+        case 'ДТП':
+          return const Color(0xFFE53935);
+        case 'Ремонт дороги':
+          return const Color(0xFFFFC107);
+        case 'Камера':
+          return const Color(0xFF1976D2);
+        case 'Опасность':
+          return const Color(0xFFFF8A00);
+        default:
+          return const Color(0xFF777777);
+      }
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            title: Text(AppLocale.tr('События на дороге')),
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+          ),
+          body: reports.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      AppLocale.tr('Пока нет сохранённых сообщений о дорожных событиях.'),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                  itemCount: reports.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final item = jsonDecode(reports[reports.length - 1 - index])
+                        as Map<String, dynamic>;
+                    final kind = item['kind']?.toString() ?? 'Дорожное событие';
+                    final detail = item['detail']?.toString() ?? '';
+                    final date = item['date']?.toString() ?? '';
+                    final lat = item['lat'];
+                    final lon = item['lon'];
+                    final hasPoint = lat is num && lon is num;
+                    final coordinateText = hasPoint
+                        ? 'Координаты: ${lat.toStringAsFixed(5)}, ${lon.toStringAsFixed(5)}'
+                        : '';
+                    final subtitle = [detail, coordinateText, date]
+                        .where((value) => value.isNotEmpty)
+                        .join(' · ');
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                      leading: Icon(
+                        iconFor(kind),
+                        color: colorFor(kind),
+                        size: 30,
+                      ),
+                      title: Text(
+                        kind,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      subtitle: subtitle.isEmpty ? null : Text(subtitle),
+                    );
+                  },
+                ),
+          bottomNavigationBar: SafeArea(
+            minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(pageContext);
+                final point = _currentLocation;
+                if (point == null) {
+                  _showUnavailableFeature(
+                    'Геопозиция',
+                    'Сначала дождитесь определения GPS или выберите точку долгим нажатием на карте.',
+                  );
+                } else {
+                  _reportMapItem(point, 'Дорожное событие');
+                }
+              },
+              icon: const Icon(Icons.campaign_outlined),
+              label: Text(AppLocale.tr('Сообщить о событии')),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openBookmarks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('map_bookmarks') ?? <String>[];
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Закладки'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+            if (saved.isEmpty)
+              Padding(padding: const EdgeInsets.all(22), child: Text(AppLocale.tr('Пока нет сохранённых точек. Удерживайте место на карте и выберите «Сохранить в закладки».')))
+            else
+              ...saved.map((raw) {
+                final item = jsonDecode(raw) as Map<String, dynamic>;
+                final lat = (item['lat'] as num).toDouble();
+                final lon = (item['lon'] as num).toDouble();
+                return ListTile(
+                  leading: const Icon(Icons.bookmark),
+                  title: Text(AppLocale.tr(item['label']?.toString() ?? 'Сохранённая точка')),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    final point = LatLng(lat, lon);
+                    _selectDestination(point);
+                    _moveMapCamera(point, 16);
+                  },
+                );
+              }),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  String _formatDeparture(DateTime value) {
+    final date = '${value.day.toString().padLeft(2, '0')}.${value.month.toString().padLeft(2, '0')}.${value.year}';
+    final time = '${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+    return '$date · $time';
+  }
+
+  Future<void> _openDepartureTime(StateSetter refreshPlanner) async {
+    var selected = _plannedDeparture ?? DateTime.now();
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, refresh) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Row(children: [
+                Expanded(child: Text(AppLocale.tr('Время отправления'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800))),
+                TextButton(onPressed: () { setState(() => _plannedDeparture = null); refreshPlanner(() {}); Navigator.pop(sheetContext); }, child: Text(AppLocale.tr('Сбросить'))),
+              ]),
+              const SizedBox(height: 10),
+              ListTile(
+                leading: const Icon(Icons.calendar_today_outlined),
+                title: Text(AppLocale.tr('Дата')),
+                subtitle: Text('${selected.day.toString().padLeft(2, '0')}.${selected.month.toString().padLeft(2, '0')}.${selected.year}'),
+                onTap: () async {
+                  final now = DateTime.now();
+                  final date = await showDatePicker(
+                    context: sheetContext,
+                    initialDate: selected.isBefore(DateTime(now.year, now.month, now.day)) ? now : selected,
+                    firstDate: DateTime(now.year, now.month, now.day),
+                    lastDate: DateTime(now.year + 2),
+                    helpText: 'Дата отправления',
+                  );
+                  if (date != null) { selected = DateTime(date.year, date.month, date.day, selected.hour, selected.minute); refresh(() {}); }
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.access_time),
+                title: Text(AppLocale.tr('Время')),
+                subtitle: Text('${selected.hour.toString().padLeft(2, '0')}:${selected.minute.toString().padLeft(2, '0')}'),
+                onTap: () async {
+                  final time = await showTimePicker(context: sheetContext, initialTime: TimeOfDay.fromDateTime(selected), helpText: 'Время отправления');
+                  if (time != null) { selected = DateTime(selected.year, selected.month, selected.day, time.hour, time.minute); refresh(() {}); }
+                },
+              ),
+              const SizedBox(height: 10),
+              SizedBox(width: double.infinity, child: FilledButton(onPressed: () { setState(() => _plannedDeparture = selected); refreshPlanner(() {}); Navigator.pop(sheetContext); }, child: Text(AppLocale.tr('Готово')))),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRoutePlanner() async {
+    final destinationController = TextEditingController();
+    final originController = TextEditingController();
+    final originFocusNode = FocusNode();
+    final destinationFocusNode = FocusNode();
+    final routeSheetExpanded = ValueNotifier<bool>(false);
+    originFocusNode.addListener(() {
+      if (originFocusNode.hasFocus) routeSheetExpanded.value = true;
+    });
+    destinationFocusNode.addListener(() {
+      if (destinationFocusNode.hasFocus) routeSheetExpanded.value = true;
+    });
+    var searchAfterClose = false;
+    var searchOriginAfterClose = false;
+    var buildRouteAfterClose = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (sheetContext) => ValueListenableBuilder<bool>(
+        valueListenable: routeSheetExpanded,
+        builder: (sheetContext, expanded, _) => AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(bottom: MediaQuery.of(sheetContext).viewInsets.bottom),
+          child: FractionallySizedBox(
+            heightFactor: expanded ? 0.94 : 0.44,
+            alignment: Alignment.bottomCenter,
+            child: StatefulBuilder(
+        builder: (sheetContext, refreshSheet) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(child: Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8)))),
+                  const SizedBox(height: 14),
+                  Text(AppLocale.tr('Планирование маршрута'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Icon(Icons.my_location, color: Color(0xFF269B68), size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: originController,
+                          focusNode: originFocusNode,
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: (_) { searchOriginAfterClose = originController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
+                          decoration: InputDecoration(
+                            hintText: AppLocale.tr('Откуда'),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: AppLocale.tr('Моё местоположение'),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () { Navigator.pop(sheetContext); unawaited(_locateMe()); },
+                        icon: const Icon(Icons.gps_fixed, size: 20),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 22),
+                  Row(children: [
+                    const Icon(Icons.location_on, color: Color(0xFFE45D52), size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(child: TextField(
+                      controller: destinationController,
+                      focusNode: destinationFocusNode,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) { searchAfterClose = true; Navigator.pop(sheetContext); },
+                      decoration: InputDecoration(
+                        hintText: AppLocale.tr('Куда'),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    )),
+                    IconButton(
+                      tooltip: AppLocale.tr('Найти место'),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () { searchAfterClose = destinationController.text.trim().isNotEmpty; Navigator.pop(sheetContext); },
+                      icon: const Icon(Icons.search, color: Color(0xFF343434), size: 21),
+                    ),
+                  ]),
+                  if (_destination != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 36, bottom: 8),
+                      child: Text('${AppLocale.tr('Точка на карте: ')}${_destination!.latitude.toStringAsFixed(5)}, ${_destination!.longitude.toStringAsFixed(5)}', style: const TextStyle(fontSize: 11, color: Color(0xFF6D7882))),
+                    ),
+                  const Divider(height: 18),
+                  Row(children: [
+                    const Icon(Icons.more_horiz, color: Color(0xFF343434)),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(AppLocale.tr('Промежуточные остановки'), style: TextStyle(fontWeight: FontWeight.w700))),
+                    Text('${_routeStops.length}/5', style: const TextStyle(color: Color(0xFF687786))),
+                  ]),
+                  if (_routeStops.isEmpty)
+                    Padding(padding: const EdgeInsets.fromLTRB(36, 6, 0, 8), child: Text(AppLocale.tr('Добавьте остановку долгим нажатием на нужное место карты.'), style: TextStyle(fontSize: 12, color: Color(0xFF7B8792))))
+                  else
+                    ..._routeStops.asMap().entries.map((entry) => ListTile(
+                      dense: true,
+                      contentPadding: const EdgeInsets.only(left: 30),
+                      leading: CircleAvatar(radius: 12, child: Text('${entry.key + 1}', style: const TextStyle(fontSize: 11))),
+                      title: Text('${entry.value.latitude.toStringAsFixed(5)}, ${entry.value.longitude.toStringAsFixed(5)}', style: const TextStyle(fontSize: 13)),
+                      trailing: IconButton(
+                        tooltip: AppLocale.tr('Удалить остановку'),
+                        icon: const Icon(Icons.close, size: 19),
+                        onPressed: () { setState(() { _routeStops.removeAt(entry.key); _routePoints = []; _routeReady = false; _instructions = []; }); refreshSheet(() {}); },
+                      ),
+                    )),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _routeStops.length >= 5 ? null : () { Navigator.pop(sheetContext); setState(() => _message = AppLocale.tr('Удерживайте нужную точку карты и выберите «Добавить как промежуточную остановку».')); },
+                    icon: const Icon(Icons.add_location_alt_outlined),
+                    label: Text(AppLocale.tr('Добавить остановку на карте')),
+                  ),
+                  const Divider(height: 20),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.schedule, color: Color(0xFF343434)),
+                    title: Text(AppLocale.tr('Время выезда'), style: TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text(_plannedDeparture == null ? AppLocale.tr('Сейчас') : _formatDeparture(_plannedDeparture!)),
+                    trailing: TextButton(
+                      onPressed: () => _openDepartureTime(refreshSheet),
+                      child: Text(AppLocale.tr('Изменить')),
+                    ),
+                  ),
+                  if (_plannedDeparture != null)
+                    Align(alignment: Alignment.centerRight, child: TextButton(onPressed: () { setState(() => _plannedDeparture = null); refreshSheet(() {}); }, child: Text(AppLocale.tr('Сбросить время')))),
+                  Text(AppLocale.tr('Выбранное время сохраняется как план. Оно пока не учитывается тестовым сервисом расчёта маршрута и пробок.'), style: TextStyle(fontSize: 11, color: Color(0xFF7B8792))),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFCC00),
+                      foregroundColor: const Color(0xFF171717),
+                      minimumSize: const Size.fromHeight(52),
+                    ),
+                    onPressed: _isBuildingRoute || (_destination == null && destinationController.text.trim().isEmpty)
+                        ? null
+                        : () {
+                            buildRouteAfterClose = true;
+                            Navigator.pop(sheetContext);
+                          },
+                    icon: _isBuildingRoute
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.alt_route),
+                    label: Text(AppLocale.tr('Построить маршрут'), style: TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    child: Text(AppLocale.tr('Готово без построения')),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      )))),
+    );
+    final destinationQuery = destinationController.text.trim();
+    final originQuery = originController.text.trim();
+    destinationController.dispose();
+    originController.dispose();
+    destinationFocusNode.dispose();
+    originFocusNode.dispose();
+    routeSheetExpanded.dispose();
+    if (searchOriginAfterClose && originQuery.isNotEmpty && mounted) {
+      _searchController.text = originQuery;
+      await _searchAddress(selectAsOrigin: true);
+    } else if (searchAfterClose && destinationQuery.isNotEmpty && mounted) {
+      _searchController.text = destinationQuery;
+      await _searchAddress();
+    }
+    if (buildRouteAfterClose && mounted) {
+      if (destinationQuery.isNotEmpty) {
+        // _searchAddress() builds the route after the destination is selected.
+        // Do not call _buildRoute() again here: that caused a duplicate route
+        // calculation and could reopen route-choice UI after the map was ready.
+        _searchController.text = destinationQuery;
+        await _searchAddress();
+      } else if (_destination != null) {
+        await _buildRoute();
+      }
+    }
+  }
+
+  Future<void> _openRouteMenu() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26))),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8))),
+            const SizedBox(height: 12),
+            Align(alignment: Alignment.centerLeft, child: Text(AppLocale.tr('Маршрут'), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800))),
+            _menuTile(sheetContext, Icons.edit_road_outlined, AppLocale.tr('Планирование маршрута'), () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
+            _menuTile(sheetContext, Icons.edit_location_alt_outlined, AppLocale.tr('Изменить маршрут'), () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
+            _menuTile(sheetContext, Icons.add_location_alt_outlined, AppLocale.tr('Добавить точку'), () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
+            _menuTile(sheetContext, Icons.alt_route, AppLocale.tr('Варианты маршрута'), () { Navigator.pop(sheetContext); _openRouteAlternatives(); }),
+            _menuTile(sheetContext, Icons.tune, AppLocale.tr('Параметры маршрута'), () { Navigator.pop(sheetContext); _openRoutePreferences(); }),
+            _menuTile(sheetContext, Icons.share_outlined, AppLocale.tr('Поделиться маршрутом'), () { Navigator.pop(sheetContext); _shareRoute(); }),
+            _menuTile(sheetContext, Icons.flag_outlined, AppLocale.tr('Сообщить об ошибке'), () { Navigator.pop(sheetContext); _reportRouteIssue(); }),
+            const Divider(height: 18),
+            _menuTile(sheetContext, Icons.place_outlined, AppLocale.tr('Мои места'), () { Navigator.pop(sheetContext); _openMyPlaces(); }),
+            _menuTile(sheetContext, Icons.layers_outlined, AppLocale.tr('Слои и офлайн-карты'), () { Navigator.pop(sheetContext); _openMapLayers(); }),
+            _menuTile(sheetContext, Icons.warning_amber_outlined, AppLocale.tr('События на дороге'), () { Navigator.pop(sheetContext); _openRoadEvents(); }),
+            _menuTile(sheetContext, Icons.settings_outlined, AppLocale.tr('Настройки'), () { Navigator.pop(sheetContext); _openSettings(); }),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _menuTile(BuildContext sheetContext, IconData icon, String title, VoidCallback onTap) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, color: const Color(0xFF555B63), size: 25),
+      title: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+      onTap: onTap,
+    );
+  }
+
+  String _routeSummary() {
+    if (_routeDistanceMeters == null || _routeDurationSeconds == null) {
+      return AppLocale.tr('Маршрут ещё не построен');
+    }
+    final km = (_routeDistanceMeters! / 1000).toStringAsFixed(1);
+    final minutes = (_routeDurationSeconds! / 60).round();
+    return '$km км · около $minutes мин';
+  }
+ 
+  Future<void> _openStationNetworks() async {
+    const networks = <String>[
+      'Газпромнефть Казахстан',
+      'Sinooil',
+      'Qazaq Oil',
+      'Gasenergy',
+      'Helios',
+      'TS',
+      'Royal Petrol',
+      'Compass',
+      'Другие АЗС',
+    ];
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('selected_station_networks');
+    final initial = saved == null ? networks.toSet() : saved.toSet();
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => StatefulBuilder(
+          builder: (pageContext, refresh) => Scaffold(
+            backgroundColor: const Color(0xFFFFFFFF),
+            appBar: AppBar(
+              title: Text(AppLocale.tr('Сети АЗС')),
+              backgroundColor: const Color(0xFFFFFFFF),
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    await prefs.setStringList('selected_station_networks', initial.toList());
+                    if (!pageContext.mounted) return;
+                    Navigator.pop(pageContext);
+                    final query = initial.isEmpty || initial.length == networks.length
+                        ? 'АЗС'
+                        : initial.where((name) => name != 'Другие АЗС').join(' OR ');
+                    _searchController.text = query.isEmpty ? 'АЗС' : query;
+                    _searchAddress();
+                  },
+                  child: Text(AppLocale.tr('Готово')),
+                ),
+              ],
+            ),
+            body: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+              children: [
+                Text(
+                  AppLocale.tr('Выбери сети, которые нужно учитывать при поиске заправок.'),
+                  style: TextStyle(color: Color(0xFF65717D), fontSize: 14),
+                ),
+                const SizedBox(height: 12),
+                ...networks.map((network) => Card(
+                  margin: const EdgeInsets.only(bottom: 7),
+                  color: Colors.white,
+                  child: CheckboxListTile(
+                    value: initial.contains(network),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    secondary: const Icon(Icons.local_gas_station_outlined, color: Color(0xFF343434)),
+                    title: Text(network),
+                    onChanged: (checked) => refresh(() {
+                      if (checked == true) {
+                        initial.add(network);
+                      } else {
+                        initial.remove(network);
+                      }
+                    }),
+                  ),
+                )),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () => refresh(() {
+                    if (initial.length == networks.length) {
+                      initial.clear();
+                    } else {
+                      initial
+                        ..clear()
+                        ..addAll(networks);
+                    }
+                  }),
+                  child: Text(AppLocale.tr(initial.length == networks.length ? 'Снять все отметки' : 'Выбрать все сети')),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  AppLocale.tr('Примечание: поиск использует названия сетей в OpenStreetMap. Если бренд не указан в данных карты, заправка может не попасть в отфильтрованный список.'),
+                  style: TextStyle(fontSize: 12, color: Color(0xFF7B8792)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _roundMapButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    Color iconColor = const Color(0xFF45484C),
+  }) {
+    return Material(
+      color: Colors.white,
+      elevation: 4,
+      shape: const CircleBorder(),
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: Icon(icon, color: iconColor, size: 28),
+      ),
+    );
+  }
+
+  Widget _mapBottomItem(IconData icon, String label, VoidCallback onTap, {bool selected = false}) {
+    final color = selected ? const Color(0xFFB88A00) : const Color(0xFF4B4E52);
+    return Expanded(
+      child: Tooltip(
+        message: label,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: SizedBox(
+            height: 58,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 23, color: color),
+                const SizedBox(height: 3),
+                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w800 : FontWeight.w500, color: color)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final markers = <Marker>[
+      if (_navigationActive && _instructionIndex < _instructions.length)
+        Marker(
+          point: _instructions[_instructionIndex].location,
+          width: 54,
+          height: 54,
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF169B55),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 5, offset: Offset(0, 2))],
+            ),
+            child: Icon(
+              _maneuverIcon(_instructions[_instructionIndex]),
+              color: Colors.white,
+              size: 29,
+            ),
+          ),
+        ),
+      if (_currentLocation != null)
+        Marker(
+          point: _currentLocation!,
+          width: 44,
+          height: 44,
+          child: Transform.rotate(
+            angle: _navigationActive ? 0 : (_gpsHeadingDegrees ?? 0) * math.pi / 180,
+            child: const Icon(Icons.navigation, color: Color(0xFF1769AA), size: 36),
+          ),
+        ),
+      ..._routeStops.asMap().entries.map((entry) => Marker(
+        point: entry.value,
+        width: 38,
+        height: 38,
+        child: CircleAvatar(
+          backgroundColor: const Color(0xFF343434),
+          child: Text('${entry.key + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+        ),
+      )),
+      if (_destination != null)
+        Marker(
+          point: _destination!,
+          width: 48,
+          height: 48,
+          child: const Icon(Icons.location_pin, color: Colors.red, size: 42),
+        ),
+    ];
+
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      backgroundColor: const Color(0xFFF3F6FA),
+      body: Stack(
+        children: [
+          if (_offlineTileProvider == null)
+            ml.MapLibreMap(
+              initialCameraPosition: ml.CameraPosition(
+                target: ml.LatLng(_shymkent.latitude, _shymkent.longitude),
+                zoom: 13,
+              ),
+              styleString: 'https://tiles.openfreemap.org/styles/liberty',
+              onMapCreated: _onMapLibreCreated,
+              onStyleLoadedCallback: _onMapLibreStyleLoaded,
+              onMapClick: (_, point) => _selectMapDestination(LatLng(point.latitude, point.longitude)),
+              onMapLongClick: (_, point) => _openPointMenu(LatLng(point.latitude, point.longitude)),
+              compassEnabled: false,
+              trackCameraPosition: true,
+              rotateGesturesEnabled: true,
+              tiltGesturesEnabled: true,
+              zoomGesturesEnabled: true,
+              scrollGesturesEnabled: true,
+              minMaxZoomPreference: const ml.MinMaxZoomPreference(3, 20),
+            )
+          else
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _shymkent,
+                initialZoom: 13,
+                onTap: (_, point) => _selectMapDestination(point),
+                onLongPress: (_, point) => _openPointMenu(point),
+              ),
+              children: [
+                TileLayer(tileProvider: _offlineTileProvider!),
+                if (_routePoints.isNotEmpty)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(points: _routePoints, strokeWidth: 7, color: const Color(0xFF2378C8)),
+                    ],
+                  ),
+                MarkerLayer(markers: markers),
+                const RichAttributionWidget(
+                  attributions: [TextSourceAttribution('© OpenStreetMap contributors')],
+                ),
+              ],
+            ),
+          Positioned(
+            top: 0,
+            right: 14,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Material(
+                  color: Colors.white,
+                  elevation: 5,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: _navigationActive ? null : _openRouteMenu,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(color: const Color(0xFF202020), width: 2.2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(_speedLimitKmh ?? '—', style: const TextStyle(fontSize: 25, height: 1, fontWeight: FontWeight.w900, color: Color(0xFF202020))),
+                          ),
+                          const Text('км/ч', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF343434))),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (!_navigationActive)
+            Positioned(
+              top: 0,
+              left: 12,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Material(
+                    color: Colors.white,
+                    elevation: 5,
+                    shape: const CircleBorder(),
+                    child: IconButton(
+                      tooltip: AppLocale.tr('Профиль'),
+                      onPressed: _openProfileMenu,
+                      icon: const Icon(Icons.person_outline, color: Color(0xFF343434)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (_navigationActive)
+            Positioned(
+              top: 0,
+              left: 68,
+              right: 76,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Material(
+                    color: const Color(0xF5FFFFFF),
+                    elevation: 4,
+                    borderRadius: BorderRadius.circular(13),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _maneuverIcon(_instructionIndex < _instructions.length ? _instructions[_instructionIndex] : null),
+                            size: 27,
+                            color: const Color(0xFF169B55),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _instructionIndex < _instructions.length
+                                      ? _instructions[_instructionIndex].text
+                                      : _localized('Продолжайте по маршруту', 'Бағыт бойынша жүре беріңіз', 'Continue on the route'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12, height: 1.1, fontWeight: FontWeight.w800),
+                                ),
+                                Text(
+                                  _distanceToNextManeuverMeters == null ? '—' : (_distanceToNextManeuverMeters! >= 1000 ? '${(_distanceToNextManeuverMeters! / 1000).toStringAsFixed(1)} км' : '${_distanceToNextManeuverMeters!.round()} м'),
+                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF626A73)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+                            padding: EdgeInsets.zero,
+                            tooltip: AppLocale.tr('Завершить навигацию'),
+                            onPressed: _finishNavigation,
+                            icon: const Icon(Icons.close, size: 18),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (_navigationActive)
+            Positioned(
+              left: 14,
+              bottom: 225,
+              child: Material(
+                color: Colors.white,
+                elevation: 4,
+                borderRadius: BorderRadius.circular(12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_currentSpeedKmh.round().toString(), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                      const Text('км/ч', style: TextStyle(fontSize: 10)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_navigationActive)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 8,
+              child: SafeArea(
+                top: false,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 7,
+                  borderRadius: BorderRadius.circular(18),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _routeDistanceMeters == null ? '— км' : '${(_routeDistanceMeters! / 1000).toStringAsFixed(1)} км',
+                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+                              ),
+                              Text(
+                                _routeDurationSeconds == null ? 'Время прибытия —' : 'Прибытие · ${TimeOfDay.fromDateTime(DateTime.now().add(Duration(seconds: _routeDurationSeconds!.round()))).format(context)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF626A73)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 112,
+                          height: 42,
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFCC00),
+                              foregroundColor: const Color(0xFF171717),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                            ),
+                            onPressed: _finishNavigation,
+                            child: Text(
+                              AppLocale.tr('Завершить'),
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.fade,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          Positioned(
+            bottom: _navigationActive ? 150 : (_routeReady ? 250 : 144),
+            right: 14,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _roundMapButton(
+                  icon: Icons.layers_outlined,
+                  tooltip: AppLocale.tr('Слои карты'),
+                  onPressed: _openMapLayers,
+                ),
+                const SizedBox(height: 10),
+                _roundMapButton(
+                  icon: Icons.add,
+                  tooltip: 'Приблизить карту',
+                  onPressed: () => _zoomMapBy(1),
+                ),
+                const SizedBox(height: 8),
+                _roundMapButton(
+                  icon: Icons.remove,
+                  tooltip: 'Отдалить карту',
+                  onPressed: () => _zoomMapBy(-1),
+                ),
+                const SizedBox(height: 8),
+                _roundMapButton(
+                  icon: Icons.explore_outlined,
+                  tooltip: AppLocale.tr('На север'),
+                  onPressed: () => _rotateMapCamera(0),
+                ),
+              ],
+            ),
+          ),
+          if (!_navigationActive && !_routeReady)
+            Positioned(
+              left: 14,
+              top: 124,
+              child: Material(
+                color: Colors.white,
+                elevation: 4,
+                shape: const CircleBorder(),
+                child: IconButton(
+                  tooltip: 'Парковки',
+                  onPressed: () {
+                    _searchController.text = 'парковка';
+                    _searchAddress();
+                  },
+                  icon: const Text('P', style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900, color: Color(0xFF1769AA))),
+                ),
+              ),
+            ),
+          Positioned(
+            left: 14,
+            top: _navigationActive ? null : 68,
+            bottom: _navigationActive ? 380 : null,
+            child: _roundMapButton(
+              icon: Icons.my_location,
+              tooltip: AppLocale.tr('Моё местоположение'),
+              iconColor: const Color(0xFF343434),
+              onPressed: _isLocating ? null : () => unawaited(_locateMe()),
+            ),
+          ),
+          if (_navigationActive && _message.isNotEmpty)
+            Positioned(
+              top: 0,
+              left: 14,
+              right: 14,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: IgnorePointer(
+                    child: Material(
+                      color: const Color(0xF2FFFFFF),
+                      elevation: 3,
+                      borderRadius: BorderRadius.circular(10),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        child: Text(
+                          _message,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            height: 1.15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (!_navigationActive && _message.isNotEmpty)
+            Positioned(
+              top: 84,
+              left: 14,
+              right: 14,
+              child: IgnorePointer(
+                child: Material(
+                  color: const Color(0xF2FFFFFF),
+                  elevation: 3,
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    child: Text(
+                      _message,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 11, height: 1.15, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (_routeReady && !_navigationActive && !_routeActionDismissed)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 76,
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xEEFFFFFF),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _routeSummary(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF555B63)),
+                      ),
+                    ),
+                    SizedBox(
+                      height: 38,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFFFFCC00),
+                          foregroundColor: const Color(0xFF171717),
+                          elevation: 5,
+                          padding: const EdgeInsets.symmetric(horizontal: 28),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                        ),
+                        onPressed: _startNavigation,
+                        child: Text(
+                          AppLocale.tr('Поехали'),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (!_navigationActive)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: -10,
+              child: SafeArea(
+                top: false,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 7,
+                  borderRadius: BorderRadius.circular(24),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                    child: Row(
+                      children: [
+                        _mapBottomItem(Icons.search, AppLocale.tr('Поиск'), _openSearchPanel),
+                        _mapBottomItem(Icons.alt_route, AppLocale.tr('Маршрут'), _openRouteMenu),
+                        _mapBottomItem(Icons.local_gas_station_outlined, AppLocale.tr('АЗС'), _openStationNetworks),
+                        _mapBottomItem(Icons.bookmark_border, AppLocale.tr('Избранное'), _openBookmarks),
+                        _mapBottomItem(Icons.settings_outlined, AppLocale.tr('Настройки'), _openSettings),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+        ],
+      ),
+    );
+  }
+}
+
+class NavigatorPreferencesScreen extends StatefulWidget {
+  const NavigatorPreferencesScreen({
+    super.key,
+    required this.onOpenSoundSettings,
+    required this.onOpenRoutePreferences,
+    required this.onOpenProfile,
+    required this.onVoiceChanged,
+  });
+
+  final Future<void> Function() onOpenSoundSettings;
+  final Future<void> Function() onOpenRoutePreferences;
+  final Future<void> Function() onOpenProfile;
+  final ValueChanged<bool> onVoiceChanged;
+
+  @override
+  State<NavigatorPreferencesScreen> createState() => _NavigatorPreferencesScreenState();
+}
+
+class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen> {
+  bool _voiceEnabled = true;
+  bool _avoidTolls = false;
+  bool _loading = true;
+  String _appLanguage = 'kk';
+
+  String get _appLanguageLabel => const {'ru': 'Русский', 'kk': 'Қазақша', 'en': 'English'}[_appLanguage] ?? 'Русский';
+
+  Future<void> _chooseAppLanguage() async {
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(AppLocale.tr('Язык приложения')),
+        children: [
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'ru'), child: Text(AppLocale.tr('Русский'))),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'kk'), child: Text(AppLocale.tr('Қазақша'))),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 'en'), child: Text(AppLocale.language == 'en' ? 'English' : 'English')),
+        ],
+      ),
+    );
+    if (selected == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('app_language', selected);
+    AppLocale.language = selected;
+    if (mounted) setState(() => _appLanguage = selected);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _voiceEnabled = (prefs.getInt('voice_mode') ?? 3) != 0;
+      _avoidTolls = prefs.getBool('avoid_tolls') ?? false;
+      _appLanguage = prefs.getString('app_language') ?? 'kk';
+      _loading = false;
+    });
+  }
+
+  Future<void> _setVoice(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    final mode = value ? 3 : 0;
+    await prefs.setInt('voice_mode', mode);
+    if (!mounted) return;
+    setState(() => _voiceEnabled = value);
+    widget.onVoiceChanged(value);
+  }
+
+  Future<void> _setAvoidTolls(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('avoid_tolls', value);
+    if (!mounted) return;
+    setState(() => _avoidTolls = value);
+  }
+
+  void _showAbout() {
+    showAboutDialog(
+      context: context,
+      applicationName: 'BAKE Navigator',
+      applicationLegalese: AppLocale.tr('Навигационное приложение BAKE.'),
+      children: [
+        Text(AppLocale.tr('Часть функций зависит от подключённых источников картографических и дорожных данных.')),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        title: Text(AppLocale.tr('Настройки')),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.volume_up_outlined),
+                  title: Text(AppLocale.tr('Голосовые подсказки')),
+                  value: _voiceEnabled,
+                  onChanged: _setVoice,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.record_voice_over_outlined),
+                  title: Text(AppLocale.pick('Язык и голос озвучки', 'Дауыс тілі мен дауысы', 'Voice language and voice')),
+                  subtitle: Text(AppLocale.pick('Казахский, русский или английский', 'Қазақша, орысша немесе ағылшынша', 'Kazakh, Russian or English')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onOpenSoundSettings,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.alt_route),
+                  title: Text(AppLocale.tr('Предпочтения маршрута')),
+                  subtitle: Text(AppLocale.tr('Быстрый')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onOpenRoutePreferences,
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.toll_outlined),
+                  title: Text(AppLocale.tr('Избегать платных дорог')),
+                  value: _avoidTolls,
+                  onChanged: _setAvoidTolls,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.straighten_outlined),
+                  title: Text(AppLocale.tr('Единицы измерения')),
+                  subtitle: Text(AppLocale.tr('км, м')),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.language_outlined),
+                  title: Text(AppLocale.tr('Язык приложения')),
+                  subtitle: Text(_appLanguageLabel),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _chooseAppLanguage,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.person_outline),
+                  title: Text(AppLocale.tr('Профиль')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onOpenProfile,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: Text(AppLocale.tr('О приложении')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: _showAbout,
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+    );
+  }
+}
+
+class NavigatorSettingsScreen extends StatefulWidget {
+  const NavigatorSettingsScreen({super.key});
+
+  @override
+  State<NavigatorSettingsScreen> createState() => _NavigatorSettingsScreenState();
+}
+
+class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
+  final _vehicleMake = TextEditingController();
+  final _vehicleModel = TextEditingController();
+  final _vehicleColor = TextEditingController();
+  final _vehiclePlate = TextEditingController();
+  bool _loading = true;
+  String? _offlineMapPath;
+  bool _importingOfflineMap = false;
+  double _voiceVolume = 1.0;
+  double _voiceRate = 0.48;
+  bool _avoidTolls = false;
+  bool _avoidUnpaved = false;
+
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    _vehicleMake.text = prefs.getString('vehicle_make') ?? '';
+    _vehicleModel.text = prefs.getString('vehicle_model') ?? '';
+    _vehicleColor.text = prefs.getString('vehicle_color') ?? '';
+    _vehiclePlate.text = prefs.getString('vehicle_plate') ?? '';
+    _offlineMapPath = prefs.getString('offline_map_path');
+    _voiceVolume = prefs.getDouble('voice_volume') ?? 1.0;
+    _voiceRate = prefs.getDouble('voice_rate') ?? 0.48;
+    _avoidTolls = prefs.getBool('avoid_tolls') ?? false;
+    _avoidUnpaved = prefs.getBool('avoid_unpaved') ?? false;
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _importOfflineMap() async {
+    if (_importingOfflineMap) return;
+    setState(() => _importingOfflineMap = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['mbtiles'],
+        allowMultiple: false,
+        withData: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final sourcePath = result.files.single.path;
+      if (sourcePath == null) {
+        throw Exception('Сначала сохраните файл карты в память телефона, затем выберите его.');
+      }
+      final source = File(sourcePath);
+      final directory = await getApplicationSupportDirectory();
+      final destination = File('${directory.path}/bake_offline_map.mbtiles');
+      if (source.absolute.path != destination.absolute.path) {
+        if (await destination.exists()) await destination.delete();
+        await source.copy(destination.path);
+      }
+      final validationProvider = MbTilesTileProvider.fromPath(path: destination.path);
+      validationProvider.dispose();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('offline_map_path', destination.path);
+      if (!mounted) return;
+      setState(() => _offlineMapPath = destination.path);
+      Navigator.of(context).pop(destination.path);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _importingOfflineMap = false);
+    }
+  }
+
+  Future<void> _removeOfflineMap() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('offline_map_path');
+    if (!mounted) return;
+    setState(() => _offlineMapPath = null);
+    Navigator.of(context).pop('__use_online_map__');
+  }
+
+  Future<void> _saveNavigationPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('voice_volume', _voiceVolume);
+    await prefs.setDouble('voice_rate', _voiceRate);
+    await prefs.setBool('avoid_tolls', _avoidTolls);
+    await prefs.setBool('avoid_unpaved', _avoidUnpaved);
+  }
+
+  Future<void> _saveVehicle() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('vehicle_make', _vehicleMake.text.trim());
+    await prefs.setString('vehicle_model', _vehicleModel.text.trim());
+    await prefs.setString('vehicle_color', _vehicleColor.text.trim());
+    await prefs.setString('vehicle_plate', _vehiclePlate.text.trim());
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppLocale.tr('Данные автомобиля сохранены на этом телефоне.'))),
+    );
+  }
+
+  @override
+  void dispose() {
+    _vehicleMake.dispose();
+    _vehicleModel.dispose();
+    _vehicleColor.dispose();
+    _vehiclePlate.dispose();
+    super.dispose();
+  }
+ 
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(AppLocale.tr('Настройки BAKE Navigator'))),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                const SizedBox(height: 4),
+                Text(AppLocale.tr('Автомобиль'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                Text(AppLocale.tr('Эти сведения сохраняются только на этом телефоне.')),
+                const SizedBox(height: 10),
+                TextField(controller: _vehicleMake, decoration: InputDecoration(labelText: AppLocale.tr('Марка автомобиля'))),
+                TextField(controller: _vehicleModel, decoration: InputDecoration(labelText: AppLocale.tr('Модель'))),
+                TextField(controller: _vehicleColor, decoration: InputDecoration(labelText: AppLocale.tr('Цвет'))),
+                TextField(controller: _vehiclePlate, decoration: InputDecoration(labelText: AppLocale.tr('Государственный номер'))),
+                const SizedBox(height: 12),
+                FilledButton.icon(onPressed: _saveVehicle, icon: const Icon(Icons.save_outlined), label: Text(AppLocale.tr('Сохранить'))),
+                const SizedBox(height: 22),
+                Text(AppLocale.tr('Голосовые подсказки'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('${AppLocale.tr('Громкость')} · ${(_voiceVolume * 100).round()}%'),
+                      Slider(
+                        value: _voiceVolume,
+                        min: 0,
+                        max: 1,
+                        divisions: 10,
+                        label: '${(_voiceVolume * 100).round()}%',
+                        onChanged: (value) {
+                          setState(() => _voiceVolume = value);
+                          unawaited(_saveNavigationPreferences());
+                        },
+                      ),
+                      Text('${AppLocale.tr('Скорость речи')} · ${_voiceRate.toStringAsFixed(2)}'),
+                      Slider(
+                        value: _voiceRate,
+                        min: 0.25,
+                        max: 0.75,
+                        divisions: 10,
+                        label: _voiceRate.toStringAsFixed(2),
+                        onChanged: (value) {
+                          setState(() => _voiceRate = value);
+                          _saveNavigationPreferences();
+                        },
+                      ),
+                      Text(AppLocale.tr('Изменения сохраняются на этом телефоне и применяются при следующем запуске навигатора.'), style: TextStyle(fontSize: 12, color: Colors.black54)),
+                    ]),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(AppLocale.tr('Параметры маршрута'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                Card(
+                  child: Column(children: [
+                    SwitchListTile(
+                      value: _avoidTolls,
+                      title: Text(AppLocale.tr('Избегать платных дорог')),
+                      onChanged: (value) {
+                        setState(() => _avoidTolls = value);
+                        _saveNavigationPreferences();
+                      },
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      value: _avoidUnpaved,
+                      title: Text(AppLocale.tr('Избегать грунтовых дорог')),
+                      onChanged: (value) {
+                        setState(() => _avoidUnpaved = value);
+                        _saveNavigationPreferences();
+                      },
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                      child: Text(AppLocale.tr('Фильтры сохраняются, но текущий тестовый сервис маршрутов OSRM пока не применяет их при расчёте.'), style: TextStyle(fontSize: 12, color: Colors.black54)),
+                    ),
+                  ]),
+                ),
+                const SizedBox(height: 20),
+                Text(AppLocale.tr('Офлайн-карты'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.map_outlined),
+                          title: Text(AppLocale.tr('Офлайн-карта')),
+                          subtitle: Text(AppLocale.tr(_offlineMapPath == null
+                              ? 'Готовый MBTiles-файл пока не подключён.'
+                              : 'Офлайн-карта подключена на этом устройстве.')),
+                        ),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _importingOfflineMap ? null : _importOfflineMap,
+                            icon: _importingOfflineMap
+                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                                : const Icon(Icons.file_open_outlined),
+                            label: Text(AppLocale.tr(_importingOfflineMap ? 'Импортируем…' : 'Импортировать MBTiles-карту')),
+                          ),
+                        ),
+                        if (_offlineMapPath != null)
+                          TextButton.icon(
+                            onPressed: _removeOfflineMap,
+                            icon: const Icon(Icons.cloud_outlined),
+                            label: Text(AppLocale.tr('Отключить офлайн-карту')),
+                          ),
+                        Text(
+                          AppLocale.tr('Исходный OSM PBF не является готовой MBTiles-картой. Для офлайн-режима нужны отдельно подготовленные тайлы.'),
+                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+}
+
+, caseSensitive: false).firstMatch(raw);
+        if (match == null) continue;
+        var value = double.parse(match.group(1)!);
+        if ((match.group(2) ?? '').toLowerCase() == 'mph') value *= 1.60934;
+        nearestDistance = distance;
+        foundLimit = value.round().toString();
+      }
+
+      if (!mounted) return;
+      setState(() => _speedLimitKmh = foundLimit);
+    } catch (_) {
+      // Keep the last known value; never invent a speed limit when data is unavailable.
+    } finally {
+      _speedLimitLookupInProgress = false;
+    }
   }
 
   void _updateNavigationProgress(LatLng position) {
