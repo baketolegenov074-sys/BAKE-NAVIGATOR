@@ -3486,6 +3486,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final activeInstruction = _navigationActive && _instructionIndex < _instructions.length
+        ? _instructions[_instructionIndex]
+        : null;
+    final maneuverDistanceMeters = activeInstruction == null || _currentLocation == null
+        ? null
+        : Geolocator.distanceBetween(
+            _currentLocation!.latitude,
+            _currentLocation!.longitude,
+            activeInstruction.location.latitude,
+            activeInstruction.location.longitude,
+          );
+    final maneuverDistanceLabel = maneuverDistanceMeters == null
+        ? '—'
+        : maneuverDistanceMeters >= 1000
+            ? '${(maneuverDistanceMeters / 1000).toStringAsFixed(1)} км'
+            : '${maneuverDistanceMeters.round()} м';
     final markers = <Marker>[
       if (_routeOrigin != null && !_navigationActive)
         Marker(
@@ -3494,36 +3510,48 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           height: 46,
           child: const Icon(Icons.trip_origin, color: Color(0xFF269B68), size: 34),
         ),
-      if (_navigationActive && _instructionIndex < _instructions.length)
+      if (activeInstruction != null)
         Marker(
-          point: _instructions[_instructionIndex].location,
-          width: 58,
-          height: 58,
+          point: activeInstruction.location,
+          width: 66,
+          height: 66,
           alignment: Alignment.center,
           child: Container(
             decoration: BoxDecoration(
-              color: const Color(0xFF20A568),
+              color: const Color(0xFFFFCC00),
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 3),
+              border: Border.all(color: Colors.white, width: 4),
               boxShadow: const [
-                BoxShadow(color: Color(0x55000000), blurRadius: 8, offset: Offset(0, 3)),
+                BoxShadow(color: Color(0x55000000), blurRadius: 10, offset: Offset(0, 4)),
               ],
             ),
             child: Icon(
-              _maneuverIcon(_instructions[_instructionIndex]),
-              color: Colors.white,
-              size: 31,
+              _maneuverIcon(activeInstruction),
+              color: const Color(0xFF17212B),
+              size: 38,
             ),
           ),
         ),
       if (_currentLocation != null)
         Marker(
           point: _currentLocation!,
-          width: 44,
-          height: 44,
+          width: 58,
+          height: 58,
+          alignment: Alignment.center,
           child: Transform.rotate(
             angle: (_gpsHeadingDegrees ?? 0) * math.pi / 180,
-            child: const Icon(Icons.navigation, color: Color(0xFF1769AA), size: 36),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF1769AA), width: 3),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x55000000), blurRadius: 9, offset: Offset(0, 3)),
+                ],
+              ),
+              padding: const EdgeInsets.all(5),
+              child: const Icon(Icons.navigation_rounded, color: Color(0xFF1769AA), size: 39),
+            ),
           ),
         ),
       ..._routeStops.asMap().entries.map((entry) => Marker(
@@ -3538,9 +3566,30 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (_destination != null)
         Marker(
           point: _destination!,
-          width: 48,
-          height: 48,
-          child: const Icon(Icons.location_pin, color: Colors.red, size: 42),
+          width: 64,
+          height: 68,
+          alignment: Alignment.bottomCenter,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              const Positioned(
+                bottom: 0,
+                child: Icon(Icons.location_on_rounded, color: Color(0xFF1769AA), size: 62),
+              ),
+              const Positioned(
+                top: 2,
+                child: Icon(Icons.flag_rounded, color: Color(0xFFFFCC00), size: 31),
+              ),
+              Positioned(
+                bottom: 7,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                ),
+              ),
+            ],
+          ),
         ),
     ];
 
@@ -3649,7 +3698,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       padding: const EdgeInsets.all(14),
                       child: Row(
                         children: [
-                          const Icon(Icons.turn_right, size: 34, color: Color(0xFF343434)),
+                          Icon(
+                            activeInstruction == null ? Icons.navigation_rounded : _maneuverIcon(activeInstruction),
+                            size: 46,
+                            color: const Color(0xFF1769AA),
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -3666,7 +3719,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                 ),
                                 if (_instructionIndex < _instructions.length) ...[
                                   Text(
-                                    'Следующий манёвр · ${_instructions[_instructionIndex].distanceMeters.round()} м',
+                                    'Следующий манёвр · $maneuverDistanceLabel',
                                     style: const TextStyle(fontSize: 12, color: Color(0xFF626A73)),
                                   ),
                                   _buildLaneGuidance(_instructions[_instructionIndex].lanes),
