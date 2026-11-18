@@ -981,8 +981,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         // The active maneuver is shown by the existing live guidance cue, so only future
         // maneuvers are marked here while navigation is running.
         if (visibleRoutePoints.length > 1) {
-          // Straight-ahead arrows repeat along long route sections. Their
-          // spacing is based on actual traveled distance, not vertex count.
+          // Floating direction cues sit beside the route ribbon, not on top
+          // of it. Keep straight-ahead cues sparse and reserve turn cues for
+          // actual maneuver locations returned by the routing engine.
           var distanceSinceArrow = 0.0;
           for (var i = 1; i < visibleRoutePoints.length - 1; i++) {
             final previous = visibleRoutePoints[i - 1];
@@ -991,47 +992,51 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               previous.latitude, previous.longitude,
               current.latitude, current.longitude,
             );
-            if (distanceSinceArrow < 180) continue;
+            if (distanceSinceArrow < 650) continue;
             distanceSinceArrow = 0;
             final nearTurn = _instructions.any((instruction) =>
                 _isRouteManeuverMarker(instruction) &&
                 Geolocator.distanceBetween(
                   current.latitude, current.longitude,
                   instruction.location.latitude, instruction.location.longitude,
-                ) < 55);
+                ) < 90);
             if (nearTurn) continue;
             final bearing = Geolocator.bearingBetween(
               current.latitude, current.longitude,
               visibleRoutePoints[i + 1].latitude,
               visibleRoutePoints[i + 1].longitude,
             );
-            await controller.addFill(ml.FillOptions(
-              geometry: [_directionArrowPolygon(
-                current, bearing, lengthMeters: 17, halfWidthMeters: 7,
-              )],
-              fillColor: '#0878F9',
-              fillOpacity: 1,
-              fillOutlineColor: '#FFFFFF',
+            final sidePoint = _offsetRouteCue(current, bearing, 13);
+            await controller.addSymbol(ml.SymbolOptions(
+              geometry: _toMapLibrePoint(sidePoint),
+              textField: '↑',
+              textSize: 27,
+              textColor: '#0878F9',
+              textHaloColor: '#FFFFFF',
+              textHaloWidth: 3,
+              textHaloBlur: 1,
+              textAllowOverlap: true,
+              textIgnorePlacement: true,
             ));
           }
 
-          // Turn arrows stay attached to the routing engine's exact maneuver
-          // coordinates and use the outgoing route direction.
           for (var i = 0; i < _instructions.length; i++) {
             final instruction = _instructions[i];
             if (!_isRouteManeuverMarker(instruction)) continue;
             if (_navigationActive && i <= _instructionIndex) continue;
-            final maneuverBearing = _routeBearingAt(instruction.location);
-            await controller.addFill(ml.FillOptions(
-              geometry: [_directionArrowPolygon(
-                instruction.location,
-                maneuverBearing,
-                lengthMeters: 22,
-                halfWidthMeters: 8,
-              )],
-              fillColor: '#005FE8',
-              fillOpacity: 1,
-              fillOutlineColor: '#FFFFFF',
+            final bearing = _routeBearingAt(instruction.location);
+            final sidePoint = _offsetRouteCue(instruction.location, bearing, 16);
+            final glyph = _maneuverArrowGlyph(instruction);
+            await controller.addSymbol(ml.SymbolOptions(
+              geometry: _toMapLibrePoint(sidePoint),
+              textField: glyph,
+              textSize: 29,
+              textColor: '#075FE4',
+              textHaloColor: '#FFFFFF',
+              textHaloWidth: 4,
+              textHaloBlur: 1,
+              textAllowOverlap: true,
+              textIgnorePlacement: true,
             ));
           }
         }
@@ -1103,7 +1108,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         for (var i = 1; i < flagPolygons.length; i++) {
           await controller.addFill(ml.FillOptions(
             geometry: [flagPolygons[i]],
-            fillColor: i.isEven ? '#FFFFFF' : '#202124',
+            fillColor: i.isEven ? '#FFFFFF' : '#E53935',
             fillOpacity: 1,
             fillOutlineColor: '#FFFFFF',
           ));
@@ -1977,13 +1982,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       return ml.LatLng(latitude, longitude);
     }
 
-    // The pole rises from the destination point; the checkered cloth projects right.
+    // Tall red finish pole, anchored at the destination, with a visible base.
     final pole = <ml.LatLng>[
-      offset(-1.2, 0),
-      offset(1.2, 0),
-      offset(1.2, 29),
-      offset(-1.2, 29),
-      offset(-1.2, 0),
+      offset(-1.5, 0),
+      offset(1.5, 0),
+      offset(1.5, 31),
+      offset(-1.5, 31),
+      offset(-1.5, 0),
+    ];
+    final base = <ml.LatLng>[
+      offset(-5.5, 0),
+      offset(5.5, 0),
+      offset(4.2, 2.5),
+      offset(-4.2, 2.5),
+      offset(-5.5, 0),
     ];
     final cells = <List<ml.LatLng>>[];
     const columns = 4;
@@ -2005,7 +2017,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ]);
       }
     }
-    return <List<ml.LatLng>>[pole, ...cells];
+    return <List<ml.LatLng>>[pole, base, ...cells];
+  }
+
+  LatLng _offsetRouteCue(LatLng point, double bearingDegrees, double sideMeters) {
+    final radians = bearingDegrees * math.pi / 180;
+    // Place the cue consistently on the right-hand side of the route.
+    final east = math.cos(radians) * sideMeters;
+    final north = -math.sin(radians) * sideMeters;
+    final latitude = point.latitude + north / 111320.0;
+    final longitudeScale =
+        111320.0 * math.cos(point.latitude * math.pi / 180);
+    final longitude = point.longitude + east / math.max(1.0, longitudeScale);
+    return LatLng(latitude, longitude);
   }
 
   // Build a map-native triangular arrow from geographic coordinates. This does
