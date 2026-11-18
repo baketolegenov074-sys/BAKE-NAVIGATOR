@@ -898,18 +898,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           }
         }
 
-        // Show the route start even when it was taken automatically from GPS.
+        // Show the route start as a direction arrow instead of a static green dot.
         final routeStart = _routeOrigin ??
             (_routePoints.length > 1 ? _routePoints.first : null);
         if (routeStart != null && _routePoints.length > 1) {
-          await controller.addCircle(ml.CircleOptions(
+          final routeStartBearing = Geolocator.bearingBetween(
+            _routePoints.first.latitude,
+            _routePoints.first.longitude,
+            _routePoints[1].latitude,
+            _routePoints[1].longitude,
+          );
+          await controller.addSymbol(ml.SymbolOptions(
             geometry: _toMapLibrePoint(routeStart),
-            circleRadius: 10,
-            circleColor: '#269B68',
-            circleOpacity: 1,
-            circleStrokeColor: '#FFFFFF',
-            circleStrokeWidth: 3,
-            circleStrokeOpacity: 1,
+            textField: '➤',
+            textSize: 25,
+            textColor: '#2378C8',
+            textHaloColor: '#FFFFFF',
+            textHaloWidth: 3,
+            textRotate: routeStartBearing,
           ));
         }
       if (_currentLocation != null) {
