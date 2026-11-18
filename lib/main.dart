@@ -862,41 +862,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         await controller.clearSymbols();
         await controller.clearCircles();
 
-        // Place direction arrows at regular intervals along the route geometry.
-        // These are separate from the GPS heading marker and follow the route itself.
+        // Place direction indicators at the route service's actual maneuver coordinates.
+        // The active maneuver is shown by the existing live guidance cue, so only future
+        // maneuvers are marked here while navigation is running.
         if (visibleRoutePoints.length > 1) {
-          const arrowSpacingMeters = 350.0;
-          var distanceUntilNextArrow = arrowSpacingMeters;
-          for (var i = 0; i < visibleRoutePoints.length - 1; i++) {
-            final a = visibleRoutePoints[i];
-            final b = visibleRoutePoints[i + 1];
-            final segmentMeters = Geolocator.distanceBetween(
-              a.latitude, a.longitude, b.latitude, b.longitude,
-            );
-            if (segmentMeters <= 0) continue;
-            var travelledOnSegment = 0.0;
-            while (travelledOnSegment + distanceUntilNextArrow <= segmentMeters) {
-              travelledOnSegment += distanceUntilNextArrow;
-              final fraction = travelledOnSegment / segmentMeters;
-              final arrowPoint = LatLng(
-                a.latitude + (b.latitude - a.latitude) * fraction,
-                a.longitude + (b.longitude - a.longitude) * fraction,
-              );
-              final bearing = Geolocator.bearingBetween(
-                a.latitude, a.longitude, b.latitude, b.longitude,
-              );
-              await controller.addSymbol(ml.SymbolOptions(
-                geometry: _toMapLibrePoint(arrowPoint),
-                textField: '➤',
-                textSize: 22,
-                textColor: '#2378C8',
-                textHaloColor: '#FFFFFF',
-                textHaloWidth: 3,
-                textRotate: bearing,
-              ));
-              distanceUntilNextArrow = arrowSpacingMeters;
-            }
-            distanceUntilNextArrow -= segmentMeters - travelledOnSegment;
+          for (var i = 0; i < _instructions.length; i++) {
+            final instruction = _instructions[i];
+            if (!_isRouteManeuverMarker(instruction)) continue;
+            if (_navigationActive && i <= _instructionIndex) continue;
+            await controller.addSymbol(ml.SymbolOptions(
+              geometry: _toMapLibrePoint(instruction.location),
+              textField: _maneuverArrowGlyph(instruction),
+              textSize: 24,
+              textColor: '#2378C8',
+              textHaloColor: '#FFFFFF',
+              textHaloWidth: 3,
+              textRotate: 0,
+            ));
           }
         }
 
@@ -1813,6 +1795,50 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
 
+  bool _isRouteManeuverMarker(RouteInstruction instruction) {
+    const maneuverTypes = <String>{
+      'turn',
+      'fork',
+      'merge',
+      'on ramp',
+      'off ramp',
+      'end of road',
+      'roundabout',
+      'rotary',
+      'roundabout turn',
+      'exit roundabout',
+      'exit rotary',
+    };
+    return maneuverTypes.contains(instruction.maneuverType.trim().toLowerCase());
+  }
+
+  String _maneuverArrowGlyph(RouteInstruction instruction) {
+    final type = instruction.maneuverType.trim().toLowerCase();
+    final modifier = instruction.maneuverModifier.trim().toLowerCase();
+    if (type.contains('roundabout') || type == 'rotary') return '↻';
+    switch (modifier) {
+      case 'slight left':
+        return '↖';
+      case 'left':
+        return '↰';
+      case 'sharp left':
+      case 'uturn':
+      case 'uturn left':
+        return '↶';
+      case 'slight right':
+        return '↗';
+      case 'right':
+        return '↱';
+      case 'sharp right':
+      case 'uturn right':
+        return '↷';
+      case 'straight':
+        return '↑';
+      default:
+        return '➤';
+    }
+  }
+
   IconData _maneuverIcon(RouteInstruction? instruction) {
     if (instruction == null) return Icons.navigation;
     final modifier = instruction.maneuverModifier.trim().toLowerCase();
@@ -2257,24 +2283,28 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   List<Marker> _buildOfflineRouteArrowMarkers(List<LatLng> points) {
-    if (points.length < 2) return <Marker>[];
-    const spacing = 350.0;
+    if (points.length < 2 || _instructions.isEmpty) return <Marker>[];
     final result = <Marker>[];
-    var untilNext = spacing;
-    for (var i = 0; i < points.length - 1; i++) {
-      final a = points[i], b = points[i + 1];
-      final segment = Geolocator.distanceBetween(a.latitude,a.longitude,b.latitude,b.longitude);
-      if (segment <= 0) continue;
-      var travelled = 0.0;
-      while (travelled + untilNext <= segment) {
-        travelled += untilNext;
-        final f = travelled / segment;
-        final p = LatLng(a.latitude+(b.latitude-a.latitude)*f,a.longitude+(b.longitude-a.longitude)*f);
-        final bearing = Geolocator.bearingBetween(a.latitude,a.longitude,b.latitude,b.longitude);
-        result.add(Marker(point:p,width:26,height:26,child:Transform.rotate(angle:bearing*math.pi/180,child:const Icon(Icons.navigation,color:Color(0xCC2378C8),size:21))));
-        untilNext = spacing;
-      }
-      untilNext -= segment - travelled;
+    for (var i = 0; i < _instructions.length; i++) {
+      final instruction = _instructions[i];
+      if (!_isRouteManeuverMarker(instruction)) continue;
+      if (_navigationActive && i <= _instructionIndex) continue;
+      result.add(Marker(
+        point: instruction.location,
+        width: 34,
+        height: 34,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFF2378C8), width: 2),
+            boxShadow: const [
+              BoxShadow(color: Color(0x33000000), blurRadius: 4, offset: Offset(0, 1)),
+            ],
+          ),
+          child: Icon(_maneuverIcon(instruction), color: const Color(0xFF2378C8), size: 21),
+        ),
+      ));
     }
     return result;
   }
