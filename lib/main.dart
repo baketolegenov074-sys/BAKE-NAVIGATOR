@@ -861,6 +861,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         }
         await controller.clearSymbols();
         await controller.clearCircles();
+        await controller.clearFills();
 
         // Place direction indicators at the route service's actual maneuver coordinates.
         // The active maneuver is shown by the existing live guidance cue, so only future
@@ -870,14 +871,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             final instruction = _instructions[i];
             if (!_isRouteManeuverMarker(instruction)) continue;
             if (_navigationActive && i <= _instructionIndex) continue;
-            await controller.addSymbol(ml.SymbolOptions(
-              geometry: _toMapLibrePoint(instruction.location),
-              textField: _maneuverArrowGlyph(instruction),
-              textSize: 24,
-              textColor: '#2378C8',
-              textHaloColor: '#FFFFFF',
-              textHaloWidth: 3,
-              textRotate: 0,
+            final maneuverBearing = _routeBearingAt(instruction.location);
+            await controller.addFill(ml.FillOptions(
+              geometry: [_directionArrowPolygon(
+                instruction.location,
+                maneuverBearing,
+                lengthMeters: 13,
+                halfWidthMeters: 5,
+              )],
+              fillColor: '#2378C8',
+              fillOpacity: 1,
+              fillOutlineColor: '#FFFFFF',
             ));
           }
         }
@@ -891,14 +895,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             _routePoints[1].latitude,
             _routePoints[1].longitude,
           );
-          await controller.addSymbol(ml.SymbolOptions(
-            geometry: _toMapLibrePoint(routeStart),
-            textField: '➤',
-            textSize: 25,
-            textColor: '#2378C8',
-            textHaloColor: '#FFFFFF',
-            textHaloWidth: 3,
-            textRotate: routeStartBearing,
+          await controller.addFill(ml.FillOptions(
+            geometry: [_directionArrowPolygon(
+              routeStart,
+              routeStartBearing,
+              lengthMeters: 18,
+              halfWidthMeters: 7,
+            )],
+            fillColor: '#2378C8',
+            fillOpacity: 1,
+            fillOutlineColor: '#FFFFFF',
           ));
         }
       if (_currentLocation != null && _navigationActive) {
@@ -909,26 +915,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ));
       }
       if (_currentLocation != null) {
-        // Draw GPS position as a native MapLibre circle, not a text glyph.
-        // Text symbols depend on font glyph availability in the active map style.
-        await controller.addCircle(ml.CircleOptions(
-          geometry: _toMapLibrePoint(_currentLocation!),
-          circleRadius: 9,
-          circleColor: '#1769AA',
-          circleOpacity: 1,
-          circleStrokeColor: '#FFFFFF',
-          circleStrokeWidth: 3,
-          circleStrokeOpacity: 1,
-        ));
-        // Direction arrow above the GPS dot on the online MapLibre map.
-        await controller.addSymbol(ml.SymbolOptions(
-          geometry: _toMapLibrePoint(_currentLocation!),
-          textField: '▲',
-          textSize: 27,
-          textColor: '#1769AA',
-          textHaloColor: '#FFFFFF',
-          textHaloWidth: 3,
-          textRotate: _gpsHeadingDegrees ?? 0,
+        // Draw the live GPS position as a filled blue direction arrow.
+        // A native polygon avoids text-glyph/font dependencies and replaces the old dot.
+        final gpsBearing = _gpsHeadingDegrees ??
+            (_routePoints.length > 1 ? _routeBearingAt(_currentLocation!) : 0.0);
+        await controller.addFill(ml.FillOptions(
+          geometry: [_directionArrowPolygon(
+            _currentLocation!,
+            gpsBearing,
+            lengthMeters: 21,
+            halfWidthMeters: 8,
+          )],
+          fillColor: '#1769AA',
+          fillOpacity: 1,
+          fillOutlineColor: '#FFFFFF',
         ));
       }
       for (var i = 0; i < _routeStops.length; i++) {
@@ -961,13 +961,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (controller != null && _mapLibreStyleReady &&
           _offlineTileProvider == null && point != null) {
         try {
-          await controller.addSymbol(ml.SymbolOptions(
-            geometry: _toMapLibrePoint(point),
-            textField: '●',
-            textSize: 28,
-            textColor: '#1769AA',
-            textHaloColor: '#FFFFFF',
-            textHaloWidth: 3,
+          final bearing = _gpsHeadingDegrees ??
+              (_routePoints.length > 1 ? _routeBearingAt(point) : 0.0);
+          await controller.addFill(ml.FillOptions(
+            geometry: [_directionArrowPolygon(
+              point,
+              bearing,
+              lengthMeters: 21,
+              halfWidthMeters: 8,
+            )],
+            fillColor: '#1769AA',
+            fillOpacity: 1,
+            fillOutlineColor: '#FFFFFF',
           ));
         } catch (fallbackError, fallbackStackTrace) {
           debugPrint('BAKE Navigator: GPS marker fallback failed: $fallbackError');
@@ -1794,6 +1799,71 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
 
+
+  // Build a map-native triangular arrow from geographic coordinates. This does
+  // not depend on glyphs in the online map style, so it remains visible offline/online.
+  List<ml.LatLng> _directionArrowPolygon(
+    LatLng center,
+    double bearingDegrees, {
+    required double lengthMeters,
+    required double halfWidthMeters,
+  }) {
+    final radians = bearingDegrees * math.pi / 180;
+    final forwardEast = math.sin(radians);
+    final forwardNorth = math.cos(radians);
+    final rightEast = math.cos(radians);
+    final rightNorth = -math.sin(radians);
+    final rearDistance = lengthMeters * 0.58;
+
+    ml.LatLng offset(double eastMeters, double northMeters) {
+      final latitude = center.latitude + northMeters / 111320.0;
+      final longitudeScale =
+          111320.0 * math.cos(center.latitude * math.pi / 180);
+      final longitude = center.longitude +
+          eastMeters / math.max(1.0, longitudeScale);
+      return ml.LatLng(latitude, longitude);
+    }
+
+    final tip = offset(
+      forwardEast * lengthMeters,
+      forwardNorth * lengthMeters,
+    );
+    final leftBase = offset(
+      -forwardEast * rearDistance - rightEast * halfWidthMeters,
+      -forwardNorth * rearDistance - rightNorth * halfWidthMeters,
+    );
+    final rightBase = offset(
+      -forwardEast * rearDistance + rightEast * halfWidthMeters,
+      -forwardNorth * rearDistance + rightNorth * halfWidthMeters,
+    );
+    return <ml.LatLng>[tip, leftBase, rightBase, tip];
+  }
+
+  double _routeBearingAt(LatLng point) {
+    if (_routePoints.length < 2) return _gpsHeadingDegrees ?? 0.0;
+    var nearestIndex = 0;
+    var nearestDistance = double.infinity;
+    for (var i = 0; i < _routePoints.length; i++) {
+      final routePoint = _routePoints[i];
+      final distance = Geolocator.distanceBetween(
+        point.latitude,
+        point.longitude,
+        routePoint.latitude,
+        routePoint.longitude,
+      );
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = i;
+      }
+    }
+    final segmentIndex = math.min(nearestIndex, _routePoints.length - 2);
+    return Geolocator.bearingBetween(
+      _routePoints[segmentIndex].latitude,
+      _routePoints[segmentIndex].longitude,
+      _routePoints[segmentIndex + 1].latitude,
+      _routePoints[segmentIndex + 1].longitude,
+    );
+  }
 
   bool _isRouteManeuverMarker(RouteInstruction instruction) {
     const maneuverTypes = <String>{
@@ -4157,7 +4227,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           width: 44,
           height: 44,
           child: Transform.rotate(
-            angle: _navigationActive ? 0 : (_gpsHeadingDegrees ?? 0) * math.pi / 180,
+            angle: (_gpsHeadingDegrees ??
+              (_routePoints.length > 1 ? _routeBearingAt(_currentLocation!) : 0.0)) *
+              math.pi / 180,
             child: const Icon(Icons.navigation, color: Color(0xFF1769AA), size: 36),
           ),
         ),
