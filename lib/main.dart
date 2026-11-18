@@ -1856,7 +1856,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         nearestIndex = i;
       }
     }
-    final segmentIndex = math.min(nearestIndex, _routePoints.length - 2);
+    final segmentIndex = math.min(nearestIndex, _routePoints.length - 2).toInt();
     return Geolocator.bearingBetween(
       _routePoints[segmentIndex].latitude,
       _routePoints[segmentIndex].longitude,
