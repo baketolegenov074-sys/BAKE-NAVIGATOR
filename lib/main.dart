@@ -3971,41 +3971,42 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _openCameraAlertsPage() async {
     if (!mounted) return;
+    var alerts = <RoadAlert>[];
+    var loading = true;
+    String? error;
+    late StateSetter pageRefresh;
+
+    Future<void> loadAlerts() async {
+      pageRefresh(() {
+        loading = true;
+        error = null;
+      });
+      try {
+        final point = _currentLocation ?? _mapCameraCenter;
+        final result = await _roadAlertService.fetchNearby(
+          point,
+          radiusMeters: 3000,
+        );
+        if (!mounted) return;
+        pageRefresh(() {
+          alerts = result;
+          loading = false;
+        });
+      } catch (exception) {
+        if (!mounted) return;
+        pageRefresh(() {
+          error = exception.toString().replaceFirst('Exception: ', '');
+          loading = false;
+        });
+      }
+    }
+
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (pageContext) => StatefulBuilder(
           builder: (pageContext, refresh) {
-            var alerts = <RoadAlert>[];
-            var loading = true;
-            String? error;
-
-            Future<void> loadAlerts() async {
-              refresh(() {
-                loading = true;
-                error = null;
-              });
-              try {
-                final point = _currentLocation ?? _mapCameraCenter;
-                final result = await _roadAlertService.fetchNearby(
-                  point,
-                  radiusMeters: 3000,
-                );
-                if (!pageContext.mounted) return;
-                refresh(() {
-                  alerts = result;
-                  loading = false;
-                });
-              } catch (exception) {
-                if (!pageContext.mounted) return;
-                refresh(() {
-                  error = exception.toString().replaceFirst('Exception: ', '');
-                  loading = false;
-                });
-              }
-            }
-
+            pageRefresh = refresh;
             if (loading && alerts.isEmpty && error == null) {
-              // The first lookup starts after the page has been built.
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (pageContext.mounted && loading) {
                   unawaited(loadAlerts());
