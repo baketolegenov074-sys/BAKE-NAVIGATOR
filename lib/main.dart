@@ -1892,17 +1892,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
     if (!mounted) return false;
 
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      setState(() => _message = AppLocale.pick(
-        'Для фоновой навигации разрешите доступ к местоположению в настройках приложения.',
-        'Фондық навигация үшін қолданба баптауларында орналасқан жерге рұқсат беріңіз.',
-        'Allow location access in app settings to use background navigation.',
-      ));
-      return false;
-    }
-
     if (permission == LocationPermission.always) return true;
+
+    // Both a foreground-only grant and deniedForever require the user to
+    // visit Android app settings to enable "Allow all the time".
 
     final openSettings = await showDialog<bool>(
       context: context,
