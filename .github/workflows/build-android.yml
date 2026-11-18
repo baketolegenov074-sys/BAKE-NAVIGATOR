@@ -6,6 +6,7 @@ on:
     branches:
       - navigator-ui-work
       - valhalla-bridge-prep
+      - fix/background-location-permission
 
 permissions:
   contents: read
