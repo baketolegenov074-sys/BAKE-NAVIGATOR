@@ -889,6 +889,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _moveMapCamera(currentLocation, 16);
     }
     if (_routePoints.length > 1) _fitMapCamera(_routePoints);
+    _applyMapViewMode();
   }
 
   Future<void> _syncMapLibreAnnotations({bool updateRoute = false}) async {
