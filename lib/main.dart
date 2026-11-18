@@ -473,6 +473,16 @@ class AppLocale {
   static String tr(String russian) => _translations[language]?[russian] ?? russian;
 }
 
+class RouteLane {
+  const RouteLane({
+    required this.indications,
+    required this.valid,
+  });
+
+  final List<String> indications;
+  final bool valid;
+}
+
 class RouteInstruction {
   const RouteInstruction({
     required this.location,
@@ -480,12 +490,14 @@ class RouteInstruction {
     required this.distanceMeters,
     required this.maneuverType,
     required this.modifier,
+    required this.lanes,
   });
   final LatLng location;
   final String text;
   final double distanceMeters;
   final String maneuverType;
   final String modifier;
+  final List<RouteLane> lanes;
 }
 
 class NavigatorScreen extends StatefulWidget {
@@ -1419,6 +1431,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     return '$action$road';
   }
 
+  List<RouteLane> _readLanes(Map<String, dynamic> step) {
+    final intersections = step['intersections'] as List<dynamic>? ?? [];
+    if (intersections.isEmpty) return const [];
+
+    // OSRM documents the first intersection as the maneuver intersection.
+    final intersection = intersections.first as Map<String, dynamic>;
+    final laneValues = intersection['lanes'] as List<dynamic>? ?? [];
+    return laneValues.map((value) {
+      final lane = value as Map<String, dynamic>;
+      final indications = (lane['indications'] as List<dynamic>? ?? [])
+          .map((item) => item.toString())
+          .toList();
+      final validValue = lane['valid'];
+      final valid = validValue == true || validValue.toString() == 'true';
+      return RouteLane(indications: indications, valid: valid);
+    }).toList();
+  }
+
   List<RouteInstruction> _readInstructions(Map<String, dynamic> route) {
     final result = <RouteInstruction>[];
     final legs = route['legs'] as List<dynamic>? ?? [];
@@ -1439,6 +1469,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           distanceMeters: (step['distance'] as num?)?.toDouble() ?? 0,
           maneuverType: maneuver['type']?.toString() ?? '',
           modifier: maneuver['modifier']?.toString() ?? '',
+          lanes: _readLanes(step),
         ));
       }
     }
@@ -3344,6 +3375,78 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
   }
 
+  IconData _laneIndicationIcon(String indication) {
+    switch (indication) {
+      case 'left':
+        return Icons.turn_left;
+      case 'slight left':
+        return Icons.turn_slight_left;
+      case 'sharp left':
+        return Icons.turn_sharp_left;
+      case 'right':
+        return Icons.turn_right;
+      case 'slight right':
+        return Icons.turn_slight_right;
+      case 'sharp right':
+        return Icons.turn_sharp_right;
+      case 'uturn':
+        return Icons.u_turn_left;
+      case 'straight':
+      case 'none':
+      default:
+        return Icons.arrow_upward;
+    }
+  }
+
+  Widget _buildLaneGuidance(List<RouteLane> lanes) {
+    if (lanes.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Займите подходящую полосу',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF59616A)),
+          ),
+          const SizedBox(height: 7),
+          Row(
+            children: lanes.map((lane) {
+              final laneColor = lane.valid ? const Color(0xFF168A55) : const Color(0xFF9AA1A8);
+              final indications = lane.indications.isEmpty ? const ['straight'] : lane.indications;
+              return Expanded(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+                  decoration: BoxDecoration(
+                    color: lane.valid ? const Color(0xFFE5F5EC) : const Color(0xFFF0F2F4),
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(
+                      color: lane.valid ? const Color(0xFF168A55) : const Color(0xFFD9DEE3),
+                      width: lane.valid ? 2 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: indications.map((indication) => Flexible(
+                      child: Icon(
+                        _laneIndicationIcon(indication),
+                        size: 23,
+                        color: laneColor,
+                      ),
+                    )).toList(),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   IconData _maneuverIcon(RouteInstruction instruction) {
     if (instruction.maneuverType == 'roundabout' ||
         instruction.maneuverType == 'rotary') {
@@ -3551,11 +3654,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
                                 ),
-                                if (_instructionIndex < _instructions.length)
+                                if (_instructionIndex < _instructions.length) ...[
                                   Text(
                                     'Следующий манёвр · ${_instructions[_instructionIndex].distanceMeters.round()} м',
                                     style: const TextStyle(fontSize: 12, color: Color(0xFF626A73)),
                                   ),
+                                  _buildLaneGuidance(_instructions[_instructionIndex].lanes),
+                                ],
                               ],
                             ),
                           ),
