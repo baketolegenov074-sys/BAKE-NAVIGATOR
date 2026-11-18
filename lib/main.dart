@@ -908,7 +908,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       await controller.addFillExtrusionLayer(
         'openmaptiles',
         'bake-buildings-3d',
-        FillExtrusionLayerProperties(
+        ml.FillExtrusionLayerProperties(
           fillExtrusionColor: 'hsl(35, 8%, 85%)',
           fillExtrusionHeight: ['coalesce', ['get', 'render_height'], 8],
           fillExtrusionBase: ['coalesce', ['get', 'render_min_height'], 0],
