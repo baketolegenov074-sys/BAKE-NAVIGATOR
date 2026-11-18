@@ -17,6 +17,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' as ml;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'kazakh_voice_service.dart';
+import 'services/road_alert_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -509,6 +510,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _mapLibreRouteSyncPending = false;
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
+  final RoadAlertService _roadAlertService = RoadAlertService();
+  List<RoadAlert> _roadAlerts = <RoadAlert>[];
+  final Map<String, int> _announcedRoadAlertStages = <String, int>{};
+  DateTime? _lastRoadAlertLookup;
+  LatLng? _lastRoadAlertLookupPoint;
+  bool _roadAlertLookupInProgress = false;
   int _kazakhVoiceId = 0;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
@@ -1149,6 +1156,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     _searchFocusNode.dispose();
     _tts.stop();
     unawaited(_kazakhVoiceService.dispose());
+    _roadAlertService.dispose();
     super.dispose();
   }
 
@@ -1636,6 +1644,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         });
         unawaited(_syncMapLibreAnnotations(updateRoute: _navigationActive));
         unawaited(_refreshRoadSpeedLimit(point));
+        if (_navigationActive) {
+          unawaited(_updateRoadAlerts(
+            point,
+            position.heading.isFinite && position.speed >= 0.8
+                ? position.heading
+                : null,
+          ));
+        }
 
         // The first GPS fix may arrive after navigation has already started.
         // Initialize the camera and speak the current instruction exactly once.
@@ -2483,6 +2499,111 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       // Keep the last known value when road data is temporarily unavailable.
     } finally {
       _speedLimitLookupInProgress = false;
+    }
+  }
+
+  double _bearingDifference(double a, double b) {
+    final difference = (a - b).abs() % 360;
+    return difference > 180 ? 360 - difference : difference;
+  }
+
+  Future<void> _updateRoadAlerts(LatLng position, double? gpsHeading) async {
+    if (!_navigationActive || _voiceMode == 0 || _roadAlertLookupInProgress) return;
+
+    final now = DateTime.now();
+    final lastPoint = _lastRoadAlertLookupPoint;
+    final movedMeters = lastPoint == null
+        ? double.infinity
+        : Geolocator.distanceBetween(
+            lastPoint.latitude,
+            lastPoint.longitude,
+            position.latitude,
+            position.longitude,
+          );
+    if (_lastRoadAlertLookup != null &&
+        now.difference(_lastRoadAlertLookup!) < const Duration(seconds: 45) &&
+        movedMeters < 250) {
+      // Existing alerts are still checked against the latest GPS position below.
+    } else {
+      _roadAlertLookupInProgress = true;
+      _lastRoadAlertLookup = now;
+      _lastRoadAlertLookupPoint = position;
+      try {
+        _roadAlerts = await _roadAlertService.fetchNearby(
+          position,
+          radiusMeters: 2000,
+        );
+      } catch (_) {
+        // Keep the last successful result if Overpass is temporarily unavailable.
+      } finally {
+        _roadAlertLookupInProgress = false;
+      }
+    }
+
+    if (!mounted || !_navigationActive || _voiceMode == 0) return;
+
+    // Prefer the live GPS course; when nearly stopped, use the next route step.
+    double? travelBearing = gpsHeading;
+    if (travelBearing == null && _instructionIndex < _instructions.length) {
+      final target = _instructions[_instructionIndex].location;
+      travelBearing = Geolocator.bearingBetween(
+        position.latitude,
+        position.longitude,
+        target.latitude,
+        target.longitude,
+      );
+    }
+    if (travelBearing == null || !travelBearing.isFinite) return;
+
+    final candidates = <({RoadAlert alert, double distance})>[];
+    for (final alert in _roadAlerts) {
+      final distance = Geolocator.distanceBetween(
+        position.latitude,
+        position.longitude,
+        alert.location.latitude,
+        alert.location.longitude,
+      );
+      if (distance > 1200 || distance < 0) continue;
+
+      final bearingToAlert = Geolocator.bearingBetween(
+        position.latitude,
+        position.longitude,
+        alert.location.latitude,
+        alert.location.longitude,
+      );
+      // Avoid announcing objects behind the vehicle or on a distant parallel road.
+      if (_bearingDifference(travelBearing, bearingToAlert) > 65) continue;
+      candidates.add((alert: alert, distance: distance));
+    }
+    candidates.sort((a, b) => a.distance.compareTo(b.distance));
+
+    for (final candidate in candidates) {
+      final alert = candidate.alert;
+      final distance = candidate.distance;
+      final stage = alert.kind == RoadAlertKind.speedCamera
+          ? (distance <= 200 ? 3 : distance <= 500 ? 2 : distance <= 1000 ? 1 : 0)
+          : (distance <= 300 ? 2 : distance <= 1000 ? 1 : 0);
+      if (stage == 0 || stage <= (_announcedRoadAlertStages[alert.id] ?? 0)) {
+        continue;
+      }
+      _announcedRoadAlertStages[alert.id] = stage;
+
+      final distanceText = distance >= 1000
+          ? '${(distance / 1000).toStringAsFixed(1)} километра'
+          : '${(distance / 50).round() * 50} метров';
+      final message = alert.kind == RoadAlertKind.speedCamera
+          ? _localized(
+              'Впереди дорожная камера. Расстояние $distanceText.',
+              'Алда жол камерасы бар. Қашықтық $distanceText.',
+              'Speed camera ahead. Distance $distanceText.',
+            )
+          : _localized(
+              'Впереди дорожные работы. Расстояние $distanceText.',
+              'Алда жол жөндеу жұмыстары. Қашықтық $distanceText.',
+              'Roadworks ahead. Distance $distanceText.',
+            );
+      await _speakText(message);
+      if (!mounted || !_navigationActive || _voiceMode == 0) return;
     }
   }
 
