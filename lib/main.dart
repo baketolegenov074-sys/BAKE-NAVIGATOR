@@ -855,6 +855,45 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         }
         await controller.clearSymbols();
         await controller.clearCircles();
+
+        // Place direction arrows at regular intervals along the route geometry.
+        // These are separate from the GPS heading marker and follow the route itself.
+        if (_routePoints.length > 1) {
+          const arrowSpacingMeters = 700.0;
+          var distanceUntilNextArrow = arrowSpacingMeters;
+          for (var i = 0; i < _routePoints.length - 1; i++) {
+            final a = _routePoints[i];
+            final b = _routePoints[i + 1];
+            final segmentMeters = Geolocator.distanceBetween(
+              a.latitude, a.longitude, b.latitude, b.longitude,
+            );
+            if (segmentMeters <= 0) continue;
+            var travelledOnSegment = 0.0;
+            while (travelledOnSegment + distanceUntilNextArrow <= segmentMeters) {
+              travelledOnSegment += distanceUntilNextArrow;
+              final fraction = travelledOnSegment / segmentMeters;
+              final arrowPoint = LatLng(
+                a.latitude + (b.latitude - a.latitude) * fraction,
+                a.longitude + (b.longitude - a.longitude) * fraction,
+              );
+              final bearing = Geolocator.bearingBetween(
+                a.latitude, a.longitude, b.latitude, b.longitude,
+              );
+              await controller.addSymbol(ml.SymbolOptions(
+                geometry: _toMapLibrePoint(arrowPoint),
+                textField: '➤',
+                textSize: 22,
+                textColor: '#2378C8',
+                textHaloColor: '#FFFFFF',
+                textHaloWidth: 3,
+                textRotate: bearing,
+              ));
+              distanceUntilNextArrow = arrowSpacingMeters;
+            }
+            distanceUntilNextArrow -= segmentMeters - travelledOnSegment;
+          }
+        }
+
         // Show the route start even when it was taken automatically from GPS.
         final routeStart = _routeOrigin ??
             (_routePoints.length > 1 ? _routePoints.first : null);
