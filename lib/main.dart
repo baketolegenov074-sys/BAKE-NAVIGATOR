@@ -3408,21 +3408,53 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
-  Widget _buildLaneGuidance(List<RouteLane> lanes) {
-    if (lanes.isEmpty) return const SizedBox.shrink();
+  Widget _buildLaneGuidance(RouteInstruction instruction) {
+    // Prefer real lane data from OSRM. If the routing service does not
+    // provide it, show a clearly simplified three-lane recommendation.
+    // This fallback is guidance based on the maneuver, not measured road markings.
+    final hasRealLaneData = instruction.lanes.isNotEmpty;
+    final displayLanes = hasRealLaneData
+        ? instruction.lanes
+        : () {
+            final modifier = instruction.modifier;
+            final recommendedIndex = (modifier == 'left' ||
+                    modifier == 'slight left' ||
+                    modifier == 'sharp left' ||
+                    modifier == 'uturn')
+                ? 0
+                : (modifier == 'right' ||
+                        modifier == 'slight right' ||
+                        modifier == 'sharp right')
+                    ? 2
+                    : 1;
+            final maneuver = modifier == 'uturn'
+                ? 'uturn'
+                : (recommendedIndex == 0)
+                    ? 'left'
+                    : (recommendedIndex == 2)
+                        ? 'right'
+                        : 'straight';
+            return List<RouteLane>.generate(
+              3,
+              (index) => RouteLane(
+                indications: [index == recommendedIndex ? maneuver : 'straight'],
+                valid: index == recommendedIndex,
+              ),
+            );
+          }();
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            'Займите подходящую полосу',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF59616A)),
+          Text(
+            hasRealLaneData ? 'Выберите полосу по стрелкам' : 'Рекомендуемая полоса',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF59616A)),
           ),
           const SizedBox(height: 7),
           Row(
-            children: lanes.map((lane) {
+            children: displayLanes.map((lane) {
               final laneColor = lane.valid ? const Color(0xFF168A55) : const Color(0xFF9AA1A8);
               final indications = lane.indications.isEmpty ? const ['straight'] : lane.indications;
               return Expanded(
@@ -3443,7 +3475,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     children: indications.map((indication) => Flexible(
                       child: Icon(
                         _laneIndicationIcon(indication),
-                        size: 23,
+                        size: 27,
                         color: laneColor,
                       ),
                     )).toList(),
@@ -3722,7 +3754,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                     'Следующий манёвр · $maneuverDistanceLabel',
                                     style: const TextStyle(fontSize: 12, color: Color(0xFF626A73)),
                                   ),
-                                  _buildLaneGuidance(_instructions[_instructionIndex].lanes),
+                                  _buildLaneGuidance(_instructions[_instructionIndex]),
                                 ],
                               ],
                             ),
