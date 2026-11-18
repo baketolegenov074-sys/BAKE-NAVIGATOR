@@ -4422,7 +4422,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             Positioned(
               top: 0,
               left: 68,
-              right: 76,
+              right: 88,
               child: SafeArea(
                 bottom: false,
                 child: Padding(
