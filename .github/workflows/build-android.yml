@@ -155,7 +155,7 @@ jobs:
                   f"Expected sherpa_onnx Android packages {sorted(expected)}, found {sorted(found)}"
               )
 
-          pattern = r'classpath\\(["\\']com\\.android\\.tools\\.build:gradle:7\\.3\\.0["\\']\\)'
+          pattern = r"""classpath\(["']com\.android\.tools\.build:gradle:7\.3\.0["']\)"""
           replacement = 'classpath("com.android.tools.build:gradle:8.6.1")'
           for path in files:
               content = path.read_text()
