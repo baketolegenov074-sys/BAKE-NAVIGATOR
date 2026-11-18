@@ -3466,6 +3466,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               _menuTile(sheetContext, Icons.bookmark_border, AppLocale.tr('Закладки'), () { Navigator.pop(sheetContext); _openBookmarks(); }),
               _menuTile(sheetContext, Icons.place_outlined, AppLocale.tr('Мои места'), () { Navigator.pop(sheetContext); _openMyPlaces(); }),
               _menuTile(sheetContext, Icons.warning_amber_outlined, AppLocale.tr('События на дороге'), () { Navigator.pop(sheetContext); _openRoadEvents(); }),
+              _menuTile(sheetContext, Icons.speed_outlined, AppLocale.tr('Камеры и дорожные события'), () { Navigator.pop(sheetContext); _openCameraAlertsPage(); }),
               _menuTile(sheetContext, Icons.local_gas_station_outlined, AppLocale.tr('Заправки'), () { Navigator.pop(sheetContext); _openStationNetworks(); }),
               _menuTile(sheetContext, Icons.local_parking_outlined, AppLocale.tr('Парковки'), () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
               _menuTile(sheetContext, Icons.history, AppLocale.tr('Бронирования и история заказов'), () { Navigator.pop(sheetContext); _openBookingsPage(); }),
@@ -3963,6 +3964,149 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openCameraAlertsPage() async {
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => StatefulBuilder(
+          builder: (pageContext, refresh) {
+            var alerts = <RoadAlert>[];
+            var loading = true;
+            String? error;
+
+            Future<void> loadAlerts() async {
+              refresh(() {
+                loading = true;
+                error = null;
+              });
+              try {
+                final point = _currentLocation ?? _mapCameraCenter;
+                final result = await _roadAlertService.fetchNearby(
+                  point,
+                  radiusMeters: 3000,
+                );
+                if (!pageContext.mounted) return;
+                refresh(() {
+                  alerts = result;
+                  loading = false;
+                });
+              } catch (exception) {
+                if (!pageContext.mounted) return;
+                refresh(() {
+                  error = exception.toString().replaceFirst('Exception: ', '');
+                  loading = false;
+                });
+              }
+            }
+
+            if (loading && alerts.isEmpty && error == null) {
+              // The first lookup starts after the page has been built.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (pageContext.mounted && loading) {
+                  unawaited(loadAlerts());
+                }
+              });
+            }
+
+            return Scaffold(
+              backgroundColor: Colors.white,
+              appBar: AppBar(
+                title: Text(AppLocale.tr('Камеры и дорожные события')),
+                backgroundColor: Colors.white,
+                surfaceTintColor: Colors.white,
+                actions: [
+                  IconButton(
+                    tooltip: AppLocale.tr('Обновить'),
+                    onPressed: loading ? null : () => unawaited(loadAlerts()),
+                    icon: const Icon(Icons.refresh),
+                  ),
+                ],
+              ),
+              body: loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.cloud_off_outlined, size: 42),
+                                const SizedBox(height: 12),
+                                Text(error!, textAlign: TextAlign.center),
+                                const SizedBox(height: 16),
+                                FilledButton.icon(
+                                  onPressed: () => unawaited(loadAlerts()),
+                                  icon: const Icon(Icons.refresh),
+                                  label: Text(AppLocale.tr('Повторить')),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : alerts.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  AppLocale.pick(
+                                    'В радиусе 3 км не найдены отмеченные в OpenStreetMap камеры или дорожные работы.',
+                                    '3 км радиуста OpenStreetMap картасында белгіленген камералар немесе жол жұмыстары табылмады.',
+                                    'No cameras or roadworks mapped in OpenStreetMap were found within 3 km.',
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                              itemCount: alerts.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final alert = alerts[index];
+                                final isCamera = alert.kind == RoadAlertKind.speedCamera;
+                                final title = isCamera
+                                    ? AppLocale.tr('Камера контроля скорости')
+                                    : AppLocale.tr('Дорожные работы');
+                                final distance = alert.distanceMeters >= 1000
+                                    ? '${(alert.distanceMeters / 1000).toStringAsFixed(1)} км'
+                                    : '${alert.distanceMeters.round()} м';
+                                final details = <String>[
+                                  distance,
+                                  if (alert.maxSpeedKmh != null) '${alert.maxSpeedKmh} км/ч',
+                                  if (alert.direction != null && alert.direction!.isNotEmpty) alert.direction!,
+                                  if (alert.name != null && alert.name!.isNotEmpty) alert.name!,
+                                ].join(' · ');
+                                return ListTile(
+                                  leading: Icon(
+                                    isCamera ? Icons.speed : Icons.construction_outlined,
+                                    color: isCamera ? const Color(0xFF1976D2) : const Color(0xFFFFA000),
+                                    size: 30,
+                                  ),
+                                  title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                  subtitle: Text(details),
+                                );
+                              },
+                            ),
+              bottomNavigationBar: SafeArea(
+                minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: Text(
+                  AppLocale.pick(
+                    'Данные берутся из OpenStreetMap. На карте могут отсутствовать камеры и дорожные работы, которые ещё не внесены участниками.',
+                    'Деректер OpenStreetMap жүйесінен алынады. Қатысушылар әлі қоспаған камералар мен жол жұмыстары картада болмауы мүмкін.',
+                    'Data comes from OpenStreetMap. Cameras and roadworks not yet mapped by contributors may be missing.',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12, color: Colors.black54),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
