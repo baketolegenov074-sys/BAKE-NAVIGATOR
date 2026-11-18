@@ -923,7 +923,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         await controller.addSymbol(ml.SymbolOptions(
           geometry: _toMapLibrePoint(_currentLocation!), textField: _routeDirectionCueText(),
           textSize: 19, textColor: '#65A77D', textOpacity: 0.72,
-          textHaloColor: '#FFFFFF', textHaloWidth: 2, textOffset: [3.0, -2.0],
+          textHaloColor: '#FFFFFF', textHaloWidth: 2, textOffset: const Offset(3.0, -2.0),
         ));
       }
       if (_currentLocation != null) {
