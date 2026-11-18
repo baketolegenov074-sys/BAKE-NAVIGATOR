@@ -109,19 +109,24 @@ jobs:
           from pathlib import Path
           path = Path("android/app/src/main/AndroidManifest.xml")
           manifest = path.read_text()
-          permissions = (
-              '    <uses-permission android:name="android.permission.INTERNET" />\n'
-              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
-              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n'
-              '    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />\n'
-              '    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n'
-              '    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />\n'
-              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n'
-              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n'
-              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
-          )
-          if 'android.permission.ACCESS_FINE_LOCATION' not in manifest:
-              manifest = manifest.replace("    <application", permissions + "    <application", 1)
+          permissions = [
+              "INTERNET",
+              "ACCESS_FINE_LOCATION",
+              "ACCESS_COARSE_LOCATION",
+              "ACCESS_BACKGROUND_LOCATION",
+              "RECORD_AUDIO",
+              "ACTIVITY_RECOGNITION",
+              "FOREGROUND_SERVICE",
+              "FOREGROUND_SERVICE_LOCATION",
+              "POST_NOTIFICATIONS",
+          ]
+          # Add each permission independently. A pre-existing foreground GPS
+          # permission must never prevent ACCESS_BACKGROUND_LOCATION being added.
+          for permission in permissions:
+              permission_name = f"android.permission.{permission}"
+              if permission_name not in manifest:
+                  line = f'    <uses-permission android:name="{permission_name}" />\\n'
+                  manifest = manifest.replace("    <application", line + "    <application", 1)
           manifest = manifest.replace('android:label="bake_navigator"', 'android:label="BAKE Navigator"')
           path.write_text(manifest)
           PY
