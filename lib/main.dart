@@ -503,6 +503,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   final MapController _mapController = MapController();
   ml.MapLibreMapController? _mapLibreController;
   bool _mapLibreStyleReady = false;
+  bool _is3DMap = true;
   bool _mapLibreAnnotationSyncInProgress = false;
   bool _mapLibreAnnotationSyncPending = false;
   bool _mapLibreRouteSyncPending = false;
@@ -553,6 +554,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     _configureVoice();
     _loadSavedOfflineMap();
     _loadSavedRoutePoints();
+    unawaited(_loadMapViewPreference());
     // Ask for location after the first frame so the permission dialog has a valid context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_locateMe());
@@ -576,6 +578,45 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     } catch (_) {
       return null;
     }
+  }
+
+  Future<void> _loadMapViewPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('map_view_3d') ?? true;
+      if (!mounted || enabled == _is3DMap) return;
+      setState(() => _is3DMap = enabled);
+      _applyMapViewMode();
+    } catch (_) {
+      // Keep the default 3D view if local preferences are unavailable.
+    }
+  }
+
+  Future<void> _setMap3D(bool enabled) async {
+    if (_is3DMap == enabled) return;
+    setState(() => _is3DMap = enabled);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('map_view_3d', enabled);
+    } catch (_) {
+      // The view can still be switched for the current session.
+    }
+    _applyMapViewMode();
+  }
+
+  void _applyMapViewMode() {
+    if (_offlineTileProvider != null) return;
+    final controller = _mapLibreController;
+    if (controller == null || !_mapLibreStyleReady) return;
+    final current = controller.cameraPosition;
+    unawaited(controller.animateCamera(ml.CameraUpdate.newCameraPosition(
+      ml.CameraPosition(
+        target: current?.target ?? _toMapLibrePoint(_currentLocation ?? _shymkent),
+        zoom: current?.zoom ?? 13,
+        bearing: current?.bearing ?? 0,
+        tilt: _is3DMap ? 48 : 0,
+      ),
+    ), duration: const Duration(milliseconds: 450)));
   }
 
   Future<void> _loadSavedRoutePoints() async {
@@ -777,7 +818,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         target: _toMapLibrePoint(point),
         zoom: zoom,
         bearing: -heading,
-        tilt: 48,
+        tilt: _is3DMap ? 48 : 0,
       ),
     ), duration: const Duration(milliseconds: 350)));
   }
@@ -795,7 +836,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         target: current?.target ?? _toMapLibrePoint(_currentLocation ?? _shymkent),
         zoom: current?.zoom ?? 17,
         bearing: -rotation,
-        tilt: _navigationActive ? 48 : 0,
+        tilt: _is3DMap ? 48 : 0,
       ),
     ), duration: const Duration(milliseconds: 350)));
   }
@@ -4347,6 +4388,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               initialCameraPosition: ml.CameraPosition(
                 target: ml.LatLng(_shymkent.latitude, _shymkent.longitude),
                 zoom: 13,
+                tilt: _is3DMap ? 48 : 0,
               ),
               styleString: 'https://tiles.openfreemap.org/styles/liberty',
               onMapCreated: _onMapLibreCreated,
@@ -4383,6 +4425,45 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   attributions: [TextSourceAttribution('© OpenStreetMap contributors')],
                 ),
               ],
+            ),
+          if (_offlineTileProvider == null)
+            Positioned(
+              top: 88,
+              right: 14,
+              child: SafeArea(
+                bottom: false,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 5,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => _setMap3D(!_is3DMap),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _is3DMap ? Icons.view_in_ar_outlined : Icons.map_outlined,
+                            size: 19,
+                            color: const Color(0xFF202020),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _is3DMap ? '3D' : '2D',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF202020),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
           Positioned(
             top: 0,
