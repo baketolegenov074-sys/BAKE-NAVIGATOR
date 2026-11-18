@@ -520,6 +520,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   List<Map<String, dynamic>> _routeAlternatives = <Map<String, dynamic>>[];
   int _selectedRouteIndex = 0;
   List<LatLng> _routePoints = [];
+  int _routeProgressSegmentIndex = 0;
   List<RouteInstruction> _instructions = [];
   int _instructionIndex = 0;
   bool _navigationActive = false;
@@ -844,13 +845,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _mapLibreRouteSyncPending = false;
         final controller = _mapLibreController;
         if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+        final visibleRoutePoints = _remainingRoutePoints();
         // GPS refreshes must never remove the already-rendered route line.
         // Only route/style changes are allowed to replace route geometry.
         if (syncRoute) {
           await controller.clearLines();
-          if (_routePoints.length > 1) {
+          if (visibleRoutePoints.length > 1) {
             await controller.addLine(ml.LineOptions(
-              geometry: _routePoints.map(_toMapLibrePoint).toList(),
+              geometry: visibleRoutePoints.map(_toMapLibrePoint).toList(),
               lineColor: '#2378C8',
               lineWidth: 6,
               lineOpacity: 0.96,
@@ -862,12 +864,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
         // Place direction arrows at regular intervals along the route geometry.
         // These are separate from the GPS heading marker and follow the route itself.
-        if (_routePoints.length > 1) {
-          const arrowSpacingMeters = 700.0;
+        if (visibleRoutePoints.length > 1) {
+          const arrowSpacingMeters = 350.0;
           var distanceUntilNextArrow = arrowSpacingMeters;
-          for (var i = 0; i < _routePoints.length - 1; i++) {
-            final a = _routePoints[i];
-            final b = _routePoints[i + 1];
+          for (var i = 0; i < visibleRoutePoints.length - 1; i++) {
+            final a = visibleRoutePoints[i];
+            final b = visibleRoutePoints[i + 1];
             final segmentMeters = Geolocator.distanceBetween(
               a.latitude, a.longitude, b.latitude, b.longitude,
             );
@@ -899,8 +901,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         }
 
         // Show the route start as a direction arrow instead of a static green dot.
-        final routeStart = _routeOrigin ??
-            (_routePoints.length > 1 ? _routePoints.first : null);
+        final routeStart = !_navigationActive ? (_routeOrigin ?? (_routePoints.length > 1 ? _routePoints.first : null)) : null;
         if (routeStart != null && _routePoints.length > 1) {
           final routeStartBearing = Geolocator.bearingBetween(
             _routePoints.first.latitude,
@@ -918,6 +919,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             textRotate: routeStartBearing,
           ));
         }
+      if (_currentLocation != null && _navigationActive) {
+        await controller.addSymbol(ml.SymbolOptions(
+          geometry: _toMapLibrePoint(_currentLocation!), textField: _routeDirectionCueText(),
+          textSize: 19, textColor: '#65A77D', textOpacity: 0.72,
+          textHaloColor: '#FFFFFF', textHaloWidth: 2, textOffset: [3.0, -2.0],
+        ));
+      }
       if (_currentLocation != null) {
         // Draw GPS position as a native MapLibre circle, not a text glyph.
         // Text symbols depend on font glyph availability in the active map style.
@@ -1481,7 +1489,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             _gpsHeadingDegrees = position.heading;
           }
         });
-        unawaited(_syncMapLibreAnnotations());
+        unawaited(_syncMapLibreAnnotations(updateRoute: _navigationActive));
         unawaited(_refreshRoadSpeedLimit(point));
 
         // The first GPS fix may arrive after navigation has already started.
@@ -2191,6 +2199,82 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
+  // Keep full route geometry for rerouting; clip only the line rendered during navigation.
+  List<LatLng> _remainingRoutePoints() {
+    if (!_navigationActive || _currentLocation == null || _routePoints.length < 2) return _routePoints;
+    final p = _currentLocation!;
+    const latScale = 110540.0;
+    final lonScale = 111320.0 * math.cos(p.latitude * math.pi / 180);
+    final px = p.longitude * lonScale, py = p.latitude * latScale;
+    final first = (_routeProgressSegmentIndex - 2).clamp(0, _routePoints.length - 2);
+    var bestD2 = double.infinity, bestI = first, bestT = 0.0;
+    for (var i = first; i < _routePoints.length - 1; i++) {
+      final a = _routePoints[i], b = _routePoints[i + 1];
+      final ax = a.longitude * lonScale, ay = a.latitude * latScale;
+      final dx = (b.longitude - a.longitude) * lonScale;
+      final dy = (b.latitude - a.latitude) * latScale;
+      final len2 = dx * dx + dy * dy;
+      final t = len2 == 0 ? 0.0 : (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0);
+      final ex = px - (ax + t * dx), ey = py - (ay + t * dy);
+      final d2 = ex * ex + ey * ey;
+      if (d2 < bestD2) { bestD2 = d2; bestI = i; bestT = t; }
+    }
+    if (bestD2 > 10000) return _routePoints;
+    if (bestI > _routeProgressSegmentIndex) _routeProgressSegmentIndex = bestI;
+    final a = _routePoints[bestI], b = _routePoints[bestI + 1];
+    final projected = LatLng(a.latitude + (b.latitude-a.latitude)*bestT, a.longitude + (b.longitude-a.longitude)*bestT);
+    final result = <LatLng>[projected]..addAll(_routePoints.skip(bestI + 1));
+    return result.length > 1 ? result : <LatLng>[projected, _routePoints.last];
+  }
+
+  String _routeDirectionCueText() {
+    if (_instructionIndex >= _instructions.length) return '‹   ▲   ›';
+    final m = _instructions[_instructionIndex].maneuverModifier.toLowerCase();
+    if (m.contains('left') || m.contains('uturn')) return '◀   ↑   ›';
+    if (m.contains('right')) return '‹   ↑   ▶';
+    return '‹   ▲   ›';
+  }
+
+  Widget _buildRouteDirectionCue() {
+    final m = _instructionIndex < _instructions.length ? _instructions[_instructionIndex].maneuverModifier.toLowerCase() : 'straight';
+    final left = m.contains('left') || m.contains('uturn'), right = m.contains('right');
+    const faded = Color(0x8877A98A), active = Color(0xFF16864A);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(color: const Color(0xAAFFFFFF), borderRadius: BorderRadius.circular(18), border: Border.all(color: const Color(0x6673A987))),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.arrow_left, size: 20, color: left ? active : faded),
+        const SizedBox(width: 3),
+        Icon(Icons.arrow_upward, size: 20, color: (!left && !right) ? active : faded),
+        const SizedBox(width: 3),
+        Icon(Icons.arrow_right, size: 20, color: right ? active : faded),
+      ]),
+    );
+  }
+
+  List<Marker> _buildOfflineRouteArrowMarkers(List<LatLng> points) {
+    if (points.length < 2) return <Marker>[];
+    const spacing = 350.0;
+    final result = <Marker>[];
+    var untilNext = spacing;
+    for (var i = 0; i < points.length - 1; i++) {
+      final a = points[i], b = points[i + 1];
+      final segment = Geolocator.distanceBetween(a.latitude,a.longitude,b.latitude,b.longitude);
+      if (segment <= 0) continue;
+      var travelled = 0.0;
+      while (travelled + untilNext <= segment) {
+        travelled += untilNext;
+        final f = travelled / segment;
+        final p = LatLng(a.latitude+(b.latitude-a.latitude)*f,a.longitude+(b.longitude-a.longitude)*f);
+        final bearing = Geolocator.bearingBetween(a.latitude,a.longitude,b.latitude,b.longitude);
+        result.add(Marker(point:p,width:26,height:26,child:Transform.rotate(angle:bearing*math.pi/180,child:const Icon(Icons.navigation,color:Color(0xCC2378C8),size:21))));
+        untilNext = spacing;
+      }
+      untilNext -= segment - travelled;
+    }
+    return result;
+  }
+
   double _distanceToRouteMeters(LatLng position) {
     if (_routePoints.length < 2) return double.infinity;
     const latScale = 110540.0;
@@ -2315,7 +2399,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       setState(() {
         _routeAlternatives = validRoutes;
         _selectedRouteIndex = 0;
-        _routePoints = points;
+        _routeProgressSegmentIndex = 0;
+       _routePoints = points;
         _routeReady = points.length >= 2;
         _routeActionDismissed = false;
         _instructions = instructions;
@@ -3740,7 +3825,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                       trailing: IconButton(
                         tooltip: AppLocale.tr('Удалить остановку'),
                         icon: const Icon(Icons.close, size: 19),
-                        onPressed: () { setState(() { _routeStops.removeAt(entry.key); _routePoints = []; _routeReady = false; _instructions = []; }); refreshSheet(() {}); },
+                        onPressed: () { setState(() { _routeStops.removeAt(entry.key); _routeProgressSegmentIndex = 0; _routePoints = []; _routeReady = false; _instructions = []; }); refreshSheet(() {}); },
                       ),
                     )),
                   const SizedBox(height: 8),
@@ -4005,7 +4090,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final visibleRoutePoints = _remainingRoutePoints();
     final markers = <Marker>[
+      ..._buildOfflineRouteArrowMarkers(visibleRoutePoints),
       if (_navigationActive && _instructionIndex < _instructions.length)
         Marker(
           point: _instructions[_instructionIndex].location,
@@ -4024,6 +4111,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               size: 29,
             ),
           ),
+        ),
+      if (_currentLocation != null && _navigationActive)
+        Marker(point: _currentLocation!, width: 112, height: 42, alignment: Alignment.centerLeft,
+          child: Transform.translate(offset: const Offset(14, -34), child: _buildRouteDirectionCue()),
         ),
       if (_currentLocation != null)
         Marker(
@@ -4088,10 +4179,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               ),
               children: [
                 TileLayer(tileProvider: _offlineTileProvider!),
-                if (_routePoints.isNotEmpty)
+                if (visibleRoutePoints.isNotEmpty)
                   PolylineLayer(
                     polylines: [
-                      Polyline(points: _routePoints, strokeWidth: 7, color: const Color(0xFF2378C8)),
+                      Polyline(points: visibleRoutePoints, strokeWidth: 7, color: const Color(0xFF2378C8)),
                     ],
                   ),
                 MarkerLayer(markers: markers),
