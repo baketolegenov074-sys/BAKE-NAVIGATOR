@@ -949,11 +949,27 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         if (syncRoute) {
           await controller.clearLines();
           if (visibleRoutePoints.length > 1) {
+            final routeGeometry =
+                visibleRoutePoints.map(_toMapLibrePoint).toList();
+            // Layered route casing creates a bright, high-contrast navigation
+            // ribbon while keeping the actual route geometry unchanged.
             await controller.addLine(ml.LineOptions(
-              geometry: visibleRoutePoints.map(_toMapLibrePoint).toList(),
-              lineColor: '#2378C8',
-              lineWidth: 6,
+              geometry: routeGeometry,
+              lineColor: '#FFD400',
+              lineWidth: 16,
               lineOpacity: 0.96,
+            ));
+            await controller.addLine(ml.LineOptions(
+              geometry: routeGeometry,
+              lineColor: '#36D9FF',
+              lineWidth: 12,
+              lineOpacity: 0.98,
+            ));
+            await controller.addLine(ml.LineOptions(
+              geometry: routeGeometry,
+              lineColor: '#0878F9',
+              lineWidth: 7,
+              lineOpacity: 1,
             ));
           }
         }
@@ -965,6 +981,42 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         // The active maneuver is shown by the existing live guidance cue, so only future
         // maneuvers are marked here while navigation is running.
         if (visibleRoutePoints.length > 1) {
+          // Straight-ahead arrows repeat along long route sections. Their
+          // spacing is based on actual traveled distance, not vertex count.
+          var distanceSinceArrow = 0.0;
+          for (var i = 1; i < visibleRoutePoints.length - 1; i++) {
+            final previous = visibleRoutePoints[i - 1];
+            final current = visibleRoutePoints[i];
+            distanceSinceArrow += Geolocator.distanceBetween(
+              previous.latitude, previous.longitude,
+              current.latitude, current.longitude,
+            );
+            if (distanceSinceArrow < 180) continue;
+            distanceSinceArrow = 0;
+            final nearTurn = _instructions.any((instruction) =>
+                _isRouteManeuverMarker(instruction) &&
+                Geolocator.distanceBetween(
+                  current.latitude, current.longitude,
+                  instruction.location.latitude, instruction.location.longitude,
+                ) < 55);
+            if (nearTurn) continue;
+            final bearing = Geolocator.bearingBetween(
+              current.latitude, current.longitude,
+              visibleRoutePoints[i + 1].latitude,
+              visibleRoutePoints[i + 1].longitude,
+            );
+            await controller.addFill(ml.FillOptions(
+              geometry: [_directionArrowPolygon(
+                current, bearing, lengthMeters: 17, halfWidthMeters: 7,
+              )],
+              fillColor: '#0878F9',
+              fillOpacity: 1,
+              fillOutlineColor: '#FFFFFF',
+            ));
+          }
+
+          // Turn arrows stay attached to the routing engine's exact maneuver
+          // coordinates and use the outgoing route direction.
           for (var i = 0; i < _instructions.length; i++) {
             final instruction = _instructions[i];
             if (!_isRouteManeuverMarker(instruction)) continue;
@@ -974,10 +1026,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               geometry: [_directionArrowPolygon(
                 instruction.location,
                 maneuverBearing,
-                lengthMeters: 13,
-                halfWidthMeters: 5,
+                lengthMeters: 22,
+                halfWidthMeters: 8,
               )],
-              fillColor: '#2378C8',
+              fillColor: '#005FE8',
               fillOpacity: 1,
               fillOutlineColor: '#FFFFFF',
             ));
@@ -1041,18 +1093,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         // Draw a recognizable finish flag from native map polygons, not a
         // font glyph, so the destination marker is reliable in every map style.
         final flagPolygons = _destinationFlagPolygons(_destination!);
+        // Draw a dark flag pole and a compact black/white checkered finish flag.
         await controller.addFill(ml.FillOptions(
-          geometry: [flagPolygons[0]],
+          geometry: [flagPolygons.first],
           fillColor: '#263238',
           fillOpacity: 1,
           fillOutlineColor: '#FFFFFF',
         ));
-        await controller.addFill(ml.FillOptions(
-          geometry: [flagPolygons[1]],
-          fillColor: '#E53935',
-          fillOpacity: 1,
-          fillOutlineColor: '#FFFFFF',
-        ));
+        for (var i = 1; i < flagPolygons.length; i++) {
+          await controller.addFill(ml.FillOptions(
+            geometry: [flagPolygons[i]],
+            fillColor: i.isEven ? '#FFFFFF' : '#202124',
+            fillOpacity: 1,
+            fillOutlineColor: '#FFFFFF',
+          ));
+        }
       }
       } while (_mapLibreAnnotationSyncPending);
     } catch (error, stackTrace) {
@@ -1922,22 +1977,35 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       return ml.LatLng(latitude, longitude);
     }
 
-    // The pole rises from the destination point; the red flag projects right.
+    // The pole rises from the destination point; the checkered cloth projects right.
     final pole = <ml.LatLng>[
       offset(-1.2, 0),
       offset(1.2, 0),
-      offset(1.2, 27),
-      offset(-1.2, 27),
+      offset(1.2, 29),
+      offset(-1.2, 29),
       offset(-1.2, 0),
     ];
-    final cloth = <ml.LatLng>[
-      offset(1.2, 25),
-      offset(20, 25),
-      offset(15, 14),
-      offset(1.2, 14),
-      offset(1.2, 25),
-    ];
-    return <List<ml.LatLng>>[pole, cloth];
+    final cells = <List<ml.LatLng>>[];
+    const columns = 4;
+    const rows = 3;
+    const cellWidth = 4.7;
+    const cellHeight = 3.7;
+    for (var row = 0; row < rows; row++) {
+      for (var column = 0; column < columns; column++) {
+        final west = 1.2 + column * cellWidth;
+        final east = west + cellWidth;
+        final north = 27 - row * cellHeight;
+        final south = north - cellHeight;
+        cells.add(<ml.LatLng>[
+          offset(west, north),
+          offset(east, north),
+          offset(east, south),
+          offset(west, south),
+          offset(west, north),
+        ]);
+      }
+    }
+    return <List<ml.LatLng>>[pole, ...cells];
   }
 
   // Build a map-native triangular arrow from geographic coordinates. This does
