@@ -855,13 +855,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         }
         await controller.clearSymbols();
         await controller.clearCircles();
-        if (_routeOrigin != null) {
-        await controller.addSymbol(ml.SymbolOptions(
-          geometry: _toMapLibrePoint(_routeOrigin!), textField: '●',
-          textSize: 27, textColor: '#269B68',
-          textHaloColor: '#FFFFFF', textHaloWidth: 2,
-        ));
-      }
+        // Show the route start even when it was taken automatically from GPS.
+        final routeStart = _routeOrigin ??
+            (_routePoints.length > 1 ? _routePoints.first : null);
+        if (routeStart != null && _routePoints.length > 1) {
+          await controller.addCircle(ml.CircleOptions(
+            geometry: _toMapLibrePoint(routeStart),
+            circleRadius: 10,
+            circleColor: '#269B68',
+            circleOpacity: 1,
+            circleStrokeColor: '#FFFFFF',
+            circleStrokeWidth: 3,
+            circleStrokeOpacity: 1,
+          ));
+        }
       if (_currentLocation != null) {
         // Draw GPS position as a native MapLibre circle, not a text glyph.
         // Text symbols depend on font glyph availability in the active map style.
@@ -893,10 +900,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ));
       }
       if (_destination != null) {
-        await controller.addSymbol(ml.SymbolOptions(
-          geometry: _toMapLibrePoint(_destination!), textField: '●',
-          textSize: 30, textColor: '#E53935',
-          textHaloColor: '#FFFFFF', textHaloWidth: 2,
+        await controller.addCircle(ml.CircleOptions(
+          geometry: _toMapLibrePoint(_destination!),
+          circleRadius: 12,
+          circleColor: '#E53935',
+          circleOpacity: 1,
+          circleStrokeColor: '#FFFFFF',
+          circleStrokeWidth: 3,
+          circleStrokeOpacity: 1,
         ));
       }
       } while (_mapLibreAnnotationSyncPending);
