@@ -940,14 +940,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ));
       }
       if (_destination != null) {
-        await controller.addCircle(ml.CircleOptions(
-          geometry: _toMapLibrePoint(_destination!),
-          circleRadius: 12,
-          circleColor: '#E53935',
-          circleOpacity: 1,
-          circleStrokeColor: '#FFFFFF',
-          circleStrokeWidth: 3,
-          circleStrokeOpacity: 1,
+        // Draw a recognizable finish flag from native map polygons, not a
+        // font glyph, so the destination marker is reliable in every map style.
+        final flagPolygons = _destinationFlagPolygons(_destination!);
+        await controller.addFill(ml.FillOptions(
+          geometry: [flagPolygons[0]],
+          fillColor: '#263238',
+          fillOpacity: 1,
+          fillOutlineColor: '#FFFFFF',
+        ));
+        await controller.addFill(ml.FillOptions(
+          geometry: [flagPolygons[1]],
+          fillColor: '#E53935',
+          fillOpacity: 1,
+          fillOutlineColor: '#FFFFFF',
         ));
       }
       } while (_mapLibreAnnotationSyncPending);
@@ -1800,6 +1806,34 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
 
+
+  List<List<ml.LatLng>> _destinationFlagPolygons(LatLng anchor) {
+    ml.LatLng offset(double eastMeters, double northMeters) {
+      final latitude = anchor.latitude + northMeters / 111320.0;
+      final longitudeScale =
+          111320.0 * math.cos(anchor.latitude * math.pi / 180);
+      final longitude =
+          anchor.longitude + eastMeters / math.max(1.0, longitudeScale);
+      return ml.LatLng(latitude, longitude);
+    }
+
+    // The pole rises from the destination point; the red flag projects right.
+    final pole = <ml.LatLng>[
+      offset(-1.2, 0),
+      offset(1.2, 0),
+      offset(1.2, 27),
+      offset(-1.2, 27),
+      offset(-1.2, 0),
+    ];
+    final cloth = <ml.LatLng>[
+      offset(1.2, 25),
+      offset(20, 25),
+      offset(15, 14),
+      offset(1.2, 14),
+      offset(1.2, 25),
+    ];
+    return <List<ml.LatLng>>[pole, cloth];
+  }
 
   // Build a map-native triangular arrow from geographic coordinates. This does
   // not depend on glyphs in the online map style, so it remains visible offline/online.
@@ -4257,9 +4291,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (_destination != null)
         Marker(
           point: _destination!,
-          width: 48,
-          height: 48,
-          child: const Icon(Icons.location_pin, color: Colors.red, size: 42),
+          width: 54,
+          height: 58,
+          alignment: Alignment.bottomCenter,
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFF263238), width: 2),
+              boxShadow: const [
+                BoxShadow(color: Color(0x44000000), blurRadius: 6, offset: Offset(0, 2)),
+              ],
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.flag, color: Color(0xFFE53935), size: 32),
+          ),
         ),
     ];
 
