@@ -811,7 +811,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   void _onMapLibreStyleLoaded() {
     _mapLibreStyleReady = true;
-    unawaited(_syncMapLibreAnnotations());
+    unawaited(_syncMapLibreAnnotations(updateRoute: true));
     // GPS may finish before MapLibre has created its controller. In that case
     // the first camera move is ignored, so center the map again when the style
     // becomes ready to make the live-position arrow visible immediately.
@@ -822,7 +822,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (_routePoints.length > 1) _fitMapCamera(_routePoints);
   }
 
-  Future<void> _syncMapLibreAnnotations() async {
+  Future<void> _syncMapLibreAnnotations({bool updateRoute = false}) async {
     // GPS updates can arrive while the previous annotation update is still
     // clearing and recreating symbols. Serialize those updates and run once
     // more with the newest position instead of allowing overlapping clears.
@@ -836,16 +836,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _mapLibreAnnotationSyncPending = false;
         final controller = _mapLibreController;
         if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
-        await controller.clearLines();
-        await controller.clearSymbols();
-        await controller.clearCircles();
-        if (_routePoints.length > 1) {
+        // GPS refreshes must never remove the already-rendered route line.
+        // Only route/style changes are allowed to replace route geometry.
+        if (updateRoute) {
+          await controller.clearLines();
+          if (_routePoints.length > 1) {
         await controller.addLine(ml.LineOptions(
           geometry: _routePoints.map(_toMapLibrePoint).toList(),
-          lineColor: '#2378C8', lineWidth: 6, lineOpacity: 0.96,
-        ));
-      }
-      if (_routeOrigin != null) {
+            lineColor: '#2378C8', lineWidth: 6, lineOpacity: 0.96,
+          ));
+          }
+        }
+        await controller.clearSymbols();
+        await controller.clearCircles();
+        if (_routeOrigin != null) {
         await controller.addSymbol(ml.SymbolOptions(
           geometry: _toMapLibrePoint(_routeOrigin!), textField: '●',
           textSize: 27, textColor: '#269B68',
@@ -1667,7 +1671,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = '';
     });
-    unawaited(_syncMapLibreAnnotations());
+    unawaited(_syncMapLibreAnnotations(updateRoute: true));
     unawaited(_saveRoutePoint(_savedRouteOriginKey, point));
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
@@ -1682,7 +1686,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = AppLocale.pick('Начальная точка снова определяется по GPS.', 'Бастапқы нүкте қайтадан GPS арқылы анықталады.', 'Starting point will be detected by GPS again.');
     });
-    unawaited(_syncMapLibreAnnotations());
+    unawaited(_syncMapLibreAnnotations(updateRoute: true));
     unawaited(_removeSavedRoutePoint(_savedRouteOriginKey));
   }
 
@@ -1699,7 +1703,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = '';
     });
-    unawaited(_syncMapLibreAnnotations());
+    unawaited(_syncMapLibreAnnotations(updateRoute: true));
     unawaited(_saveRoutePoint(_savedRouteDestinationKey, point));
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
@@ -2084,7 +2088,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             : '';
       });
       if (points.isNotEmpty) {
-        unawaited(_syncMapLibreAnnotations());
+        unawaited(_syncMapLibreAnnotations(updateRoute: true));
         _fitMapCamera(points);
         if (automaticReroute && resumeNavigation && _currentLocation != null) {
           _moveMapCamera(_currentLocation!, 17);
@@ -2134,7 +2138,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _message = _localized('Выбран вариант маршрута ${index + 1}.', '${index + 1}-маршрут нұсқасы таңдалды.', 'Route option ${index + 1} selected.');
     });
     if (points.isNotEmpty) {
-      unawaited(_syncMapLibreAnnotations());
+      unawaited(_syncMapLibreAnnotations(updateRoute: true));
       _fitMapCamera(points);
     }
   }
