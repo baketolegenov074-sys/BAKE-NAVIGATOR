@@ -1001,8 +1001,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               textColor: '#123B69',
               textHaloColor: '#123B69',
               textHaloWidth: 2.5,
-              textAllowOverlap: true,
-              textIgnorePlacement: true,
             ));
             await controller.addSymbol(ml.SymbolOptions(
               geometry: _toMapLibrePoint(arrowPoint),
@@ -1011,8 +1009,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               textColor: '#FFFFFF',
               textHaloColor: '#64748B',
               textHaloWidth: 1.6,
-              textAllowOverlap: true,
-              textIgnorePlacement: true,
             ));
           }
         }
