@@ -874,6 +874,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           circleStrokeWidth: 3,
           circleStrokeOpacity: 1,
         ));
+        // Direction arrow above the GPS dot on the online MapLibre map.
+        await controller.addSymbol(ml.SymbolOptions(
+          geometry: _toMapLibrePoint(_currentLocation!),
+          textField: '▲',
+          textSize: 27,
+          textColor: '#1769AA',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 3,
+          textRotate: _gpsHeadingDegrees ?? 0,
+        ));
       }
       for (var i = 0; i < _routeStops.length; i++) {
         await controller.addSymbol(ml.SymbolOptions(
