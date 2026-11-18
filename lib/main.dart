@@ -1435,18 +1435,28 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final intersections = step['intersections'] as List<dynamic>? ?? [];
     if (intersections.isEmpty) return const [];
 
-    // OSRM documents the first intersection as the maneuver intersection.
-    final intersection = intersections.first as Map<String, dynamic>;
-    final laneValues = intersection['lanes'] as List<dynamic>? ?? [];
-    return laneValues.map((value) {
-      final lane = value as Map<String, dynamic>;
-      final indications = (lane['indications'] as List<dynamic>? ?? [])
-          .map((item) => item.toString())
-          .toList();
-      final validValue = lane['valid'];
-      final valid = validValue == true || validValue.toString() == 'true';
-      return RouteLane(indications: indications, valid: valid);
-    }).toList();
+    // Check every intersection in this route step. Some OSRM responses
+    // provide lane data only on a later intersection, not on the first one.
+    for (final intersectionValue in intersections) {
+      if (intersectionValue is! Map<String, dynamic>) continue;
+      final laneValues = intersectionValue['lanes'] as List<dynamic>? ?? [];
+      if (laneValues.isEmpty) continue;
+
+      final lanes = <RouteLane>[];
+      for (final laneValue in laneValues) {
+        if (laneValue is! Map<String, dynamic>) continue;
+        final indications = (laneValue['indications'] as List<dynamic>? ?? [])
+            .map((item) => item.toString())
+            .toList();
+        final validValue = laneValue['valid'];
+        final valid = validValue == true || validValue?.toString() == 'true';
+        lanes.add(RouteLane(indications: indications, valid: valid));
+      }
+
+      if (lanes.isNotEmpty) return lanes;
+    }
+
+    return const [];
   }
 
   List<RouteInstruction> _readInstructions(Map<String, dynamic> route) {
