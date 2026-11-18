@@ -2210,7 +2210,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     const latScale = 110540.0;
     final lonScale = 111320.0 * math.cos(p.latitude * math.pi / 180);
     final px = p.longitude * lonScale, py = p.latitude * latScale;
-    final first = (_routeProgressSegmentIndex - 2).clamp(0, _routePoints.length - 2);
+    final first = _routeProgressSegmentIndex.clamp(0, _routePoints.length - 2).toInt();
     var bestD2 = double.infinity, bestI = first, bestT = 0.0;
     for (var i = first; i < _routePoints.length - 1; i++) {
       final a = _routePoints[i], b = _routePoints[i + 1];
@@ -2218,7 +2218,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final dx = (b.longitude - a.longitude) * lonScale;
       final dy = (b.latitude - a.latitude) * latScale;
       final len2 = dx * dx + dy * dy;
-      final t = len2 == 0 ? 0.0 : (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0);
+      final t = len2 == 0 ? 0.0 : (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0).toDouble();
       final ex = px - (ax + t * dx), ey = py - (ay + t * dy);
       final d2 = ex * ex + ey * ey;
       if (d2 < bestD2) { bestD2 = d2; bestI = i; bestT = t; }
@@ -2403,7 +2403,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       setState(() {
         _routeAlternatives = validRoutes;
         _selectedRouteIndex = 0;
-         _routeProgressSegmentIndex = 0;
+        _routeProgressSegmentIndex = 0;
         _routePoints = points;
         _routeReady = points.length >= 2;
         _routeActionDismissed = false;
