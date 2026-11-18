@@ -761,6 +761,27 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     ), duration: const Duration(milliseconds: 350)));
   }
 
+  void _updateNavigationCamera(LatLng point, double zoom, double heading) {
+    if (_offlineTileProvider != null) {
+      _mapController.move(point, zoom);
+      _mapController.rotate(-heading);
+      return;
+    }
+    final controller = _mapLibreController;
+    if (controller == null || !_mapLibreStyleReady) return;
+
+    // Keep target, zoom, bearing and 3D pitch in one camera animation.
+    // Separate move/rotate animations can otherwise overwrite each other's target.
+    unawaited(controller.animateCamera(ml.CameraUpdate.newCameraPosition(
+      ml.CameraPosition(
+        target: _toMapLibrePoint(point),
+        zoom: zoom,
+        bearing: -heading,
+        tilt: 48,
+      ),
+    ), duration: const Duration(milliseconds: 350)));
+  }
+
   void _rotateMapCamera(double rotation) {
     if (_offlineTileProvider != null) {
       _mapController.rotate(rotation);
@@ -1496,38 +1517,36 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         // The first GPS fix may arrive after navigation has already started.
         // Initialize the camera and speak the current instruction exactly once.
         if (wasWaitingForNavigationFix && _navigationActive) {
-          _moveMapCamera(point, 17);
-          final initialHeading = _gpsHeadingDegrees;
-          if (initialHeading != null && position.speed >= 1.5) {
-            _rotateMapCamera(-initialHeading);
-            _lastCameraHeadingDegrees = initialHeading;
-          } else {
-            _rotateMapCamera(0);
-          }
           unawaited(_speakCurrentInstruction());
         }
 
-        // Follow the live GPS position and rotate/pitch the MapLibre camera in navigation mode.
+        // Follow GPS with one coordinated camera update instead of competing
+        // position and bearing animations.
         if (_navigationActive) {
           final cameraCenter = _mapCameraCenter;
-          if (Geolocator.distanceBetween(
+          final shouldRecenter = Geolocator.distanceBetween(
                 cameraCenter.latitude, cameraCenter.longitude,
                 point.latitude, point.longitude,
-              ) > 3) {
-            _moveMapCamera(point, math.max(_mapCameraZoom, 17.0).toDouble());
-          }
+              ) > 3;
           final heading = _gpsHeadingDegrees;
+          var normalizedHeading = _lastCameraHeadingDegrees ?? 0.0;
+          var shouldRotate = false;
           if (heading != null && position.speed >= 1.5) {
-            final normalizedHeading = (heading % 360 + 360) % 360;
+            normalizedHeading = (heading % 360 + 360) % 360;
             final previousHeading = _lastCameraHeadingDegrees;
             final difference = previousHeading == null
                 ? 360.0
                 : ((normalizedHeading - previousHeading + 540) % 360) - 180;
-            if (difference.abs() >= 4) {
-              _rotateMapCamera(-normalizedHeading);
-              _lastCameraHeadingDegrees = normalizedHeading;
-            }
+            shouldRotate = difference.abs() >= 4;
           }
+          if (shouldRecenter || shouldRotate) {
+            _updateNavigationCamera(
+              point,
+              math.max(_mapCameraZoom, 17.0).toDouble(),
+              normalizedHeading,
+            );
+          }
+          if (shouldRotate) _lastCameraHeadingDegrees = normalizedHeading;
         }
 
         if (!firstFix.isCompleted) firstFix.complete();
@@ -2134,13 +2153,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (!mounted) return;
     final livePoint = _currentLocation;
     if (livePoint != null) {
-      _moveMapCamera(livePoint, 17);
-      final initialHeading = _gpsHeadingDegrees;
-      if (initialHeading != null && _currentSpeedKmh >= 5.4) {
-        _rotateMapCamera(-initialHeading);
+      final initialHeading = _gpsHeadingDegrees != null && _currentSpeedKmh >= 5.4
+          ? _gpsHeadingDegrees!
+          : 0.0;
+      _updateNavigationCamera(livePoint, 17, initialHeading);
+      if (_gpsHeadingDegrees != null && _currentSpeedKmh >= 5.4) {
         _lastCameraHeadingDegrees = initialHeading;
-      } else {
-        _rotateMapCamera(0);
       }
       await _speakCurrentInstruction();
     }
