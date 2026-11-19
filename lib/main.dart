@@ -505,7 +505,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   ml.MapLibreMapController? _mapLibreController;
   bool _mapLibreStyleReady = false;
   bool _is3DMap = true;
-  final Map<String, dynamic> _satelliteOverlayFillOpacities = <String, dynamic>{};
   bool _mapLibreAnnotationSyncInProgress = false;
   bool _mapLibreAnnotationSyncPending = false;
   bool _mapLibreRouteSyncPending = false;
@@ -694,42 +693,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
 
     try {
-      final styleText = await controller.getStyle();
-      if (styleText == null || styleText.isEmpty) return;
-      final style = jsonDecode(styleText);
-      if (style is! Map<String, dynamic>) return;
-      final layers = style['layers'];
-      if (layers is! List) return;
+      // In the Liberty style, this is the only opaque polygon overlay drawn
+      // after the satellite insertion point. Keep its pedestrian-area pattern
+      // visible while allowing the imagery to show through.
+      const overlayLayerId = 'road_area_pattern';
+      final layerIds = await controller.getLayerIds();
+      if (!layerIds.contains(overlayLayerId)) return;
 
-      // The satellite layer is inserted below the first road layer. Liberty
-      // keeps some opaque OpenMapTiles fill layers later in the stack, above
-      // that raster. Make only those base-map fills translucent while imagery
-      // is enabled; roads, bridges, symbols and BAKE annotations stay intact.
-      final satelliteIndex = layers.indexWhere(
-        (layer) => layer is Map && layer['id'] == 'bake-satellite-layer',
+      await controller.setLayerProperties(
+        overlayLayerId,
+        ml.FillLayerProperties(
+          fillOpacity: satelliteVisible ? 0.12 : 1.0,
+        ),
       );
-      if (satelliteIndex < 0) return;
-
-      for (var index = satelliteIndex + 1; index < layers.length; index++) {
-        final layer = layers[index];
-        if (layer is! Map || layer['type'] != 'fill' || layer['source'] != 'openmaptiles') {
-          continue;
-        }
-        final id = layer['id'];
-        if (id is! String || id.isEmpty) continue;
-
-        final paint = layer['paint'];
-        final originalOpacity = paint is Map ? paint['fill-opacity'] : null;
-        _satelliteOverlayFillOpacities.putIfAbsent(id, () => originalOpacity);
-
-        final opacity = satelliteVisible
-            ? 0.12
-            : (_satelliteOverlayFillOpacities[id] ?? 1.0);
-        await controller.setLayerProperties(
-          id,
-          ml.FillLayerProperties(fillOpacity: opacity),
-        );
-      }
     } catch (error) {
       debugPrint('BAKE satellite overlay opacity update failed: $error');
     }
@@ -1056,9 +1032,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
       final layerIds = await controller.getLayerIds();
       if (!layerIds.contains('bake-satellite-layer')) {
-        // Keep roads and labels above the raster. Opaque OpenMapTiles fill
-        // layers later in the Liberty style are made translucent separately
-        // by _setSatelliteOverlayFillOpacity while satellite mode is active.
+        // Keep roads and labels above the raster. The single later pedestrian
+        // polygon overlay is made translucent by _setSatelliteOverlayFillOpacity.
         final roadOverlay = layerIds.cast<String?>().firstWhere(
           (id) => id != null && RegExp(r'^(road|transportation|bridge|tunnel)').hasMatch(id),
           orElse: () => null,
