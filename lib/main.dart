@@ -1229,18 +1229,33 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           textHaloColor: '#343434', textHaloWidth: 5,
         ));
       }
-      // Camera-specific pictograms are used on the online MapLibre map.
-      // Emoji glyphs keep the camera type recognizable without pretending
-      // that unverified devices carry an official Sergek brand logo.
+      // Draw a collision-proof camera dot first. MapLibre may hide text
+      // symbols when they collide with road labels or other annotations;
+      // the circle keeps every camera position visible in both 2D and 3D.
+      // The pictogram is an additional label, not the only visible marker.
       for (final alert in _roadAlertsVisibleOnMap()) {
+        await controller.addCircle(ml.CircleOptions(
+          geometry: _toMapLibrePoint(alert.location),
+          circleRadius: 10,
+          circleColor: switch (alert.kind) {
+            RoadAlertKind.speedCamera => '#B42318',
+            RoadAlertKind.trafficSignalCamera => '#B54708',
+            RoadAlertKind.surveillanceCamera => '#175CD3',
+            RoadAlertKind.sergekCamera => '#7A3E9D',
+            RoadAlertKind.unknownCamera => '#475467',
+          },
+          circleOpacity: 1,
+          circleStrokeColor: '#FFFFFF',
+          circleStrokeWidth: 2.5,
+        ));
         final glyph = _roadAlertGlyph(alert);
         await controller.addSymbol(ml.SymbolOptions(
           geometry: _toMapLibrePoint(alert.location),
           textField: glyph,
-          textSize: 23,
-          textColor: '#17324D',
-          textHaloColor: '#FFFFFF',
-          textHaloWidth: 2.5,
+          textSize: 18,
+          textColor: '#FFFFFF',
+          textHaloColor: '#17324D',
+          textHaloWidth: 1.5,
         ));
       }
       if (_destination != null) {
