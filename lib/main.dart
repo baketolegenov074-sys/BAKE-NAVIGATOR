@@ -578,11 +578,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Future<void> _loadBundledRoadAlerts() async {
     final bundled = <RoadAlert>[];
     try {
-      bundled.addAll(await _roadAlertService.loadBundledCameras());
-    } catch (error) {
-      debugPrint('Не удалось загрузить общую базу камер: $error');
-    }
-    try {
       bundled.addAll(await _roadAlertService.loadBundledShymkentCameraCandidates());
       bundled.addAll(await _roadAlertService.loadShymkentOsmCameras());
     } catch (error) {
@@ -598,8 +593,30 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   List<RoadAlert> _mergeRoadAlerts(List<RoadAlert> bundled, List<RoadAlert> live) {
     final byId = <String, RoadAlert>{};
-    for (final alert in bundled) { byId[alert.id] = alert; }
-    for (final alert in live) { byId[alert.id] = alert; }
+    for (final alert in bundled) {
+      byId[alert.id] = alert;
+    }
+    for (final alert in live) {
+      if (byId.containsKey(alert.id)) {
+        byId[alert.id] = alert;
+        continue;
+      }
+      // Deduplicate only across the bundled Shymkent layer and live lookup.
+      // Nearby cameras within the same source are retained: some are genuinely
+      // mapped as separate devices only a few metres apart.
+      final isShymkentRecord = alert.id.startsWith('shymkent/');
+      final duplicate = byId.values.any((existing) {
+        if (existing.kind != alert.kind ||
+            existing.id.startsWith('shymkent/') == isShymkentRecord) {
+          return false;
+        }
+        final meters = const Distance().as(
+          LengthUnit.Meter, existing.location, alert.location,
+        );
+        return meters <= 18;
+      });
+      if (!duplicate) byId[alert.id] = alert;
+    }
     return byId.values.toList();
   }
 
@@ -1145,24 +1162,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           textHaloColor: '#343434', textHaloWidth: 5,
         ));
       }
-      // Draw cameras with native MapLibre circles and a letter marker.
-      // This is the proven renderer used before the custom image/emoji change.
+      // Camera-specific pictograms are used on the online MapLibre map.
+      // Emoji glyphs keep the camera type recognizable without pretending
+      // that unverified devices carry an official Sergek brand logo.
       for (final alert in _roadAlertsVisibleOnMap()) {
-        await controller.addCircle(ml.CircleOptions(
-          geometry: _toMapLibrePoint(alert.location),
-          circleRadius: 10,
-          circleColor: '#F04438',
-          circleOpacity: 1,
-          circleStrokeColor: '#FFFFFF',
-          circleStrokeWidth: 3,
-        ));
+        final glyph = _roadAlertGlyph(alert);
         await controller.addSymbol(ml.SymbolOptions(
           geometry: _toMapLibrePoint(alert.location),
-          textField: 'К',
-          textSize: 11,
-          textColor: '#FFFFFF',
-          textHaloColor: '#B42318',
-          textHaloWidth: 1,
+          textField: glyph,
+          textSize: 23,
+          textColor: '#17324D',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 2.5,
+          textAllowOverlap: true,
+          iconAllowOverlap: true,
         ));
       }
       if (_destination != null) {
@@ -2613,11 +2626,29 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     return (metersPerPixel * 44).clamp(25.0, 600.0).toDouble();
   }
 
-  Color _roadAlertColor(RoadAlert alert) => const Color(0xFF1C4E7D);
+  Color _roadAlertColor(RoadAlert alert) => switch (alert.kind) {
+        RoadAlertKind.speedCamera => const Color(0xFFB42318),
+        RoadAlertKind.trafficSignalCamera => const Color(0xFFB54708),
+        RoadAlertKind.surveillanceCamera => const Color(0xFF175CD3),
+        RoadAlertKind.sergekCamera => const Color(0xFF7A3E9D),
+        RoadAlertKind.unknownCamera => const Color(0xFF475467),
+      };
 
-  IconData _roadAlertIcon(RoadAlert alert) => Icons.camera_alt;
+  IconData _roadAlertIcon(RoadAlert alert) => switch (alert.kind) {
+        RoadAlertKind.speedCamera => Icons.speed,
+        RoadAlertKind.trafficSignalCamera => Icons.traffic,
+        RoadAlertKind.surveillanceCamera => Icons.videocam,
+        RoadAlertKind.sergekCamera => Icons.camera_alt,
+        RoadAlertKind.unknownCamera => Icons.photo_camera_outlined,
+      };
 
-  String _roadAlertGlyph(RoadAlert alert) => '📷';
+  String _roadAlertGlyph(RoadAlert alert) => switch (alert.kind) {
+        RoadAlertKind.speedCamera => '📷',
+        RoadAlertKind.trafficSignalCamera => '🚦',
+        RoadAlertKind.surveillanceCamera => '🎥',
+        RoadAlertKind.sergekCamera => '📹',
+        RoadAlertKind.unknownCamera => '📷',
+      };
 
   Widget _buildRoadAlertMapMarker(RoadAlert alert) {
     final color = _roadAlertColor(alert);
