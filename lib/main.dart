@@ -2594,16 +2594,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       // Existing alerts are still checked against the latest GPS position below.
     } else {
       _roadAlertLookupInProgress = true;
-      _lastRoadAlertLookup = now;
-      _lastRoadAlertLookupPoint = position;
       try {
-        _roadAlerts = await _roadAlertService.fetchNearby(
+        final loadedAlerts = await _roadAlertService.fetchNearby(
           position,
           radiusMeters: 2000,
         );
+        _roadAlerts = loadedAlerts;
+        // Start the cooldown only after a successful server response. A failed
+        // request must not suppress the next retry for 45 seconds.
+        _lastRoadAlertLookup = DateTime.now();
+        _lastRoadAlertLookupPoint = position;
         alertsWereRefreshed = true;
       } catch (_) {
-        // Keep the last successful result if Overpass is temporarily unavailable.
+        // Keep the last successful result and allow the next GPS update to retry.
       } finally {
         _roadAlertLookupInProgress = false;
       }
