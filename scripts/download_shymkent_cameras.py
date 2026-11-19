@@ -49,11 +49,13 @@ def overpass(session, query):
                 if attempt < 2:
                     time.sleep(2 ** (attempt + 1))
 
-    details = "\\n".join(errors)
+    details = "\n".join(errors)
     raise RuntimeError(
         "Все серверы Overpass временно недоступны или вернули ошибку. "
-        "Данные не сохранены. Подробности:\\n" + details
+        "Данные не сохранены. Подробности:\n" + details
     )
+
+
 def find_city_area(session):
     """Resolve the mapped administrative boundary; never substitute a bbox."""
     response = session.get(
