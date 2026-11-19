@@ -10,7 +10,9 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('Shymkent camera assets', () {
-    final service = RoadAlertService();
+    final assetClient = MockClient((request) async => http.Response('{}', 200));
+    final service = RoadAlertService(client: assetClient);
+    tearDownAll(assetClient.close);
 
     test('loads the OSM camera JSON with valid Shymkent coordinates', () async {
       final cameras = await service.loadShymkentOsmCameras();
