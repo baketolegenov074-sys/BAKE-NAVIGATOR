@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - fix/address-gps-route-reset
+      - fix/satellite-imagery-layer-order
 
 permissions:
   contents: read
@@ -57,7 +57,6 @@ jobs:
           cp pubspec.yaml /tmp/bake-pubspec.yaml
           cp lib/main.dart /tmp/bake-main.dart
           flutter create --platforms=android --org kz.bake --project-name bake_navigator --no-pub .
-          # Remove the generated sample test: this app uses BakeNavigatorApp.
           rm -f test/widget_test.dart
           cp /tmp/bake-pubspec.yaml pubspec.yaml
           cp /tmp/bake-main.dart lib/main.dart
@@ -77,12 +76,12 @@ jobs:
           content = settings.read_text()
           updates = [
               (
-                  r'(id\s*\(?\s*["\']com\.android\.application["\']\s*\)?\s+version\s+["\'])8\.1\.0(["\'])',
+                  r'(id\\s*\\(?\\s*["\\']com\\.android\\.application["\\']\\s*\\)?\\s+version\\s+["\\'])8\\.1\\.0(["\\'])',
                   "8.6.1",
                   "Android Gradle Plugin",
               ),
               (
-                  r'(id\s*\(?\s*["\']org\.jetbrains\.kotlin\.android["\']\s*\)?\s+version\s+["\'])1\.8\.22(["\'])',
+                  r'(id\\s*\\(?\\s*["\\']org\\.jetbrains\\.kotlin\\.android["\\']\\s*\\)?\\s+version\\s+["\\'])1\\.8\\.22(["\\'])',
                   "2.2.10",
                   "Kotlin Gradle Plugin",
               ),
@@ -99,7 +98,7 @@ jobs:
               raise SystemExit("Gradle wrapper properties were not generated")
           wrapper_content = wrapper.read_text()
           wrapper_content, count = re.subn(
-              r"gradle-[0-9.]+-(?:all|bin)\.zip",
+              r"gradle-[0-9.]+-(?:all|bin)\\.zip",
               "gradle-8.7-all.zip",
               wrapper_content,
           )
@@ -115,7 +114,7 @@ jobs:
               raise SystemExit("Generated app Gradle file was not found")
           app_content = app_gradle.read_text()
           app_content, count = re.subn(
-              r"ndkVersion\s*=\s*flutter\.ndkVersion",
+              r"ndkVersion\\s*=\\s*flutter\\.ndkVersion",
               'ndkVersion = "28.1.13356709"',
               app_content,
           )
@@ -142,8 +141,6 @@ jobs:
               "FOREGROUND_SERVICE_LOCATION",
               "POST_NOTIFICATIONS",
           ]
-          # Add each permission independently. A pre-existing foreground GPS
-          # permission must never prevent ACCESS_BACKGROUND_LOCATION being added.
           for permission in permissions:
               permission_name = f"android.permission.{permission}"
               if permission_name not in manifest:
@@ -176,7 +173,7 @@ jobs:
                   f"Expected sherpa_onnx Android packages {sorted(expected)}, found {sorted(found)}"
               )
 
-          pattern = r"""classpath\(["']com\.android\.tools\.build:gradle:7\.3\.0["']\)"""
+          pattern = r"""classpath\\(["']com\\.android\\.tools\\.build:gradle:7\\.3\\.0["']\\)"""
           replacement = 'classpath("com.android.tools.build:gradle:8.6.1")'
           for path in files:
               content = path.read_text()
