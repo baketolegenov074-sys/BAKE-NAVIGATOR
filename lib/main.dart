@@ -577,6 +577,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _loadBundledRoadAlerts() async {
     final bundled = <RoadAlert>[];
+    // Restore the full Kazakhstan database first. The APK workflow downloads
+    // this CSV before packaging, so it is available offline after installation.
+    try {
+      bundled.addAll(await _roadAlertService.loadBundledCameras());
+    } catch (error) {
+      debugPrint('Не удалось загрузить общую базу камер Казахстана: $error');
+    }
+    // Keep the dedicated Shymkent dataset as an additional source, not a
+    // replacement for the national camera database.
     try {
       bundled.addAll(await _roadAlertService.loadBundledShymkentCameraCandidates());
       bundled.addAll(await _roadAlertService.loadShymkentOsmCameras());
