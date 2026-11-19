@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -47,19 +48,56 @@ class RoadAlertService {
         'way(around:$radius,${point.latitude},${point.longitude})[highway=construction];'
         'way(around:$radius,${point.latitude},${point.longitude})[construction];'
         ');out center tags;';
-    final response = await _client
-        .post(
-          Uri.parse('https://overpass-api.de/api/interpreter'),
-          headers: const {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'User-Agent': 'BAKE-Navigator/1.0 (OpenStreetMap road alerts)',
-          },
-          body: {'data': query},
-        )
-        .timeout(const Duration(seconds: 18));
+    const endpoints = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+    ];
+    http.Response? successfulResponse;
+    String? lastError;
 
-    if (response.statusCode != 200) {
-      throw Exception('Сервис дорожных предупреждений временно недоступен.');
+    for (var index = 0; index < endpoints.length; index++) {
+      try {
+        final candidate = await _client
+            .post(
+              Uri.parse(endpoints[index]),
+              headers: const {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'User-Agent': 'BAKE-Navigator/1.0 (OpenStreetMap road alerts)',
+              },
+              body: {'data': query},
+            )
+            .timeout(const Duration(seconds: 18));
+
+        if (candidate.statusCode == 200) {
+          successfulResponse = candidate;
+          break;
+        }
+
+        final status = candidate.statusCode;
+        if (status == 429) {
+          lastError = 'Сервис ограничил частоту запросов (HTTP 429). Повторите позже.';
+        } else if (status == 502 || status == 503 || status == 504) {
+          lastError = 'Сервер дорожных данных временно перегружен (HTTP $status).';
+        } else {
+          lastError = 'Сервис дорожных данных ответил с ошибкой (HTTP $status).';
+        }
+      } on TimeoutException {
+        lastError = 'Сервер дорожных данных не ответил вовремя.';
+      } on http.ClientException {
+        lastError = 'Не удалось подключиться к серверу дорожных данных.';
+      } catch (exception) {
+        lastError = 'Ошибка запроса дорожных данных: $exception';
+      }
+
+      // Give the primary service a moment before trying the backup endpoint.
+      if (index + 1 < endpoints.length) {
+        await Future.delayed(const Duration(seconds: 1));
+      }
+    }
+
+    final response = successfulResponse;
+    if (response == null) {
+      throw Exception(lastError ?? 'Сервис дорожных предупреждений временно недоступен.');
     }
 
     final decoded = jsonDecode(response.body);
