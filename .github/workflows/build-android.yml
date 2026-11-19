@@ -113,6 +113,16 @@ jobs:
               raise SystemExit("Generated app Gradle file was not found")
 
           app_content = app_gradle.read_text()
+          app_content, min_sdk_count = re.subn(
+              r"minSdk\\s*=\\s*flutter\\.minSdkVersion",
+              "minSdk = 23",
+              app_content,
+          )
+          if min_sdk_count != 1:
+              raise SystemExit(
+                  f"Expected one Flutter minSdk declaration, found {min_sdk_count}"
+              )
+
           app_content, sdk_count = re.subn(
               r"compileSdk\s*=\s*flutter\.compileSdkVersion",
               "compileSdk = 36",
