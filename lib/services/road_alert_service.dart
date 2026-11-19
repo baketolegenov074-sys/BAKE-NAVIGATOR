@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
@@ -38,6 +39,83 @@ class RoadAlertService {
   RoadAlertService({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
+
+  /// Loads the Kazakhstan camera dataset packaged inside the APK.
+  /// No GPS, internet access, or active route is required.
+  Future<List<RoadAlert>> loadBundledCameras() async {
+    final csv = await rootBundle.loadString('assets/data/kazakhstan_speed_cameras.csv');
+    final rows = _parseCsv(csv);
+    if (rows.length < 2) throw const FormatException('Offline camera database is empty.');
+    final headers = rows.first.map((v) => v.trim().toLowerCase()).toList();
+    final idCol = headers.indexOf('id');
+    final latCol = headers.indexOf('latitude');
+    final lonCol = headers.indexOf('longitude');
+    final nameCol = headers.indexOf('name');
+    final typeCol = headers.indexOf('type');
+    final speedCol = headers.indexOf('maxspeed');
+    if (idCol < 0 || latCol < 0 || lonCol < 0) {
+      throw const FormatException('Unknown offline camera database format.');
+    }
+    final cameras = <RoadAlert>[];
+    for (final row in rows.skip(1)) {
+      final requiredIndex = [idCol, latCol, lonCol].reduce((a, b) => a > b ? a : b);
+      if (row.length <= requiredIndex) continue;
+      final id = row[idCol].trim();
+      final lat = double.tryParse(row[latCol].trim());
+      final lon = double.tryParse(row[lonCol].trim());
+      if (id.isEmpty || lat == null || lon == null) continue;
+      if (lat < 40 || lat > 56 || lon < 46 || lon > 88) continue;
+      final speed = speedCol >= 0 && speedCol < row.length
+          ? int.tryParse(RegExp(r'\d+').firstMatch(row[speedCol])?.group(0) ?? '')
+          : null;
+      final name = nameCol >= 0 && nameCol < row.length ? row[nameCol].trim() : '';
+      final type = typeCol >= 0 && typeCol < row.length ? row[typeCol].trim() : '';
+      cameras.add(RoadAlert(
+        id: 'osm/$id',
+        kind: RoadAlertKind.speedCamera,
+        location: LatLng(lat, lon),
+        distanceMeters: 0,
+        maxSpeedKmh: speed,
+        name: [name, type].where((v) => v.isNotEmpty).join(' · '),
+      ));
+    }
+    if (cameras.isEmpty) throw const FormatException('No Kazakhstan camera coordinates found.');
+    return cameras;
+  }
+
+  static List<List<String>> _parseCsv(String input) {
+    final rows = <List<String>>[];
+    var row = <String>[];
+    final field = StringBuffer();
+    var quoted = false;
+    for (var i = 0; i < input.length; i++) {
+      final ch = input[i];
+      if (ch == '"') {
+        if (quoted && i + 1 < input.length && input[i + 1] == '"') {
+          field.write('"');
+          i++;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (ch == ',' && !quoted) {
+        row.add(field.toString());
+        field.clear();
+      } else if ((ch == '\n' || ch == '\r') && !quoted) {
+        if (ch == '\r' && i + 1 < input.length && input[i + 1] == '\n') i++;
+        row.add(field.toString());
+        field.clear();
+        if (row.any((v) => v.isNotEmpty)) rows.add(row);
+        row = <String>[];
+      } else {
+        field.write(ch);
+      }
+    }
+    if (field.isNotEmpty || row.isNotEmpty) {
+      row.add(field.toString());
+      if (row.any((v) => v.isNotEmpty)) rows.add(row);
+    }
+    return rows;
+  }
 
   Future<List<RoadAlert>> fetchNearby(
     LatLng point, {
