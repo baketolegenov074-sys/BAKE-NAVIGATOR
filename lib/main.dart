@@ -4222,6 +4222,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
     if (!mounted) return;
     final cameras = _shymkentCameraAlerts();
+    var addressRecords = <Map<String, String>>[];
+    try {
+      addressRecords = await _roadAlertService.loadShymkentCameraDirectory();
+    } catch (error) {
+      debugPrint('Не удалось открыть справочник камер Шымкента: $error');
+    }
+    if (!mounted) return;
+    final addressOnlyRecords = addressRecords
+        .where((record) => record['precision'] == 'address_only')
+        .toList();
 
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -4262,45 +4272,68 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   ),
                 ),
                 Expanded(
-                  child: cameras.isEmpty
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(
-                              AppLocale.tr('Встроенная база камер Шымкента не загрузилась. Проверьте подключение и сборку APK.'),
-                              textAlign: TextAlign.center,
-                            ),
+                  child: ListView(
+                    children: [
+                      if (cameras.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            AppLocale.tr('Координатные точки пока не загружены.'),
+                            textAlign: TextAlign.center,
                           ),
                         )
-                      : ListView.separated(
-                          itemCount: cameras.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (context, index) {
-                            final camera = cameras[index];
-                            final coordinates =
-                                '${camera.location.latitude.toStringAsFixed(5)}, ${camera.location.longitude.toStringAsFixed(5)}';
-                            return ListTile(
-                              leading: Icon(
-                                camera.isApproximate
-                                    ? Icons.location_searching
-                                    : Icons.camera_alt,
-                                color: camera.isApproximate
-                                    ? Colors.orange.shade800
-                                    : const Color(0xFF1C4E7D),
-                              ),
-                              title: Text(camera.name ?? AppLocale.tr('Камера')),
-                              subtitle: Text(
-                                camera.isApproximate
-                                    ? '$coordinates · примерный ориентир, камера не подтверждена'
-                                    : coordinates,
-                              ),
-                              onTap: () {
-                                Navigator.pop(pageContext);
-                                _moveMapCamera(camera.location, 16);
-                              },
-                            );
-                          },
+                      else
+                        ...cameras.map((camera) {
+                          final coordinates =
+                              '${camera.location.latitude.toStringAsFixed(5)}, ${camera.location.longitude.toStringAsFixed(5)}';
+                          return ListTile(
+                            leading: Icon(
+                              camera.isApproximate
+                                  ? Icons.location_searching
+                                  : Icons.camera_alt,
+                              color: camera.isApproximate
+                                  ? Colors.orange.shade800
+                                  : const Color(0xFF1C4E7D),
+                            ),
+                            title: Text(camera.name ?? AppLocale.tr('Камера')),
+                            subtitle: Text(
+                              camera.isApproximate
+                                  ? '$coordinates · примерный ориентир, камера не подтверждена'
+                                  : coordinates,
+                            ),
+                            onTap: () {
+                              Navigator.pop(pageContext);
+                              _moveMapCamera(camera.location, 16);
+                            },
+                          );
+                        }),
+                      if (addressOnlyRecords.isNotEmpty) ...[
+                        const Divider(height: 1),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                          child: Text(
+                            AppLocale.pick(
+                              'Адреса из базы без точных GPS: ${addressOnlyRecords.length}',
+                              'Нақты GPS жоқ мекенжайлар: ${addressOnlyRecords.length}',
+                              'Address records without exact GPS: ${addressOnlyRecords.length}',
+                            ),
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
                         ),
+                        ...addressOnlyRecords.map((record) => ListTile(
+                          leading: const Icon(Icons.location_on_outlined, color: Colors.orange),
+                          title: Text(record['name']?.isNotEmpty == true
+                              ? record['name']!
+                              : AppLocale.tr('Камера')),
+                          subtitle: Text(
+                            record['notes']?.isNotEmpty == true
+                                ? record['notes']!
+                                : AppLocale.tr('Адрес известен, координаты камеры не подтверждены'),
+                          ),
+                        )),
+                      ],
+                    ],
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
