@@ -1174,8 +1174,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           textColor: '#17324D',
           textHaloColor: '#FFFFFF',
           textHaloWidth: 2.5,
-          textAllowOverlap: true,
-          iconAllowOverlap: true,
         ));
       }
       if (_destination != null) {
