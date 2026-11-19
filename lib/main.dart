@@ -1120,7 +1120,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         if (alert.kind != RoadAlertKind.speedCamera) continue;
         await controller.addCircle(ml.CircleOptions(
           geometry: _toMapLibrePoint(alert.location),
-          circleRadius: 13,
+          circleRadius: 10,
           circleColor: '#F04438',
           circleOpacity: 1,
           circleStrokeColor: '#FFFFFF',
@@ -1129,7 +1129,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         await controller.addSymbol(ml.SymbolOptions(
           geometry: _toMapLibrePoint(alert.location),
           textField: 'К',
-          textSize: 13,
+          textSize: 11,
           textColor: '#FFFFFF',
           textHaloColor: '#B42318',
           textHaloWidth: 1,
@@ -4825,8 +4825,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           .where((alert) => alert.kind == RoadAlertKind.speedCamera)
           .map((alert) => Marker(
             point: alert.location,
-            width: 42,
-            height: 42,
+            width: 36,
+            height: 36,
             child: Container(
               decoration: BoxDecoration(
                 color: const Color(0xFFF04438),
@@ -4837,7 +4837,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ],
               ),
               alignment: Alignment.center,
-              child: const Icon(Icons.camera_alt, color: Colors.white, size: 22),
+              child: const Icon(Icons.camera_alt, color: Colors.white, size: 19),
             ),
           )),
       ..._routeStops.asMap().entries.map((entry) => Marker(
