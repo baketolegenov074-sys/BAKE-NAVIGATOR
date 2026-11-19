@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 /// Only fixed speed-enforcement cameras are returned by this service.
-enum RoadAlertKind { speedCamera }
+enum RoadAlertKind { speedCamera, trafficSignalCamera, surveillanceCamera, sergekCamera, unknownCamera }
 
 class RoadAlert {
   const RoadAlert({
@@ -19,6 +19,9 @@ class RoadAlert {
     this.direction,
     this.name,
     this.bearingDegrees,
+    this.isApproximate = false,
+    this.source,
+    this.verificationStatus,
   });
 
   final String id;
@@ -31,6 +34,11 @@ class RoadAlert {
 
   /// Direction of travel enforced by an OSM enforcement relation, if known.
   final double? bearingDegrees;
+  /// True when the coordinate is only a nearby address/intersection reference.
+  /// Approximate points are map-only and must never trigger spoken warnings.
+  final bool isApproximate;
+  final String? source;
+  final String? verificationStatus;
 }
 
 /// Loads mapped fixed speed cameras from both legacy camera tags and the
@@ -81,6 +89,71 @@ class RoadAlertService {
     }
     if (cameras.isEmpty) throw const FormatException('No Kazakhstan camera coordinates found.');
     return cameras;
+  }
+
+  /// Loads the first Shymkent camera layer. Rows without verified GPS coordinates
+  /// remain documented in the CSV but are intentionally not placed on the map.
+  /// Approximate landmark coordinates are visibly marked and never trigger alerts.
+  Future<List<RoadAlert>> loadBundledShymkentCameraCandidates() async {
+    final csv = await rootBundle.loadString('assets/data/shymkent_camera_candidates.csv');
+    final rows = _parseCsv(csv);
+    if (rows.length < 2) {
+      throw const FormatException('Shymkent camera candidate database is empty.');
+    }
+    final headers = rows.first.map((v) => v.trim().toLowerCase()).toList();
+    int col(String name) => headers.indexOf(name);
+    final idCol = col('id');
+    final nameCol = col('name');
+    final latCol = col('latitude');
+    final lonCol = col('longitude');
+    final categoryCol = col('category');
+    final precisionCol = col('precision');
+    final sourceCol = col('source');
+    final notesCol = col('notes');
+    if ([idCol, nameCol, latCol, lonCol, categoryCol, precisionCol]
+        .any((index) => index < 0)) {
+      throw const FormatException('Unknown Shymkent camera database format.');
+    }
+    final result = <RoadAlert>[];
+    for (final row in rows.skip(1)) {
+      final maxIndex = [idCol, nameCol, latCol, lonCol, categoryCol, precisionCol]
+          .reduce((a, b) => a > b ? a : b);
+      if (row.length <= maxIndex) continue;
+      final id = row[idCol].trim();
+      final lat = double.tryParse(row[latCol].trim());
+      final lon = double.tryParse(row[lonCol].trim());
+      // Address-only records are retained in the source file until their
+      // physical camera positions can be confirmed.
+      if (id.isEmpty || lat == null || lon == null) continue;
+      if (lat < 42.0 || lat > 42.7 || lon < 69.2 || lon > 70.0) continue;
+      final category = row[categoryCol].trim().toLowerCase();
+      final precision = row[precisionCol].trim().toLowerCase();
+      final kind = switch (category) {
+        'speed' => RoadAlertKind.speedCamera,
+        'traffic_signal' => RoadAlertKind.trafficSignalCamera,
+        'surveillance' => RoadAlertKind.surveillanceCamera,
+        'sergek' => RoadAlertKind.sergekCamera,
+        _ => RoadAlertKind.unknownCamera,
+      };
+      final name = row[nameCol].trim();
+      final source = sourceCol >= 0 && sourceCol < row.length
+          ? row[sourceCol].trim()
+          : null;
+      final notes = notesCol >= 0 && notesCol < row.length
+          ? row[notesCol].trim()
+          : '';
+      result.add(RoadAlert(
+        id: 'shymkent/$id',
+        kind: kind,
+        location: LatLng(lat, lon),
+        distanceMeters: 0,
+        name: name.isEmpty ? notes : name,
+        isApproximate: precision != 'exact',
+        source: source,
+        verificationStatus: precision,
+      ));
+    }
+    return result;
   }
 
   static List<List<String>> _parseCsv(String input) {
