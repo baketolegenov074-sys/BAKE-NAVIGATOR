@@ -827,7 +827,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       ml.CameraPosition(
         target: _toMapLibrePoint(point),
         zoom: zoom,
-        bearing: -heading,
+        // MapLibre camera bearing is the clockwise direction the camera faces.
+        // Match the GPS course so the vehicle's direction stays toward screen top.
+        bearing: heading,
         tilt: _is3DMap ? 48 : 0,
       ),
     ), duration: const Duration(milliseconds: 350)));
