@@ -509,6 +509,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _mapLibreAnnotationSyncPending = false;
   bool _mapLibreRouteSyncPending = false;
   LatLng? _lastRouteLineSyncPoint;
+  ml.Fill? _gpsPositionFill;
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
@@ -984,7 +985,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         }
         await controller.clearSymbols();
         await controller.clearCircles();
-        await controller.clearFills();
+        // Keep the live GPS arrow fill between ordinary GPS updates.
+        // Route/style rebuilds clear fills and recreate the arrow below.
+        if (syncRoute) {
+          await controller.clearFills();
+          _gpsPositionFill = null;
+        }
 
         // Show only real upcoming turns. Each white arrow floats directly
         // above the blue route ribbon, a short distance before its intersection.
@@ -1055,7 +1061,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         // A native polygon avoids text-glyph/font dependencies and replaces the old dot.
         final gpsBearing = _gpsHeadingDegrees ??
             (_routePoints.length > 1 ? _routeBearingAt(_currentLocation!) : 0.0);
-        await controller.addFill(ml.FillOptions(
+        final gpsArrowOptions = ml.FillOptions(
           geometry: [_directionArrowPolygon(
             _currentLocation!,
             gpsBearing,
@@ -1066,7 +1072,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           fillColor: '#FFC400',
           fillOpacity: 1,
           fillOutlineColor: '#172B4D',
-        ));
+        );
+        final existingGpsFill = _gpsPositionFill;
+        if (existingGpsFill == null) {
+          _gpsPositionFill = await controller.addFill(gpsArrowOptions);
+        } else {
+          await controller.updateFill(existingGpsFill, gpsArrowOptions);
+        }
       }
       for (var i = 0; i < _routeStops.length; i++) {
         await controller.addSymbol(ml.SymbolOptions(
