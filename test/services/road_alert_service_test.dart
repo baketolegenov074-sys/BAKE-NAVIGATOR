@@ -47,7 +47,7 @@ void main() {
     test('keeps address-only camera records in the directory', () async {
       final entries = await service.loadShymkentCameraDirectory();
 
-      expect(entries, isNotEmpty);
+      expect(entries, hasLength(30));
       expect(entries.any((entry) =>
           entry['precision'] == 'address_only' &&
           (entry['latitude'] ?? '').isEmpty &&
