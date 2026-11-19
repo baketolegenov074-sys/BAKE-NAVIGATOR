@@ -127,7 +127,7 @@ class RoadAlertService {
       final rawSpeed = item['maxspeed']?.toString() ?? tags['maxspeed']?.toString();
       final speed = rawSpeed == null
           ? null
-          : int.tryParse(RegExp(r'\\d+').firstMatch(rawSpeed)?.group(0) ?? '');
+          : int.tryParse(RegExp(r'\d+').firstMatch(rawSpeed)?.group(0) ?? '');
       final name = item['name']?.toString() ??
           tags['name']?.toString() ??
           (isSpeedCamera ? 'Камера контроля скорости' : 'Камера наблюдения');
