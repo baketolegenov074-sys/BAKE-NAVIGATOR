@@ -1710,14 +1710,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ) >= 20);
         unawaited(_syncMapLibreAnnotations(updateRoute: shouldRefreshRouteLine));
         unawaited(_refreshRoadSpeedLimit(point));
-        if (_navigationActive) {
-          unawaited(_updateRoadAlerts(
-            point,
-            position.heading.isFinite && position.speed >= 0.8
-                ? position.heading
-                : null,
-          ));
-        }
+        // Load and display nearby speed cameras whenever GPS is available,
+        // including normal map browsing without an active route.
+        unawaited(_updateRoadAlerts(
+          point,
+          position.heading.isFinite && position.speed >= 0.8
+              ? position.heading
+              : null,
+        ));
 
         // The first GPS fix may arrive after navigation has already started.
         // Initialize the camera and speak the current instruction exactly once.
@@ -2574,8 +2574,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Future<void> _updateRoadAlerts(LatLng position, double? gpsHeading) async {
-    // Road-camera markers are a map feature and must not depend on voice mode.
-    if (!_navigationActive || _roadAlertLookupInProgress) return;
+    // Camera lookup and map markers work outside navigation too.
+    // Voice announcements remain gated by _navigationActive below.
+    if (_roadAlertLookupInProgress) return;
 
     var alertsWereRefreshed = false;
     final now = DateTime.now();
@@ -2612,14 +2613,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       }
     }
 
-    if (!mounted || !_navigationActive) return;
+    if (!mounted) return;
 
-    // Rebuild FlutterMap and refresh MapLibre annotations after new alert data
-    // arrives. This keeps camera markers visible even when voice guidance is off.
+    // Rebuild both map renderers whenever the camera data changes.
     if (alertsWereRefreshed) {
       setState(() {});
       unawaited(_syncMapLibreAnnotations());
     }
+
+    // Never speak camera warnings while browsing the map without navigation.
+    if (!_navigationActive) return;
 
     // Prefer the live GPS course; when nearly stopped, use the next route step.
     double? travelBearing = gpsHeading;
