@@ -2589,15 +2589,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             position.longitude,
           );
     if (_lastRoadAlertLookup != null &&
-        now.difference(_lastRoadAlertLookup!) < const Duration(seconds: 45) &&
-        movedMeters < 250) {
+        now.difference(_lastRoadAlertLookup!) < const Duration(seconds: 20) &&
+        movedMeters < 150) {
       // Existing alerts are still checked against the latest GPS position below.
     } else {
       _roadAlertLookupInProgress = true;
       try {
         final loadedAlerts = await _roadAlertService.fetchNearby(
           position,
-          radiusMeters: 2000,
+          radiusMeters: 3000,
         );
         _roadAlerts = loadedAlerts;
         // Start the cooldown only after a successful server response. A failed
@@ -2652,6 +2652,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       );
       // Avoid announcing objects behind the vehicle or on a distant parallel road.
       if (_bearingDifference(travelBearing, bearingToAlert) > 65) continue;
+      final enforcedBearing = alert.bearingDegrees;
+      if (enforcedBearing != null &&
+          _bearingDifference(travelBearing, enforcedBearing) > 65) continue;
       candidates.add((alert: alert, distance: distance));
     }
     candidates.sort((a, b) => a.distance.compareTo(b.distance));
@@ -2659,9 +2662,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     for (final candidate in candidates) {
       final alert = candidate.alert;
       final distance = candidate.distance;
-      final stage = alert.kind == RoadAlertKind.speedCamera
-          ? (distance <= 200 ? 3 : distance <= 500 ? 2 : distance <= 1000 ? 1 : 0)
-          : (distance <= 300 ? 2 : distance <= 1000 ? 1 : 0);
+      final stage = distance <= 200 ? 3 : distance <= 500 ? 2 : distance <= 1000 ? 1 : 0;
       if (_voiceMode == 0 || stage == 0 ||
           stage <= (_announcedRoadAlertStages[alert.id] ?? 0)) {
         continue;
@@ -2671,17 +2672,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final distanceText = distance >= 1000
           ? '${(distance / 1000).toStringAsFixed(1)} километра'
           : '${(distance / 50).round() * 50} метров';
-      final message = alert.kind == RoadAlertKind.speedCamera
-          ? _localized(
-              'Впереди дорожная камера. Расстояние $distanceText.',
-              'Алда жол камерасы бар. Қашықтық $distanceText.',
-              'Speed camera ahead. Distance $distanceText.',
-            )
-          : _localized(
-              'Впереди дорожные работы. Расстояние $distanceText.',
-              'Алда жол жөндеу жұмыстары. Қашықтық $distanceText.',
-              'Roadworks ahead. Distance $distanceText.',
-            );
+      final message = _localized(
+        'Впереди камера контроля скорости. Расстояние $distanceText.',
+        'Алда жылдамдықты бақылау камерасы бар. Қашықтық $distanceText.',
+        'Speed camera ahead. Distance $distanceText.',
+      );
       await _speakText(message);
       if (!mounted || !_navigationActive || _voiceMode == 0) return;
     }
@@ -3546,7 +3541,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               _menuTile(sheetContext, Icons.bookmark_border, AppLocale.tr('Закладки'), () { Navigator.pop(sheetContext); _openBookmarks(); }),
               _menuTile(sheetContext, Icons.place_outlined, AppLocale.tr('Мои места'), () { Navigator.pop(sheetContext); _openMyPlaces(); }),
               _menuTile(sheetContext, Icons.warning_amber_outlined, AppLocale.tr('События на дороге'), () { Navigator.pop(sheetContext); _openRoadEvents(); }),
-              _menuTile(sheetContext, Icons.speed_outlined, AppLocale.tr('Камеры и дорожные события'), () { Navigator.pop(sheetContext); _openCameraAlertsPage(); }),
+              _menuTile(sheetContext, Icons.speed_outlined, AppLocale.tr('Камеры контроля скорости'), () { Navigator.pop(sheetContext); _openCameraAlertsPage(); }),
               _menuTile(sheetContext, Icons.local_gas_station_outlined, AppLocale.tr('Заправки'), () { Navigator.pop(sheetContext); _openStationNetworks(); }),
               _menuTile(sheetContext, Icons.local_parking_outlined, AppLocale.tr('Парковки'), () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
               _menuTile(sheetContext, Icons.history, AppLocale.tr('Бронирования и история заказов'), () { Navigator.pop(sheetContext); _openBookingsPage(); }),
@@ -4136,9 +4131,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                 padding: const EdgeInsets.all(24),
                                 child: Text(
                                   AppLocale.pick(
-                                    'В радиусе 3 км не найдены отмеченные в OpenStreetMap камеры или дорожные работы.',
-                                    '3 км радиуста OpenStreetMap картасында белгіленген камералар немесе жол жұмыстары табылмады.',
-                                    'No cameras or roadworks mapped in OpenStreetMap were found within 3 km.',
+                                    'В радиусе 3 км не найдены камеры контроля скорости, отмеченные в OpenStreetMap.',
+                                    '3 км радиуста OpenStreetMap картасында белгіленген жылдамдық камералары табылмады.',
+                                    'No speed cameras mapped in OpenStreetMap were found within 3 km.',
                                   ),
                                   textAlign: TextAlign.center,
                                 ),
@@ -4150,10 +4145,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               separatorBuilder: (_, __) => const Divider(height: 1),
                               itemBuilder: (context, index) {
                                 final alert = alerts[index];
-                                final isCamera = alert.kind == RoadAlertKind.speedCamera;
-                                final title = isCamera
-                                    ? AppLocale.tr('Камера контроля скорости')
-                                    : AppLocale.tr('Дорожные работы');
+                                final title = AppLocale.tr('Камера контроля скорости');
                                 final distance = alert.distanceMeters >= 1000
                                     ? '${(alert.distanceMeters / 1000).toStringAsFixed(1)} км'
                                     : '${alert.distanceMeters.round()} м';
@@ -4165,8 +4157,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                 ].join(' · ');
                                 return ListTile(
                                   leading: Icon(
-                                    isCamera ? Icons.speed : Icons.construction_outlined,
-                                    color: isCamera ? const Color(0xFF1976D2) : const Color(0xFFFFA000),
+                                    Icons.speed,
+                                    color: const Color(0xFF1976D2),
                                     size: 30,
                                   ),
                                   title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -4178,9 +4170,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: Text(
                   AppLocale.pick(
-                    'Данные берутся из OpenStreetMap. На карте могут отсутствовать камеры и дорожные работы, которые ещё не внесены участниками.',
+                    'Данные берутся из OpenStreetMap. Камеры, которые ещё не внесены участниками, могут отсутствовать на карте.',
                     'Деректер OpenStreetMap жүйесінен алынады. Қатысушылар әлі қоспаған камералар мен жол жұмыстары картада болмауы мүмкін.',
-                    'Data comes from OpenStreetMap. Cameras and roadworks not yet mapped by contributors may be missing.',
+                    'Data comes from OpenStreetMap. Cameras not yet mapped by contributors may be missing.',
                   ),
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontSize: 12, color: Colors.black54),
