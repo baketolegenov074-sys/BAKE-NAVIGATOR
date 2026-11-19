@@ -78,6 +78,27 @@ jobs:
           # androidx.core 1.17.0 requires Android Gradle Plugin 8.9.1+.
           # Upgrade the generated app plugin and use its compatible Gradle wrapper.
           settings_content = settings.read_text()
+
+          # Ensure plugin marker and transitive Kotlin artifacts can resolve
+          # from Google's Maven repository and Maven Central, not only the
+          # Gradle Plugin Portal.
+          plugin_block = re.search(r"pluginManagement\\s*\\{([\\s\\S]*?)\\n\\}", settings_content)
+          if not plugin_block:
+              raise SystemExit("Generated pluginManagement block was not found")
+          plugin_text = plugin_block.group(1)
+          repositories_match = re.search(r"repositories\\s*\\{([^}]*)\\}", plugin_text)
+          if not repositories_match:
+              raise SystemExit("Generated pluginManagement repositories block was not found")
+          repositories_text = repositories_match.group(1)
+          additions = []
+          for repository in ("google()", "mavenCentral()", "gradlePluginPortal()"):
+              if repository not in repositories_text:
+                  additions.append("        " + repository)
+          if additions:
+              updated_repositories = repositories_text.rstrip() + "\\n" + "\\n".join(additions) + "\\n      "
+              plugin_text = plugin_text[:repositories_match.start(1)] + updated_repositories + plugin_text[repositories_match.end(1):]
+              settings_content = settings_content[:plugin_block.start(1)] + plugin_text + settings_content[plugin_block.end(1):]
+
           settings_content, agp_count = re.subn(
               r'((?:id\(["\']com\.android\.application["\']\)|["\']com\.android\.application["\'])\s+version\s+["\'])8\.7\.3(["\'])',
               r'\g<1>8.9.1\g<2>',
