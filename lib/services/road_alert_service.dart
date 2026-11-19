@@ -47,7 +47,7 @@ class RoadAlertService {
         'node(around:$radius,${point.latitude},${point.longitude})[highway=construction];'
         'way(around:$radius,${point.latitude},${point.longitude})[highway=construction];'
         'way(around:$radius,${point.latitude},${point.longitude})[construction];'
-        ');out center tags;';
+        ' );out center;';
     const endpoints = [
       'https://overpass-api.de/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
