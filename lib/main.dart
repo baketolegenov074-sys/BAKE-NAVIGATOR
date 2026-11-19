@@ -508,6 +508,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _mapLibreAnnotationSyncInProgress = false;
   bool _mapLibreAnnotationSyncPending = false;
   bool _mapLibreRouteSyncPending = false;
+  LatLng? _lastRouteLineSyncPoint;
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
@@ -954,6 +955,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         // GPS refreshes must never remove the already-rendered route line.
         // Only route/style changes are allowed to replace route geometry.
         if (syncRoute) {
+          _lastRouteLineSyncPoint = _currentLocation;
           await controller.clearLines();
           if (visibleRoutePoints.length > 1) {
             final routeGeometry =
@@ -1642,7 +1644,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             _gpsHeadingDegrees = position.heading;
           }
         });
-        unawaited(_syncMapLibreAnnotations(updateRoute: _navigationActive));
+        final lastRouteLineSyncPoint = _lastRouteLineSyncPoint;
+        final shouldRefreshRouteLine = _navigationActive &&
+            (lastRouteLineSyncPoint == null ||
+                Geolocator.distanceBetween(
+                  lastRouteLineSyncPoint.latitude,
+                  lastRouteLineSyncPoint.longitude,
+                  point.latitude,
+                  point.longitude,
+                ) >= 20);
+        unawaited(_syncMapLibreAnnotations(updateRoute: shouldRefreshRouteLine));
         unawaited(_refreshRoadSpeedLimit(point));
         if (_navigationActive) {
           unawaited(_updateRoadAlerts(
