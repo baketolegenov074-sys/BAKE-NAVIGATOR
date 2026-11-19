@@ -1046,6 +1046,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         filter: ['all', ['has', 'render_height'], ['!=', ['get', 'hide_3d'], true]],
         enableInteraction: false,
       );
+      await controller.setLayerVisibility('bake-buildings-3d', _is3DMap);
     } catch (error) {
       // A style without the OpenMapTiles building source remains usable.
       debugPrint('BAKE 3D buildings unavailable: $error');
