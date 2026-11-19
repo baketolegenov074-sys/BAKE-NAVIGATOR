@@ -1116,8 +1116,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       }
       // Fixed speed-camera markers. They are refreshed with the map's
       // other annotations and remain visible even when voice guidance is off.
-      for (final alert in _roadAlerts) {
-        if (alert.kind != RoadAlertKind.speedCamera) continue;
+      for (final alert in _roadAlertsVisibleOnMap()) {
         await controller.addCircle(ml.CircleOptions(
           geometry: _toMapLibrePoint(alert.location),
           circleRadius: 10,
@@ -2571,6 +2570,59 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   double _bearingDifference(double a, double b) {
     final difference = (a - b).abs() % 360;
     return difference > 180 ? 360 - difference : difference;
+  }
+
+  double _mapMarkerCollisionDistanceMeters() {
+    // Marker dimensions are measured in screen pixels. Convert a 44 px
+    // collision margin to ground distance for the current map zoom.
+    final latitude = (_currentLocation ?? _shymkent).latitude;
+    final metersPerPixel = 156543.03392 *
+        math.cos(latitude * math.pi / 180) /
+        math.pow(2, _mapCameraZoom);
+    return (metersPerPixel * 44).clamp(25.0, 600.0).toDouble();
+  }
+
+  List<RoadAlert> _roadAlertsVisibleOnMap() {
+    final collisionDistance = _mapMarkerCollisionDistanceMeters();
+    final protectedPoints = <LatLng>[
+      if (_currentLocation != null) _currentLocation!,
+      if (_navigationActive && _instructionIndex < _instructions.length)
+        _instructions[_instructionIndex].location,
+      if (_destination != null) _destination!,
+      ..._routeStops,
+      if (!_navigationActive && _routeOrigin != null && _routePoints.length > 1)
+        _routeOrigin!,
+    ];
+
+    // Keep the closest camera to the map center when camera markers cluster.
+    final center = _currentLocation ?? _shymkent;
+    final candidates = _roadAlerts
+        .where((alert) => alert.kind == RoadAlertKind.speedCamera)
+        .toList()
+      ..sort((a, b) {
+        final distanceA = const Distance().as(
+          LengthUnit.Meter, center, a.location,
+        );
+        final distanceB = const Distance().as(
+          LengthUnit.Meter, center, b.location,
+        );
+        return distanceA.compareTo(distanceB);
+      });
+
+    final visible = <RoadAlert>[];
+    for (final alert in candidates) {
+      final overlapsImportantMarker = protectedPoints.any((point) =>
+          const Distance().as(LengthUnit.Meter, point, alert.location) <
+          collisionDistance);
+      if (overlapsImportantMarker) continue;
+
+      final overlapsCamera = visible.any((shown) =>
+          const Distance().as(
+            LengthUnit.Meter, shown.location, alert.location,
+          ) < collisionDistance);
+      if (!overlapsCamera) visible.add(alert);
+    }
+    return visible;
   }
 
   Future<void> _updateRoadAlerts(LatLng position, double? gpsHeading) async {
@@ -4773,6 +4825,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   @override
   Widget build(BuildContext context) {
     final visibleRoutePoints = _remainingRoutePoints();
+    final visibleRoadAlerts = _roadAlertsVisibleOnMap();
     final markers = <Marker>[
       ..._buildOfflineRouteArrowMarkers(visibleRoutePoints),
       if (_navigationActive && _instructionIndex < _instructions.length)
@@ -4821,8 +4874,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           ),
         ),
-      ..._roadAlerts
-          .where((alert) => alert.kind == RoadAlertKind.speedCamera)
+      ...visibleRoadAlerts
           .map((alert) => Marker(
             point: alert.location,
             width: 36,
