@@ -26,6 +26,29 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Download Kazakhstan offline speed-camera database
+        run: |
+          mkdir -p assets/data
+          curl --fail --location --retry 3 --retry-delay 2 \
+            https://speedcams.world/downloads/kz/kz-all.csv \
+            --output assets/data/kazakhstan_speed_cameras.csv
+          python3 - <<'PY'
+          import csv
+          from pathlib import Path
+          path = Path("assets/data/kazakhstan_speed_cameras.csv")
+          with path.open(encoding="utf-8-sig", newline="") as stream:
+              rows = list(csv.DictReader(stream))
+          if len(rows) < 100:
+              raise SystemExit(f"Camera dataset looks incomplete: only {len(rows)} rows")
+          for row in rows:
+              lat, lon = float(row["latitude"]), float(row["longitude"])
+              if not (40 <= lat <= 56 and 46 <= lon <= 88):
+                  raise SystemExit(f"Out-of-country coordinate: {lat}, {lon}")
+              if row.get("country_code") != "KZ":
+                  raise SystemExit("Dataset contains a non-Kazakhstan record")
+          print(f"Validated {len(rows)} Kazakhstan camera coordinates")
+          PY
+
       - name: Generate Android platform files
         run: |
           cp pubspec.yaml /tmp/bake-pubspec.yaml
