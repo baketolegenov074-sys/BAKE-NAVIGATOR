@@ -1622,10 +1622,26 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         }
         _message = AppLocale.pick('GPS определён. Положение будет обновляться в реальном времени.', 'GPS анықталды. Орналасқан жер нақты уақытта жаңартылып отырады.', 'GPS located. Your position will update in real time.');
       });
-      // Render the first GPS fix immediately, without waiting for the next stream event.
+      // Refresh the live position without interrupting the active navigation stream.
+      // In particular, keep the Android foreground GPS subscription alive while
+      // navigating; replacing it with a foreground-only stream can break tracking.
       unawaited(_syncMapLibreAnnotations());
-      _moveMapCamera(point, 15);
-      await _startLiveLocationUpdates();
+      if (_navigationActive) {
+        final heading = _gpsHeadingDegrees;
+        _updateNavigationCamera(
+          point,
+          17,
+          heading != null && _currentSpeedKmh >= 5.4 ? heading : 0.0,
+        );
+        // Navigation already owns a background location stream. Do not cancel
+        // and replace it just because the user tapped the GPS recenter button.
+        if (_positionSubscription == null) {
+          await _startLiveLocationUpdates(backgroundNavigation: true);
+        }
+      } else {
+        _moveMapCamera(point, 15);
+        await _startLiveLocationUpdates();
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
