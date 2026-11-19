@@ -976,8 +976,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
     if (_routePoints.length > 1) _fitMapCamera(_routePoints);
     _applyMapViewMode();
-    unawaited(_ensure3DBuildingsLayer());
-    unawaited(_ensure3DSatelliteLayer());
+    unawaited(_configure3DMapLayers());
+  }
+
+  Future<void> _configure3DMapLayers() async {
+    // Add imagery first, then style the building overlays. Keeping this
+    // sequence avoids two concurrent style mutations during map startup.
+    await _ensure3DSatelliteLayer();
+    await _ensure3DBuildingsLayer();
+    await _apply3DLayerVisibility();
   }
 
   Future<void> _ensure3DSatelliteLayer() async {
@@ -1001,12 +1008,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
       final layerIds = await controller.getLayerIds();
       if (!layerIds.contains('bake-satellite-layer')) {
-        // Keep Liberty's parks, roads, labels and 3D buildings above the imagery.
+        // Put satellite imagery above opaque land-use/building footprints,
+        // but below roads, bridges and labels. This keeps aerial detail
+        // visible when zooming in instead of letting gray vector polygons
+        // cover the photograph.
+        final roadOverlay = layerIds.cast<String?>().firstWhere(
+          (id) => id != null && RegExp(r'^(road|transportation|bridge|tunnel)').hasMatch(id),
+          orElse: () => null,
+        );
+        final fallbackOverlay = layerIds.contains('building-3d')
+            ? 'building-3d'
+            : (layerIds.contains('building') ? 'building' : null);
         await controller.addRasterLayer(
           'bake-satellite',
           'bake-satellite-layer',
-          const ml.RasterLayerProperties(rasterOpacity: 0.96),
-          belowLayerId: layerIds.contains('park') ? 'park' : null,
+          const ml.RasterLayerProperties(rasterOpacity: 1.0),
+          belowLayerId: roadOverlay ?? fallbackOverlay,
         );
       }
       await controller.setLayerVisibility('bake-satellite-layer', _is3DMap);
@@ -1021,16 +1038,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
 
     try {
-      // Liberty may already include its own 3D building layer. Avoid
-      // duplicating it; add a fallback only when the style has no such layer.
+      // Preserve 3D building shapes, but make their surfaces translucent so
+      // the real satellite photograph remains visible through the overlay.
       final layerIds = await controller.getLayerIds();
       const buildingStyle = ml.FillExtrusionLayerProperties(
-        fillExtrusionColor: '#D8D0C4',
-        fillExtrusionOpacity: 0.98,
+        fillExtrusionColor: '#C8BBA8',
+        fillExtrusionOpacity: 0.38,
       );
+      if (layerIds.contains('building')) {
+        await controller.setLayerProperties(
+          'building',
+          const ml.FillLayerProperties(
+            fillColor: '#C8BBA8',
+            fillOpacity: 0.12,
+          ),
+        );
+      }
       if (layerIds.contains('building-3d')) {
-        // Liberty already has an extrusion layer; brighten it instead of
-        // adding a duplicate dark building layer.
         await controller.setLayerProperties('building-3d', buildingStyle);
         await controller.setLayerVisibility('building-3d', _is3DMap);
         return;
@@ -1044,11 +1068,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       await controller.addFillExtrusionLayer(
         'openmaptiles',
         'bake-buildings-3d',
-        ml.FillExtrusionLayerProperties(
-          fillExtrusionColor: '#D8D0C4',
+        const ml.FillExtrusionLayerProperties(
+          fillExtrusionColor: '#C8BBA8',
           fillExtrusionHeight: ['coalesce', ['get', 'render_height'], 8],
           fillExtrusionBase: ['coalesce', ['get', 'render_min_height'], 0],
-          fillExtrusionOpacity: 0.98,
+          fillExtrusionOpacity: 0.38,
         ),
         sourceLayer: 'building',
         minzoom: 14,
