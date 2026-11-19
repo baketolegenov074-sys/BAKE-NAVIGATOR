@@ -510,6 +510,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _mapLibreRouteSyncPending = false;
   LatLng? _lastRouteLineSyncPoint;
   ml.Fill? _gpsPositionFill;
+  ml.Fill? _routePositionFill;
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
@@ -992,6 +993,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         if (syncRoute) {
           await controller.clearFills();
           _gpsPositionFill = null;
+          _routePositionFill = null;
         }
 
         // Show only real upcoming turns. Each white arrow floats directly
@@ -1052,27 +1054,44 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           ));
         }
       if (_currentLocation != null) {
-        // Draw the live GPS position as a filled blue direction arrow.
-        // A native polygon avoids text-glyph/font dependencies and replaces the old dot.
-        final gpsBearing = _gpsHeadingDegrees ??
-            (_routePoints.length > 1 ? _routeBearingAt(_currentLocation!) : 0.0);
-        final gpsArrowOptions = ml.FillOptions(
+        // Small amber dot marks the real GPS fix without pretending it is
+        // snapped to the road.
+        await controller.addCircle(ml.CircleOptions(
+          geometry: _toMapLibrePoint(_currentLocation!),
+          circleRadius: 6,
+          circleColor: '#FFC400',
+          circleOpacity: 1,
+          circleStrokeColor: '#172B4D',
+          circleStrokeWidth: 1.5,
+        ));
+
+        // The larger blue arrow follows the projected position on the route.
+        // Hide it when the real GPS fix is clearly away from the planned road.
+        final onRoute = _navigationActive &&
+            _routePoints.length > 1 &&
+            _distanceToRouteMeters(_currentLocation!) <= 45;
+        final routePosition = onRoute
+            ? _remainingRoutePoints().first
+            : _routePoints.isNotEmpty ? _routePoints.first : _currentLocation!;
+        final routeBearing = onRoute
+            ? _routeBearingAt(routePosition)
+            : (_gpsHeadingDegrees ?? 0.0);
+        final routeArrowOptions = ml.FillOptions(
           geometry: [_directionArrowPolygon(
-            _currentLocation!,
-            gpsBearing,
-            lengthMeters: 20,
-            halfWidthMeters: 8,
+            routePosition,
+            routeBearing,
+            lengthMeters: 30,
+            halfWidthMeters: 11,
           )],
-          // High-contrast amber separates the GPS arrow from the blue route line.
-          fillColor: '#FFC400',
-          fillOpacity: 1,
-          fillOutlineColor: '#172B4D',
+          fillColor: '#0878F9',
+          fillOpacity: onRoute ? 1 : 0,
+          fillOutlineColor: '#FFFFFF',
         );
-        final existingGpsFill = _gpsPositionFill;
-        if (existingGpsFill == null) {
-          _gpsPositionFill = await controller.addFill(gpsArrowOptions);
+        final existingRouteFill = _routePositionFill;
+        if (existingRouteFill == null) {
+          _routePositionFill = await controller.addFill(routeArrowOptions);
         } else {
-          await controller.updateFill(existingGpsFill, gpsArrowOptions);
+          await controller.updateFill(existingRouteFill, routeArrowOptions);
         }
       }
       for (var i = 0; i < _routeStops.length; i++) {
@@ -1129,18 +1148,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (controller != null && _mapLibreStyleReady &&
           _offlineTileProvider == null && point != null) {
         try {
-          final bearing = _gpsHeadingDegrees ??
-              (_routePoints.length > 1 ? _routeBearingAt(point) : 0.0);
-          await controller.addFill(ml.FillOptions(
-            geometry: [_directionArrowPolygon(
-              point,
-              bearing,
-              lengthMeters: 20,
-              halfWidthMeters: 8,
-            )],
-            fillColor: '#FFC400',
-            fillOpacity: 1,
-            fillOutlineColor: '#172B4D',
+          await controller.addCircle(ml.CircleOptions(
+            geometry: _toMapLibrePoint(point),
+            circleRadius: 6,
+            circleColor: '#FFC400',
+            circleOpacity: 1,
+            circleStrokeColor: '#172B4D',
+            circleStrokeWidth: 1.5,
           ));
         } catch (fallbackError, fallbackStackTrace) {
           debugPrint('BAKE Navigator: GPS marker fallback failed: $fallbackError');
@@ -2792,19 +2806,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (position.accuracy > 45 || _routePoints.length < 2) return;
     final now = DateTime.now();
     if (_lastAutomaticReroute != null &&
-        now.difference(_lastAutomaticReroute!) < const Duration(seconds: 25)) {
+        now.difference(_lastAutomaticReroute!) < const Duration(seconds: 10)) {
       return;
     }
     final distance = _distanceToRouteMeters(
       LatLng(position.latitude, position.longitude),
     );
-    final offRouteLimit = math.max(55.0, position.accuracy * 2.0);
+    final offRouteLimit = math.max(40.0, position.accuracy * 1.5);
     if (distance > offRouteLimit) {
       _offRouteSamples++;
     } else {
       _offRouteSamples = 0;
     }
-    if (_offRouteSamples >= 3) {
+    if (_offRouteSamples >= 2) {
       _offRouteSamples = 0;
       _lastAutomaticReroute = now;
       _buildRoute(automaticReroute: true);
