@@ -1064,6 +1064,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     await _apply3DLayerVisibility();
   }
 
+  // Diagnostic build: verify the satellite toggle and Esri raster tiles on device.
   Future<void> _ensure3DSatelliteLayer() async {
     final controller = _mapLibreController;
     if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
