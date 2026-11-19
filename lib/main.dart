@@ -575,17 +575,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Future<void> _loadBundledRoadAlerts() async {
+    final bundled = <RoadAlert>[];
     try {
-      final cameras = await _roadAlertService.loadBundledCameras();
-      if (!mounted) return;
-      setState(() {
-        _bundledRoadAlerts = cameras;
-        _roadAlerts = _mergeRoadAlerts(cameras, _roadAlerts);
-      });
-      unawaited(_syncMapLibreAnnotations());
+      bundled.addAll(await _roadAlertService.loadBundledCameras());
     } catch (error) {
-      debugPrint('Не удалось загрузить встроенную базу камер: $error');
+      debugPrint('Не удалось загрузить общую базу камер: $error');
     }
+    try {
+      bundled.addAll(await _roadAlertService.loadBundledShymkentCameraCandidates());
+    } catch (error) {
+      debugPrint('Не удалось загрузить слой камер Шымкента: $error');
+    }
+    if (!mounted || bundled.isEmpty) return;
+    setState(() {
+      _bundledRoadAlerts = bundled;
+      _roadAlerts = _mergeRoadAlerts(bundled, _roadAlerts);
+    });
+    unawaited(_syncMapLibreAnnotations());
   }
 
   List<RoadAlert> _mergeRoadAlerts(List<RoadAlert> bundled, List<RoadAlert> live) {
@@ -1137,24 +1143,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           textHaloColor: '#343434', textHaloWidth: 5,
         ));
       }
-      // Fixed speed-camera markers. They are refreshed with the map's
-      // other annotations and remain visible even when voice guidance is off.
+      // Camera pictograms replace the old red dots. Approximate points carry
+      // an ≈ prefix and are informational only.
       for (final alert in _roadAlertsVisibleOnMap()) {
-        await controller.addCircle(ml.CircleOptions(
-          geometry: _toMapLibrePoint(alert.location),
-          circleRadius: 10,
-          circleColor: '#F04438',
-          circleOpacity: 1,
-          circleStrokeColor: '#FFFFFF',
-          circleStrokeWidth: 3,
-        ));
+        final glyph = alert.isApproximate
+            ? '≈${_roadAlertGlyph(alert)}'
+            : _roadAlertGlyph(alert);
         await controller.addSymbol(ml.SymbolOptions(
           geometry: _toMapLibrePoint(alert.location),
-          textField: 'К',
-          textSize: 11,
+          textField: glyph,
+          textSize: 24,
           textColor: '#FFFFFF',
-          textHaloColor: '#B42318',
-          textHaloWidth: 1,
+          textHaloColor: '#334155',
+          textHaloWidth: 2.5,
         ));
       }
       if (_destination != null) {
@@ -2605,11 +2606,89 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     return (metersPerPixel * 44).clamp(25.0, 600.0).toDouble();
   }
 
+  Color _roadAlertColor(RoadAlert alert) {
+    return switch (alert.kind) {
+      RoadAlertKind.speedCamera => const Color(0xFF1769AA),
+      RoadAlertKind.trafficSignalCamera => const Color(0xFFB54708),
+      RoadAlertKind.surveillanceCamera => const Color(0xFF087E8B),
+      RoadAlertKind.sergekCamera => const Color(0xFF7A3E9D),
+      RoadAlertKind.unknownCamera => const Color(0xFF596579),
+    };
+  }
+
+  IconData _roadAlertIcon(RoadAlert alert) {
+    return switch (alert.kind) {
+      RoadAlertKind.speedCamera => Icons.speed,
+      RoadAlertKind.trafficSignalCamera => Icons.traffic,
+      RoadAlertKind.surveillanceCamera => Icons.videocam,
+      RoadAlertKind.sergekCamera => Icons.camera_alt,
+      RoadAlertKind.unknownCamera => Icons.camera_alt,
+    };
+  }
+
+  String _roadAlertGlyph(RoadAlert alert) {
+    return switch (alert.kind) {
+      RoadAlertKind.speedCamera => '📡',
+      RoadAlertKind.trafficSignalCamera => '🚦',
+      RoadAlertKind.surveillanceCamera => '🎥',
+      RoadAlertKind.sergekCamera => '📷',
+      RoadAlertKind.unknownCamera => '📷',
+    };
+  }
+
+  Widget _buildRoadAlertMapMarker(RoadAlert alert) {
+    final color = _roadAlertColor(alert);
+    final details = [
+      alert.name ?? 'Камера',
+      if (alert.isApproximate) 'Примерное место — камера здесь не подтверждена',
+      if (alert.verificationStatus != null) 'Статус: ${alert.verificationStatus}',
+      if (alert.source != null) 'Источник: ${alert.source}',
+    ].join('\\n');
+    return Tooltip(
+      message: details,
+      child: SizedBox(
+        width: 42,
+        height: 46,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: color, width: 2.2),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x44000000), blurRadius: 5, offset: Offset(0, 2)),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: Icon(_roadAlertIcon(alert), color: color, size: 25),
+            ),
+            if (alert.isApproximate)
+              Positioned(
+                right: -1,
+                top: -1,
+                child: Container(
+                  width: 16,
+                  height: 16,
+                  decoration: const BoxDecoration(color: Color(0xFFFFD54F), shape: BoxShape.circle),
+                  alignment: Alignment.center,
+                  child: const Text('≈', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF332400))),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<RoadAlert> _roadAlertsVisibleOnMap() {
-    // Do not hide camera points near GPS, route markers, or other cameras.
-    return _roadAlerts
-        .where((alert) => alert.kind == RoadAlertKind.speedCamera)
-        .toList();
+    // Keep all camera categories visible; approximate Shymkent landmarks are
+    // shown with a small ≈ badge and never participate in voice alerts.
+    return List<RoadAlert>.unmodifiable(_roadAlerts);
   }
 
   Future<void> _updateRoadAlerts(LatLng position, double? gpsHeading) async {
@@ -2678,6 +2757,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
     final candidates = <({RoadAlert alert, double distance})>[];
     for (final alert in _roadAlerts) {
+      // Only confirmed speed-enforcement coordinates may trigger speech.
+      if (alert.kind != RoadAlertKind.speedCamera || alert.isApproximate) continue;
       final distance = Geolocator.distanceBetween(
         position.latitude,
         position.longitude,
@@ -4913,24 +4994,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           ),
         ),
-      ...visibleRoadAlerts
-          .map((alert) => Marker(
-            point: alert.location,
-            width: 36,
-            height: 36,
-            child: Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFFF04438),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 3),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x44000000), blurRadius: 5, offset: Offset(0, 2)),
-                ],
-              ),
-              alignment: Alignment.center,
-              child: const Icon(Icons.camera_alt, color: Colors.white, size: 19),
-            ),
-          )),
+      ...visibleRoadAlerts.map((alert) => Marker(
+        point: alert.location,
+        width: 42,
+        height: 46,
+        child: _buildRoadAlertMapMarker(alert),
+      )),
       ..._routeStops.asMap().entries.map((entry) => Marker(
         point: entry.value,
         width: 38,
