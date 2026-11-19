@@ -500,12 +500,10 @@ class NavigatorScreen extends StatefulWidget {
 
 class _NavigatorScreenState extends State<NavigatorScreen> {
   static const LatLng _shymkent = LatLng(42.3154, 69.5869);
-  static const String _cameraMarkerPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB6ElEQVR4nO2bSW7DMAxF5SLXyJl6oy5yo5wpB3FWBFRZA0VKHCx9oIumjs3/wEFKqhC2tpbWwXnzeZ7nqEC4Oo6D5KX7TZZMl9QDA32hB+OpMCBQAErmn79/vTFN0+f9yr7egtAEkJq3ZLqkFEYNwk/tRh7Nh3CNs1a+RQBezYOwELIAvJsHYSBUSyB3E29qxX8BEFPybh4U+0izoJkBd9cGEP9yx/QHlcrgMfOhpdVZKk3Y00oAa7732tGaAoBiSAvCcAAcIxoQ9hTQDkBb7CkwOm0p9+NMEVYGaHbvWJw4yACsmAdR4yEBsGYeRImrG4BV86De+KYuhVvKNS9pwCoAal0b/iYFQnwdgB1ZUhskUQCllIcfzPWjpdYDcobhNcntsVgGUE3NhqGyF2g1OMlJsPxmaAPQeGirrm/ZBKl1PbsfqI3B3IpP49NhUQCf9+tismZaYhqI9wCsKalRqFICtRXfErtBkIXPFvY6QDsAbXUDsP6tcW98pAywCoESF7kErEGgxsPqAVYgcOJgj0ErEKj6lwHxv5RamNEjFfuJfe4xqB2Ati4A7lgGpfQPAZEB3iG04s8CSCl5hYA5N1DMAO8QsIcmqiXgFULPiZF9Zgj7gKVPjcXyAGLKucGcLMGgnhzdWl1fTVfeMvXyPsgAAAAASUVORK5CYII=';
 
   final MapController _mapController = MapController();
   ml.MapLibreMapController? _mapLibreController;
   bool _mapLibreStyleReady = false;
-  bool _mapLibreCameraIconReady = false;
   bool _is3DMap = true;
   bool _mapLibreAnnotationSyncInProgress = false;
   bool _mapLibreAnnotationSyncPending = false;
@@ -522,6 +520,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   DateTime? _lastRoadAlertLookup;
   LatLng? _lastRoadAlertLookupPoint;
   bool _roadAlertLookupInProgress = false;
+  bool _showShymkentCamerasOnMap = true;
   int _kazakhVoiceId = 0;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
@@ -924,7 +923,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   void _onMapLibreStyleLoaded() {
     _mapLibreStyleReady = true;
-    _mapLibreCameraIconReady = false;
     unawaited(_syncMapLibreAnnotations(updateRoute: true));
     // GPS may finish before MapLibre has created its controller. In that case
     // the first camera move is ignored, so center the map again when the style
@@ -967,18 +965,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     } catch (error) {
       // A style without the OpenMapTiles building source remains usable.
       debugPrint('BAKE 3D buildings unavailable: $error');
-    }
-  }
-
-  Future<bool> _ensureMapLibreCameraIcon(ml.MapLibreMapController controller) async {
-    if (_mapLibreCameraIconReady) return true;
-    try {
-      await controller.addImage('bake-camera-marker', base64Decode(_cameraMarkerPngBase64));
-      _mapLibreCameraIconReady = true;
-      return true;
-    } catch (error) {
-      debugPrint('BAKE Navigator: camera marker image unavailable: $error');
-      return false;
     }
   }
 
@@ -1158,20 +1144,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           textHaloColor: '#343434', textHaloWidth: 5,
         ));
       }
-      // Use a real PNG camera pictogram so it renders consistently on Android
-      // without depending on emoji fonts in the MapLibre style.
-      final cameraIconReady = await _ensureMapLibreCameraIcon(controller);
+      // Draw cameras with native MapLibre circles and a letter marker.
+      // This is the proven renderer used before the custom image/emoji change.
       for (final alert in _roadAlertsVisibleOnMap()) {
+        await controller.addCircle(ml.CircleOptions(
+          geometry: _toMapLibrePoint(alert.location),
+          circleRadius: 10,
+          circleColor: '#F04438',
+          circleOpacity: 1,
+          circleStrokeColor: '#FFFFFF',
+          circleStrokeWidth: 3,
+        ));
         await controller.addSymbol(ml.SymbolOptions(
           geometry: _toMapLibrePoint(alert.location),
-          iconImage: cameraIconReady ? 'bake-camera-marker' : null,
-          iconSize: cameraIconReady ? 0.55 : null,
-          iconAnchor: cameraIconReady ? 'bottom' : null,
-          textField: cameraIconReady ? null : '📷',
-          textSize: cameraIconReady ? null : 24,
-          textColor: cameraIconReady ? null : '#FFFFFF',
-          textHaloColor: cameraIconReady ? null : '#334155',
-          textHaloWidth: cameraIconReady ? null : 2.5,
+          textField: 'К',
+          textSize: 11,
+          textColor: '#FFFFFF',
+          textHaloColor: '#B42318',
+          textHaloWidth: 1,
         ));
       }
       if (_destination != null) {
@@ -2677,10 +2667,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
   }
 
+  bool _isShymkentCamera(RoadAlert alert) {
+    if (alert.id.startsWith('shymkent/')) return true;
+    final distanceFromCityCenter = const Distance().as(
+      LengthUnit.Meter, _shymkent, alert.location,
+    );
+    return distanceFromCityCenter <= 25000;
+  }
+
+  List<RoadAlert> _shymkentCameraAlerts() =>
+      _bundledRoadAlerts.where(_isShymkentCamera).toList()
+        ..sort((a, b) => a.name.compareTo(b.name));
+
   List<RoadAlert> _roadAlertsVisibleOnMap() {
-    // Keep all camera categories visible; approximate Shymkent landmarks are
-    // shown with a small ≈ badge and never participate in voice alerts.
-    return List<RoadAlert>.unmodifiable(_roadAlerts);
+    final visible = _showShymkentCamerasOnMap
+        ? _roadAlerts
+        : _roadAlerts.where((alert) => !_isShymkentCamera(alert)).toList();
+    return List<RoadAlert>.unmodifiable(visible);
   }
 
   Future<void> _updateRoadAlerts(LatLng position, double? gpsHeading) async {
@@ -3709,6 +3712,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               _menuTile(sheetContext, Icons.place_outlined, AppLocale.tr('Мои места'), () { Navigator.pop(sheetContext); _openMyPlaces(); }),
               _menuTile(sheetContext, Icons.warning_amber_outlined, AppLocale.tr('События на дороге'), () { Navigator.pop(sheetContext); _openRoadEvents(); }),
               _menuTile(sheetContext, Icons.speed_outlined, AppLocale.tr('Камеры контроля скорости'), () { Navigator.pop(sheetContext); _openCameraAlertsPage(); }),
+              _menuTile(sheetContext, Icons.location_city_outlined, AppLocale.tr('Камеры Шымкента'), () { Navigator.pop(sheetContext); _openShymkentCamerasPage(); }),
               _menuTile(sheetContext, Icons.local_gas_station_outlined, AppLocale.tr('Заправки'), () { Navigator.pop(sheetContext); _openStationNetworks(); }),
               _menuTile(sheetContext, Icons.local_parking_outlined, AppLocale.tr('Парковки'), () { Navigator.pop(sheetContext); _searchController.text = 'парковка'; _searchAddress(); }),
               _menuTile(sheetContext, Icons.history, AppLocale.tr('Бронирования и история заказов'), () { Navigator.pop(sheetContext); _openBookingsPage(); }),
@@ -4202,6 +4206,109 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     Navigator.pop(pageContext);
                     _openBookmarks();
                   },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openShymkentCamerasPage() async {
+    if (!mounted) return;
+    if (_bundledRoadAlerts.isEmpty) {
+      await _loadBundledRoadAlerts();
+    }
+    if (!mounted) return;
+    final cameras = _shymkentCameraAlerts();
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (pageContext) => StatefulBuilder(
+          builder: (pageContext, refresh) => Scaffold(
+            backgroundColor: Colors.white,
+            appBar: AppBar(
+              title: Text(AppLocale.tr('Камеры Шымкента')),
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
+            ),
+            body: Column(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.camera_alt_outlined),
+                  title: Text(AppLocale.tr('Показывать камеры на карте')),
+                  subtitle: Text(AppLocale.tr('В радиусе 25 км от центра Шымкента')),
+                  value: _showShymkentCamerasOnMap,
+                  onChanged: (value) {
+                    setState(() => _showShymkentCamerasOnMap = value);
+                    refresh(() {});
+                    unawaited(_syncMapLibreAnnotations());
+                  },
+                ),
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      AppLocale.pick(
+                        'Точек с координатами: ${cameras.length}. Приблизительные места отмечены отдельно.',
+                        'Координаттары бар нүктелер: ${cameras.length}. Шамамен орындар бөлек белгіленген.',
+                        'Camera points with coordinates: ${cameras.length}. Approximate locations are marked.',
+                      ),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: cameras.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              AppLocale.tr('Встроенная база камер Шымкента не загрузилась. Проверьте подключение и сборку APK.'),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: cameras.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final camera = cameras[index];
+                            final coordinates =
+                                '${camera.location.latitude.toStringAsFixed(5)}, ${camera.location.longitude.toStringAsFixed(5)}';
+                            return ListTile(
+                              leading: Icon(
+                                camera.isApproximate
+                                    ? Icons.location_searching
+                                    : Icons.camera_alt,
+                                color: camera.isApproximate
+                                    ? Colors.orange.shade800
+                                    : const Color(0xFF1C4E7D),
+                              ),
+                              title: Text(camera.name ?? AppLocale.tr('Камера')),
+                              subtitle: Text(
+                                camera.isApproximate
+                                    ? '$coordinates · ${AppLocale.tr('примерный ориентир, не подтверждённая камера')}'
+                                    : coordinates,
+                              ),
+                              onTap: () {
+                                Navigator.pop(pageContext);
+                                _moveMapCamera(camera.location, 16);
+                              },
+                            );
+                          },
+                        ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: Text(
+                    AppLocale.tr('На карту ставятся только записи с GPS-координатами. Адреса без точного GPS не превращаются в выдуманные точки.'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
                 ),
               ],
             ),
