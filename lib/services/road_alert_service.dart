@@ -49,7 +49,7 @@ class RoadAlertService {
     final query = '[out:json][timeout:25];('
         'node(around:$radius,$lat,$lon)[highway=speed_camera];'
         'way(around:$radius,$lat,$lon)[highway=speed_camera];'
-        'relation(around:$radius,$lat,$lon)[type=enforcement][enforcement~"^(maxspeed|average_speed)$"];'
+        'relation(around:$radius,$lat,$lon)[type=enforcement][enforcement~"^(maxspeed|average_speed)\$"];'
         ');out geom;';
     const endpoints = [
       'https://overpass-api.de/api/interpreter',
