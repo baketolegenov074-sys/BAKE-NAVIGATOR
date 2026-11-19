@@ -505,6 +505,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   ml.MapLibreMapController? _mapLibreController;
   bool _mapLibreStyleReady = false;
   bool _is3DMap = true;
+  bool _isSatelliteMap = false;
   bool _mapLibreAnnotationSyncInProgress = false;
   bool _mapLibreAnnotationSyncPending = false;
   bool _mapLibreRouteSyncPending = false;
@@ -569,6 +570,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     _loadSavedOfflineMap();
     _loadSavedRoutePoints();
     unawaited(_loadMapViewPreference());
+    unawaited(_loadSatelliteMapPreference());
     // Ask for location after the first frame so the permission dialog has a valid context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_locateMe());
@@ -660,6 +662,31 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
+  Future<void> _loadSatelliteMapPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('layer_satellite') ?? false;
+      if (!mounted) return;
+      if (_isSatelliteMap != enabled) setState(() => _isSatelliteMap = enabled);
+      await _apply3DLayerVisibility();
+    } catch (error) {
+      debugPrint('BAKE satellite preference load failed: $error');
+    }
+  }
+
+  Future<void> _setSatelliteMap(bool enabled) async {
+    if (_isSatelliteMap != enabled && mounted) {
+      setState(() => _isSatelliteMap = enabled);
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('layer_satellite', enabled);
+    } catch (error) {
+      debugPrint('BAKE satellite preference save failed: $error');
+    }
+    await _apply3DLayerVisibility();
+  }
+
   Future<void> _setMap3D(bool enabled) async {
     if (_is3DMap == enabled) return;
     setState(() => _is3DMap = enabled);
@@ -716,12 +743,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
     try {
       final layerIds = await controller.getLayerIds();
-      for (final id in ['bake-satellite-layer', 'building-3d', 'bake-buildings-3d']) {
+      if (layerIds.contains('bake-satellite-layer')) {
+        await controller.setLayerVisibility('bake-satellite-layer', _isSatelliteMap);
+      }
+      for (final id in ['building-3d', 'bake-buildings-3d']) {
         if (layerIds.contains(id)) {
           await controller.setLayerVisibility(id, _is3DMap);
         }
       }
-      await _setSatelliteOverlayFillOpacity(_is3DMap);
+      await _setSatelliteOverlayFillOpacity(_isSatelliteMap);
     } catch (error) {
       debugPrint('BAKE 3D layer visibility update failed: $error');
     }
@@ -1048,7 +1078,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           belowLayerId: roadOverlay ?? fallbackOverlay,
         );
       }
-      await controller.setLayerVisibility('bake-satellite-layer', _is3DMap);
+      await controller.setLayerVisibility('bake-satellite-layer', _isSatelliteMap);
     } catch (error) {
       // A satellite tile failure must never disable the normal vector map.
       debugPrint('BAKE satellite imagery unavailable: $error');
@@ -3780,13 +3810,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   value: satellite,
                   onChanged: (value) async {
                     refresh(() => satellite = value);
-                    await saveLayer('layer_satellite', value);
+                    await _setSatelliteMap(value);
                   },
                 ),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 18),
                   child: Text(
-                    AppLocale.pick('Переключатели пока сохраняют выбор. Пробки, парковки, спутниковые снимки и общий слой дорожных событий ещё не подключены к источникам данных и не отображаются на карте.', 'Ауыстырғыштар әзірге таңдауды ғана сақтайды. Кептелістер, тұрақтар, спутниктік суреттер және жол оқиғалары қабаты деректер көздеріне қосылмаған, сондықтан картада көрсетілмейді.', 'These switches currently only save your selection. Traffic, parking, satellite imagery, and the road events layer are not connected to data sources and are not displayed on the map.'),
+                    AppLocale.pick('Спутниковые снимки загружаются из ArcGIS World Imagery. Пробки, парковки и общий слой дорожных событий пока не подключены к источникам данных.', 'Спутниктік суреттер ArcGIS World Imagery көзінен жүктеледі. Кептелістер, тұрақтар және жол оқиғаларының жалпы қабаты әзірге деректер көздеріне қосылмаған.', 'Satellite imagery is provided by ArcGIS World Imagery. Traffic, parking, and the shared road-events layer are not connected yet.'),
                     style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                 ),
