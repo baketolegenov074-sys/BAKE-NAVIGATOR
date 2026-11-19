@@ -2975,6 +2975,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         throw Exception(AppLocale.pick('Сервис вернул слишком длинный маршрут. Проверьте выбранные точки.', 'Қызмет тым ұзын маршрут қайтарды. Таңдалған нүктелерді тексеріңіз.', 'The service returned a route that is too long. Check the selected points.'));
       }
 
+      // OSRM's duration is the best estimate available from the current
+      // routing source. Sort by it so the quickest returned option is selected
+      // by default; this is NOT live traffic-aware ETA.
+      validRoutes.sort((a, b) =>
+          (a['duration'] as num).compareTo(b['duration'] as num));
+      if (validRoutes.length > 3) {
+        validRoutes.removeRange(3, validRoutes.length);
+      }
+
       final first = validRoutes.first;
       final geometry = first['geometry'] as Map<String, dynamic>;
       final coordinatesList = geometry['coordinates'] as List<dynamic>;
@@ -3024,8 +3033,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         final distanceKm = (distance / 1000).toStringAsFixed(1);
         final minutes = (duration / 60).round();
         if (_voiceMode >= 3) await _speakText(AppLocale.pick('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.', 'Маршрут құрылды. Қашықтық $distanceKm километр. Жол уақыты шамамен $minutes минут.', 'Route built. Distance $distanceKm kilometers. Estimated travel time $minutes minutes.'));
-        // Stay on the map: its persistent «Поехали» button starts navigation.
-        // Route alternatives remain available from the Route menu.
+        // Keep the map's persistent «Поехали» control unchanged.
+      }
+      // Present the available options immediately after a manual route search.
+      // Automatic reroutes stay quiet and do not interrupt active navigation.
+      if (!automaticReroute && mounted) {
+        await _openRouteAlternatives();
       }
     } catch (error) {
       if (!mounted) return;
@@ -3033,6 +3046,42 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     } finally {
       if (mounted) setState(() => _isBuildingRoute = false);
     }
+  }
+
+  String _routeAlternativeLabel(int index) {
+    if (_routeAlternatives.isEmpty || index < 0 ||
+        index >= _routeAlternatives.length) {
+      return AppLocale.pick('Вариант маршрута', 'Маршрут нұсқасы', 'Route option');
+    }
+
+    var shortestIndex = 0;
+    var fastestIndex = 0;
+    for (var i = 1; i < _routeAlternatives.length; i++) {
+      final candidate = _routeAlternatives[i];
+      final shortest = _routeAlternatives[shortestIndex];
+      final fastest = _routeAlternatives[fastestIndex];
+      if ((candidate['distance'] as num) < (shortest['distance'] as num)) {
+        shortestIndex = i;
+      }
+      if ((candidate['duration'] as num) < (fastest['duration'] as num)) {
+        fastestIndex = i;
+      }
+    }
+
+    if (index == shortestIndex && index == fastestIndex) {
+      return AppLocale.pick(
+        'Самый короткий и быстрый',
+        'Ең қысқа әрі жылдам',
+        'Shortest and fastest',
+      );
+    }
+    if (index == shortestIndex) {
+      return AppLocale.pick('Самый короткий', 'Ең қысқа', 'Shortest');
+    }
+    if (index == fastestIndex) {
+      return AppLocale.pick('Самый быстрый', 'Ең жылдам', 'Fastest');
+    }
+    return AppLocale.pick('Альтернативный', 'Балама маршрут', 'Alternative');
   }
 
   void _selectRouteAlternative(int index) {
@@ -3109,8 +3158,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                     selected ? Icons.radio_button_checked : Icons.radio_button_off,
                     color: selected ? const Color(0xFFB88A00) : const Color(0xFF69737D),
                   ),
-                  title: Text('$minutes мин · $km км', style: const TextStyle(fontWeight: FontWeight.w800)),
-                  subtitle: Text('${AppLocale.tr('Вариант ')}${index + 1}'),
+                  title: Text(
+                    _routeAlternativeLabel(index),
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  subtitle: Text('$minutes мин · $km км'),
                   onTap: () {
                     _selectRouteAlternative(index);
                     Navigator.pop(sheetContext);
