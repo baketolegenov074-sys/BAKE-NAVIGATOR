@@ -667,6 +667,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (_offlineTileProvider != null) return;
     final controller = _mapLibreController;
     if (controller == null || !_mapLibreStyleReady) return;
+    unawaited(_apply3DLayerVisibility());
     final current = controller.cameraPosition;
     unawaited(controller.animateCamera(ml.CameraUpdate.newCameraPosition(
       ml.CameraPosition(
@@ -676,6 +677,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         tilt: _is3DMap ? 48 : 0,
       ),
     ), duration: const Duration(milliseconds: 450)));
+  }
+
+  Future<void> _apply3DLayerVisibility() async {
+    final controller = _mapLibreController;
+    if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+    try {
+      final layerIds = await controller.getLayerIds();
+      for (final id in ['bake-satellite-layer', 'building-3d', 'bake-buildings-3d']) {
+        if (layerIds.contains(id)) {
+          await controller.setLayerVisibility(id, _is3DMap);
+        }
+      }
+    } catch (error) {
+      debugPrint('BAKE 3D layer visibility update failed: $error');
+    }
   }
 
   Future<void> _loadSavedRoutePoints() async {
@@ -952,6 +968,43 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (_routePoints.length > 1) _fitMapCamera(_routePoints);
     _applyMapViewMode();
     unawaited(_ensure3DBuildingsLayer());
+    unawaited(_ensure3DSatelliteLayer());
+  }
+
+  Future<void> _ensure3DSatelliteLayer() async {
+    final controller = _mapLibreController;
+    if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+
+    try {
+      final sourceIds = await controller.getSourceIds();
+      if (!sourceIds.contains('bake-satellite')) {
+        await controller.addSource(
+          'bake-satellite',
+          const ml.RasterSourceProperties(
+            tiles: [
+              'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+            ],
+            tileSize: 256,
+            attribution: 'Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+          ),
+        );
+      }
+
+      final layerIds = await controller.getLayerIds();
+      if (!layerIds.contains('bake-satellite-layer')) {
+        // Keep Liberty's parks, roads, labels and 3D buildings above the imagery.
+        await controller.addRasterLayer(
+          'bake-satellite',
+          'bake-satellite-layer',
+          const ml.RasterLayerProperties(rasterOpacity: 0.96),
+          belowLayerId: layerIds.contains('park') ? 'park' : null,
+        );
+      }
+      await controller.setLayerVisibility('bake-satellite-layer', _is3DMap);
+    } catch (error) {
+      // A satellite tile failure must never disable the normal vector map.
+      debugPrint('BAKE satellite imagery unavailable: $error');
+    }
   }
 
   Future<void> _ensure3DBuildingsLayer() async {
@@ -962,7 +1015,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       // Liberty may already include its own 3D building layer. Avoid
       // duplicating it; add a fallback only when the style has no such layer.
       final layerIds = await controller.getLayerIds();
-      if (layerIds.contains('building-3d') || layerIds.contains('bake-buildings-3d')) {
+      const buildingStyle = ml.FillExtrusionLayerProperties(
+        fillExtrusionColor: '#D8D0C4',
+        fillExtrusionOpacity: 0.98,
+      );
+      if (layerIds.contains('building-3d')) {
+        // Liberty already has an extrusion layer; brighten it instead of
+        // adding a duplicate dark building layer.
+        await controller.setLayerProperties('building-3d', buildingStyle);
+        await controller.setLayerVisibility('building-3d', _is3DMap);
+        return;
+      }
+      if (layerIds.contains('bake-buildings-3d')) {
+        await controller.setLayerProperties('bake-buildings-3d', buildingStyle);
+        await controller.setLayerVisibility('bake-buildings-3d', _is3DMap);
         return;
       }
 
@@ -970,10 +1036,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         'openmaptiles',
         'bake-buildings-3d',
         ml.FillExtrusionLayerProperties(
-          fillExtrusionColor: 'hsl(35, 8%, 85%)',
+          fillExtrusionColor: '#D8D0C4',
           fillExtrusionHeight: ['coalesce', ['get', 'render_height'], 8],
           fillExtrusionBase: ['coalesce', ['get', 'render_min_height'], 0],
-          fillExtrusionOpacity: 0.82,
+          fillExtrusionOpacity: 0.98,
         ),
         sourceLayer: 'building',
         minzoom: 14,
