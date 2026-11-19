@@ -5572,6 +5572,7 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
       applicationLegalese: AppLocale.tr('Навигационное приложение BAKE.'),
       children: [
         Text(AppLocale.tr('Часть функций зависит от подключённых источников картографических и дорожных данных.')),
+        const Text('Данные камер: © OpenStreetMap contributors, ODbL 1.0. Набор SpeedCams.world, снимок от 21.09.2026. Сведения могут быть неполными или устаревшими.'),
       ],
     );
   }
