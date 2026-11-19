@@ -79,7 +79,7 @@ jobs:
           # Upgrade the generated app plugin and use its compatible Gradle wrapper.
           settings_content = settings.read_text()
           settings_content, agp_count = re.subn(
-              r'(["\']com\.android\.application["\']\s+version\s+["\'])8\.7\.3(["\'])',
+              r'((?:id\(["\']com\.android\.application["\']\)|["\']com\.android\.application["\'])\s+version\s+["\'])8\.7\.3(["\'])',
               r'\g<1>8.9.1\g<2>',
               settings_content,
           )
