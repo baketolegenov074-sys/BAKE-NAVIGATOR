@@ -685,6 +685,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     } catch (error) {
       debugPrint('BAKE satellite preference save failed: $error');
     }
+    // If the raster layer was not created during initial map loading,
+    // retry creating it when the user explicitly enables satellite imagery.
+    // This setting remains independent from the separate 2D/3D map control.
+    if (enabled) {
+      await _ensure3DSatelliteLayer();
+    }
     await _apply3DLayerVisibility();
   }
 
