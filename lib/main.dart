@@ -1090,6 +1090,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
             ],
             tileSize: 256,
+            // Esri imagery may not provide detailed tiles at every zoom.
+            // Cap source requests and let MapLibre overzoom the last available imagery.
+            maxzoom: 17,
             attribution: 'Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
           ),
         );
