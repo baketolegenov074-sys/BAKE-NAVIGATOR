@@ -584,6 +584,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
     try {
       bundled.addAll(await _roadAlertService.loadBundledShymkentCameraCandidates());
+      bundled.addAll(await _roadAlertService.loadShymkentOsmCameras());
     } catch (error) {
       debugPrint('Не удалось загрузить слой камер Шымкента: $error');
     }
