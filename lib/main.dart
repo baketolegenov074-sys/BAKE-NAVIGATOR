@@ -500,10 +500,12 @@ class NavigatorScreen extends StatefulWidget {
 
 class _NavigatorScreenState extends State<NavigatorScreen> {
   static const LatLng _shymkent = LatLng(42.3154, 69.5869);
+  static const String _cameraMarkerPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB6ElEQVR4nO2bSW7DMAxF5SLXyJl6oy5yo5wpB3FWBFRZA0VKHCx9oIumjs3/wEFKqhC2tpbWwXnzeZ7nqEC4Oo6D5KX7TZZMl9QDA32hB+OpMCBQAErmn79/vTFN0+f9yr7egtAEkJq3ZLqkFEYNwk/tRh7Nh3CNs1a+RQBezYOwELIAvJsHYSBUSyB3E29qxX8BEFPybh4U+0izoJkBd9cGEP9yx/QHlcrgMfOhpdVZKk3Y00oAa7732tGaAoBiSAvCcAAcIxoQ9hTQDkBb7CkwOm0p9+NMEVYGaHbvWJw4yACsmAdR4yEBsGYeRImrG4BV86De+KYuhVvKNS9pwCoAal0b/iYFQnwdgB1ZUhskUQCllIcfzPWjpdYDcobhNcntsVgGUE3NhqGyF2g1OMlJsPxmaAPQeGirrm/ZBKl1PbsfqI3B3IpP49NhUQCf9+tismZaYhqI9wCsKalRqFICtRXfErtBkIXPFvY6QDsAbXUDsP6tcW98pAywCoESF7kErEGgxsPqAVYgcOJgj0ErEKj6lwHxv5RamNEjFfuJfe4xqB2Ati4A7lgGpfQPAZEB3iG04s8CSCl5hYA5N1DMAO8QsIcmqiXgFULPiZF9Zgj7gKVPjcXyAGLKucGcLMGgnhzdWl1fTVfeMvXyPsgAAAAASUVORK5CYII=';
 
   final MapController _mapController = MapController();
   ml.MapLibreMapController? _mapLibreController;
   bool _mapLibreStyleReady = false;
+  bool _mapLibreCameraIconReady = false;
   bool _is3DMap = true;
   bool _mapLibreAnnotationSyncInProgress = false;
   bool _mapLibreAnnotationSyncPending = false;
@@ -922,6 +924,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   void _onMapLibreStyleLoaded() {
     _mapLibreStyleReady = true;
+    _mapLibreCameraIconReady = false;
     unawaited(_syncMapLibreAnnotations(updateRoute: true));
     // GPS may finish before MapLibre has created its controller. In that case
     // the first camera move is ignored, so center the map again when the style
@@ -964,6 +967,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     } catch (error) {
       // A style without the OpenMapTiles building source remains usable.
       debugPrint('BAKE 3D buildings unavailable: $error');
+    }
+  }
+
+  Future<bool> _ensureMapLibreCameraIcon(ml.MapLibreMapController controller) async {
+    if (_mapLibreCameraIconReady) return true;
+    try {
+      await controller.addImage('bake-camera-marker', base64Decode(_cameraMarkerPngBase64));
+      _mapLibreCameraIconReady = true;
+      return true;
+    } catch (error) {
+      debugPrint('BAKE Navigator: camera marker image unavailable: $error');
+      return false;
     }
   }
 
@@ -1143,19 +1158,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           textHaloColor: '#343434', textHaloWidth: 5,
         ));
       }
-      // Camera pictograms replace the old red dots. Approximate points carry
-      // an ≈ prefix and are informational only.
+      // Use a real PNG camera pictogram so it renders consistently on Android
+      // without depending on emoji fonts in the MapLibre style.
+      final cameraIconReady = await _ensureMapLibreCameraIcon(controller);
       for (final alert in _roadAlertsVisibleOnMap()) {
-        final glyph = alert.isApproximate
-            ? '≈${_roadAlertGlyph(alert)}'
-            : _roadAlertGlyph(alert);
         await controller.addSymbol(ml.SymbolOptions(
           geometry: _toMapLibrePoint(alert.location),
-          textField: glyph,
-          textSize: 24,
-          textColor: '#FFFFFF',
-          textHaloColor: '#334155',
-          textHaloWidth: 2.5,
+          iconImage: cameraIconReady ? 'bake-camera-marker' : null,
+          iconSize: cameraIconReady ? 0.55 : null,
+          iconAnchor: cameraIconReady ? 'bottom' : null,
+          textField: cameraIconReady ? null : '📷',
+          textSize: cameraIconReady ? null : 24,
+          textColor: cameraIconReady ? null : '#FFFFFF',
+          textHaloColor: cameraIconReady ? null : '#334155',
+          textHaloWidth: cameraIconReady ? null : 2.5,
         ));
       }
       if (_destination != null) {
@@ -2606,35 +2622,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     return (metersPerPixel * 44).clamp(25.0, 600.0).toDouble();
   }
 
-  Color _roadAlertColor(RoadAlert alert) {
-    return switch (alert.kind) {
-      RoadAlertKind.speedCamera => const Color(0xFF1769AA),
-      RoadAlertKind.trafficSignalCamera => const Color(0xFFB54708),
-      RoadAlertKind.surveillanceCamera => const Color(0xFF087E8B),
-      RoadAlertKind.sergekCamera => const Color(0xFF7A3E9D),
-      RoadAlertKind.unknownCamera => const Color(0xFF596579),
-    };
-  }
+  Color _roadAlertColor(RoadAlert alert) => const Color(0xFF1C4E7D);
 
-  IconData _roadAlertIcon(RoadAlert alert) {
-    return switch (alert.kind) {
-      RoadAlertKind.speedCamera => Icons.speed,
-      RoadAlertKind.trafficSignalCamera => Icons.traffic,
-      RoadAlertKind.surveillanceCamera => Icons.videocam,
-      RoadAlertKind.sergekCamera => Icons.camera_alt,
-      RoadAlertKind.unknownCamera => Icons.camera_alt,
-    };
-  }
+  IconData _roadAlertIcon(RoadAlert alert) => Icons.camera_alt;
 
-  String _roadAlertGlyph(RoadAlert alert) {
-    return switch (alert.kind) {
-      RoadAlertKind.speedCamera => '📡',
-      RoadAlertKind.trafficSignalCamera => '🚦',
-      RoadAlertKind.surveillanceCamera => '🎥',
-      RoadAlertKind.sergekCamera => '📷',
-      RoadAlertKind.unknownCamera => '📷',
-    };
-  }
+  String _roadAlertGlyph(RoadAlert alert) => '📷';
 
   Widget _buildRoadAlertMapMarker(RoadAlert alert) {
     final color = _roadAlertColor(alert);
