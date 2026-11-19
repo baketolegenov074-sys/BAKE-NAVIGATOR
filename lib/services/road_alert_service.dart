@@ -91,6 +91,26 @@ class RoadAlertService {
     return cameras;
   }
 
+  /// Returns every Shymkent source record, including address-only entries.
+  /// Address-only records are for the directory and must not be mapped as GPS points.
+  Future<List<Map<String, String>>> loadShymkentCameraDirectory() async {
+    final csv = await rootBundle.loadString('assets/data/shymkent_camera_candidates.csv');
+    final rows = _parseCsv(csv);
+    if (rows.length < 2) {
+      throw const FormatException('Shymkent camera candidate database is empty.');
+    }
+    final headers = rows.first.map((value) => value.trim().toLowerCase()).toList();
+    return rows.skip(1).where((row) => row.any((value) => value.trim().isNotEmpty)).map((row) {
+      return Map<String, String>.fromIterables(
+        headers,
+        List<String>.generate(
+          headers.length,
+          (index) => index < row.length ? row[index].trim() : '',
+        ),
+      );
+    }).toList();
+  }
+
   /// Loads the first Shymkent camera layer. Rows without verified GPS coordinates
   /// remain documented in the CSV but are intentionally not placed on the map.
   /// Approximate landmark coordinates are visibly marked and never trigger alerts.
