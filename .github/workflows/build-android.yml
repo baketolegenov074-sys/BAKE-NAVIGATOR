@@ -75,7 +75,36 @@ jobs:
               settings = Path("android/settings.gradle.kts")
           if not settings.exists():
               raise SystemExit("Generated Android settings.gradle(.kts) was not found")
-          print("Keeping Flutter-generated Android Gradle and Kotlin plugin versions")
+          # androidx.core 1.17.0 requires Android Gradle Plugin 8.9.1+.
+          # Upgrade the generated app plugin and use its compatible Gradle wrapper.
+          settings_content = settings.read_text()
+          settings_content, agp_count = re.subn(
+              r'(["\']com\.android\.application["\']\s+version\s+["\'])8\.7\.3(["\'])',
+              r'\g<1>8.9.1\g<2>',
+              settings_content,
+          )
+          if agp_count != 1:
+              raise SystemExit(
+                  f"Expected one generated Android application plugin version 8.7.3, found {agp_count}"
+              )
+          settings.write_text(settings_content)
+
+          wrapper = Path("android/gradle/wrapper/gradle-wrapper.properties")
+          if not wrapper.exists():
+              raise SystemExit("Generated Gradle wrapper properties were not found")
+          wrapper_content = wrapper.read_text()
+          wrapper_content, wrapper_count = re.subn(
+              r"distributionUrl=.*gradle-[0-9.]+-(?:all|bin)\.zip",
+              "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.11.1-all.zip",
+              wrapper_content,
+          )
+          if wrapper_count != 1:
+              raise SystemExit(
+                  f"Expected one Gradle wrapper distribution URL, found {wrapper_count}"
+              )
+          wrapper.write_text(wrapper_content)
+          print("Android Gradle Plugin upgraded to 8.9.1")
+          print("Gradle wrapper upgraded to 8.11.1")
 
           app_gradle = Path("android/app/build.gradle")
           if not app_gradle.exists():
@@ -161,7 +190,7 @@ jobs:
               )
 
           pattern = r"""classpath\(["']com\.android\.tools\.build:gradle:7\.3\.0["']\)"""
-          replacement = 'classpath("com.android.tools.build:gradle:8.6.1")'
+          replacement = 'classpath("com.android.tools.build:gradle:8.9.1")'
           for path in files:
               content = path.read_text()
               updated, count = re.subn(pattern, replacement, content)
@@ -170,7 +199,7 @@ jobs:
                       f"Expected one AGP 7.3.0 declaration in {path}, found {count}"
                   )
               path.write_text(updated)
-              print(f"Aligned {path.parent.parent.name} to AGP 8.6.1")
+              print(f"Aligned {path.parent.parent.name} to AGP 8.9.1")
           PY
 
       - name: Save resolved dependency versions
