@@ -509,7 +509,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _mapLibreAnnotationSyncPending = false;
   bool _mapLibreRouteSyncPending = false;
   LatLng? _lastRouteLineSyncPoint;
-  ml.Fill? _gpsPositionFill;
+  ml.Fill? _routePositionHaloFill;
   ml.Fill? _routePositionFill;
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
@@ -992,7 +992,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         // Route/style rebuilds clear fills and recreate the arrow below.
         if (syncRoute) {
           await controller.clearFills();
-          _gpsPositionFill = null;
+          _routePositionHaloFill = null;
           _routePositionFill = null;
         }
 
@@ -1054,44 +1054,57 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           ));
         }
       if (_currentLocation != null) {
-        // Small amber dot marks the real GPS fix without pretending it is
-        // snapped to the road.
-        await controller.addCircle(ml.CircleOptions(
-          geometry: _toMapLibrePoint(_currentLocation!),
-          circleRadius: 6,
-          circleColor: '#FFC400',
-          circleOpacity: 1,
-          circleStrokeColor: '#172B4D',
-          circleStrokeWidth: 1.5,
-        ));
-
-        // The larger blue arrow follows the projected position on the route.
-        // Hide it when the real GPS fix is clearly away from the planned road.
-        final onRoute = _navigationActive &&
+        // One navigation bird only: snap to the road while nearby, but keep
+        // following the real GPS fix if the driver leaves the planned route.
+        final nearRoute = _navigationActive &&
             _routePoints.length > 1 &&
             _distanceToRouteMeters(_currentLocation!) <= 45;
-        final routePosition = onRoute
+        final birdPosition = nearRoute
             ? _remainingRoutePoints().first
-            : _routePoints.isNotEmpty ? _routePoints.first : _currentLocation!;
-        final routeBearing = onRoute
-            ? _routeBearingAt(routePosition)
-            : (_gpsHeadingDegrees ?? 0.0);
-        final routeArrowOptions = ml.FillOptions(
+            : _currentLocation!;
+        final birdBearing = _gpsHeadingDegrees != null &&
+                _currentSpeedKmh >= 5.4
+            ? _gpsHeadingDegrees!
+            : _routePoints.length > 1
+                ? _routeBearingAt(birdPosition)
+                : (_gpsHeadingDegrees ?? 0.0);
+
+        // A wider white silhouette sits behind the blue bird to separate it
+        // clearly from the blue route ribbon.
+        final haloOptions = ml.FillOptions(
           geometry: [_directionArrowPolygon(
-            routePosition,
-            routeBearing,
+            birdPosition,
+            birdBearing,
+            lengthMeters: 36,
+            halfWidthMeters: 14,
+          )],
+          fillColor: '#FFFFFF',
+          fillOpacity: 1,
+          fillOutlineColor: '#FFFFFF',
+        );
+        final existingHalo = _routePositionHaloFill;
+        if (existingHalo == null) {
+          _routePositionHaloFill = await controller.addFill(haloOptions);
+        } else {
+          await controller.updateFill(existingHalo, haloOptions);
+        }
+
+        final birdOptions = ml.FillOptions(
+          geometry: [_directionArrowPolygon(
+            birdPosition,
+            birdBearing,
             lengthMeters: 30,
             halfWidthMeters: 11,
           )],
           fillColor: '#0878F9',
-          fillOpacity: onRoute ? 1 : 0,
+          fillOpacity: 1,
           fillOutlineColor: '#FFFFFF',
         );
-        final existingRouteFill = _routePositionFill;
-        if (existingRouteFill == null) {
-          _routePositionFill = await controller.addFill(routeArrowOptions);
+        final existingBird = _routePositionFill;
+        if (existingBird == null) {
+          _routePositionFill = await controller.addFill(birdOptions);
         } else {
-          await controller.updateFill(existingRouteFill, routeArrowOptions);
+          await controller.updateFill(existingBird, birdOptions);
         }
       }
       for (var i = 0; i < _routeStops.length; i++) {
@@ -1143,24 +1156,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       debugPrint('BAKE Navigator: GPS/map annotation update failed: $error');
       debugPrintStack(stackTrace: stackTrace);
 
-      final controller = _mapLibreController;
-      final point = _currentLocation;
-      if (controller != null && _mapLibreStyleReady &&
-          _offlineTileProvider == null && point != null) {
-        try {
-          await controller.addCircle(ml.CircleOptions(
-            geometry: _toMapLibrePoint(point),
-            circleRadius: 6,
-            circleColor: '#FFC400',
-            circleOpacity: 1,
-            circleStrokeColor: '#172B4D',
-            circleStrokeWidth: 1.5,
-          ));
-        } catch (fallbackError, fallbackStackTrace) {
-          debugPrint('BAKE Navigator: GPS marker fallback failed: $fallbackError');
-          debugPrintStack(stackTrace: fallbackStackTrace);
-        }
-      }
+      // Do not draw a second GPS marker on annotation errors. The next
+      // serialized annotation sync will restore the single navigation bird.
     } finally {
       _mapLibreAnnotationSyncInProgress = false;
       if (_mapLibreAnnotationSyncPending) {
