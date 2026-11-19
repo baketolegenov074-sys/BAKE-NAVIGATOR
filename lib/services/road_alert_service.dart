@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
-/// Only fixed speed-enforcement cameras are returned by this service.
+/// Loads fixed speed cameras plus the separately typed Shymkent camera layer.
 enum RoadAlertKind { speedCamera, trafficSignalCamera, surveillanceCamera, sergekCamera, unknownCamera }
 
 class RoadAlert {
