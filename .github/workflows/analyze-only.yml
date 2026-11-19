@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - fix/address-gps-route-reset
+      - fix/satellite-imagery-layer-order
 
 permissions:
   contents: read
