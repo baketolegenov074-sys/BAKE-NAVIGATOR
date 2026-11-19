@@ -1,0 +1,64 @@
+name: Download Shymkent OSM cameras
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install downloader dependency
+        run: python -m pip install requests
+
+      - name: Download actual Shymkent OSM camera objects
+        run: python scripts/download_shymkent_cameras.py
+
+      - name: Validate downloaded dataset
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("assets/data/shymkent_cameras.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          count = len(data.get("cameras", []))
+          print(f"OSM objects downloaded: {count}")
+          if count == 0:
+              print("No matching camera objects are currently mapped in OSM.")
+          PY
+
+      - name: Upload raw data for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: shymkent-cameras-osm-json
+          path: assets/data/shymkent_cameras.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Commit non-empty camera database
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("assets/data/shymkent_cameras.json").read_text(encoding="utf-8"))
+          if not data.get("cameras"):
+              raise SystemExit("No camera records returned; refusing to replace the app database with an empty file.")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/data/shymkent_cameras.json
+          git diff --cached --quiet || git commit -m "Import Shymkent camera coordinates from OpenStreetMap"
+          git push
