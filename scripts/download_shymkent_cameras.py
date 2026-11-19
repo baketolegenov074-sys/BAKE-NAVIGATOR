@@ -38,9 +38,21 @@ def find_city_relation(session):
     response.raise_for_status()
     results = response.json()
 
-    for item in results:
-        if item.get("osm_type") == "relation":
-            return int(item["osm_id"])
+    candidates = [
+        item for item in results
+        if item.get("osm_type") == "relation"
+        and item.get("class") == "boundary"
+        and item.get("type") == "administrative"
+        and "shymkent" in str(item.get("display_name", "")).lower()
+    ]
+    if candidates:
+        candidates.sort(
+            key=lambda item: (
+                item.get("addresstype") not in ("city", "municipality"),
+                int(item.get("place_rank", 100)),
+            )
+        )
+        return int(candidates[0]["osm_id"])
 
     raise RuntimeError(
         "Nominatim не вернул OSM relation для Шымкента. "
@@ -99,6 +111,11 @@ def download():
             "name": tags.get("name"),
             "tags": tags,
         })
+
+    if not cameras:
+        raise RuntimeError(
+            "Overpass вернул 0 объектов. Существующий JSON не перезаписываю."
+        )
 
     result = {
         "city": "Shymkent",
