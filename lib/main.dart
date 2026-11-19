@@ -2558,8 +2558,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Future<void> _updateRoadAlerts(LatLng position, double? gpsHeading) async {
-    if (!_navigationActive || _voiceMode == 0 || _roadAlertLookupInProgress) return;
+    // Road-camera markers are a map feature and must not depend on voice mode.
+    if (!_navigationActive || _roadAlertLookupInProgress) return;
 
+    var alertsWereRefreshed = false;
     final now = DateTime.now();
     final lastPoint = _lastRoadAlertLookupPoint;
     final movedMeters = lastPoint == null
@@ -2583,6 +2585,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           position,
           radiusMeters: 2000,
         );
+        alertsWereRefreshed = true;
       } catch (_) {
         // Keep the last successful result if Overpass is temporarily unavailable.
       } finally {
@@ -2592,8 +2595,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
     if (!mounted || !_navigationActive) return;
 
-    // Camera markers are displayed regardless of voice mode. Voice alerts
-    // below are independently gated by the selected voice setting.
+    // Rebuild FlutterMap and refresh MapLibre annotations after new alert data
+    // arrives. This keeps camera markers visible even when voice guidance is off.
+    if (alertsWereRefreshed) {
+      setState(() {});
+      unawaited(_syncMapLibreAnnotations());
+    }
+
     // Prefer the live GPS course; when nearly stopped, use the next route step.
     double? travelBearing = gpsHeading;
     if (travelBearing == null && _instructionIndex < _instructions.length) {
