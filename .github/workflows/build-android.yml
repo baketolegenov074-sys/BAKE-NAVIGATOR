@@ -85,7 +85,7 @@ jobs:
 
           app_content = app_gradle.read_text()
           app_content, sdk_count = re.subn(
-              r"compileSdk\\s*=\\s*flutter\\.compileSdkVersion",
+              r"compileSdk\s*=\s*flutter\.compileSdkVersion",
               "compileSdk = 36",
               app_content,
           )
@@ -95,7 +95,7 @@ jobs:
               )
 
           app_content, ndk_count = re.subn(
-              r"ndkVersion\\s*=\\s*flutter\\.ndkVersion",
+              r"ndkVersion\s*=\s*flutter\.ndkVersion",
               'ndkVersion = "28.1.13356709"',
               app_content,
           )
@@ -131,7 +131,7 @@ jobs:
           for permission in permissions:
               permission_name = f"android.permission.{permission}"
               if permission_name not in manifest:
-                  line = f'    <uses-permission android:name="{permission_name}" />\\n'
+                  line = f'    <uses-permission android:name="{permission_name}" />\n'
                   manifest = manifest.replace("    <application", line + "    <application", 1)
           manifest = manifest.replace('android:label="bake_navigator"', 'android:label="BAKE Navigator"')
           path.write_text(manifest)
