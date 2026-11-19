@@ -515,6 +515,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
   List<RoadAlert> _roadAlerts = <RoadAlert>[];
+  List<RoadAlert> _bundledRoadAlerts = <RoadAlert>[];
   final Map<String, int> _announcedRoadAlertStages = <String, int>{};
   DateTime? _lastRoadAlertLookup;
   LatLng? _lastRoadAlertLookupPoint;
@@ -563,6 +564,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   void initState() {
     super.initState();
     _configureVoice();
+    unawaited(_loadBundledRoadAlerts());
     _loadSavedOfflineMap();
     _loadSavedRoutePoints();
     unawaited(_loadMapViewPreference());
@@ -570,6 +572,27 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_locateMe());
     });
+  }
+
+  Future<void> _loadBundledRoadAlerts() async {
+    try {
+      final cameras = await _roadAlertService.loadBundledCameras();
+      if (!mounted) return;
+      setState(() {
+        _bundledRoadAlerts = cameras;
+        _roadAlerts = _mergeRoadAlerts(cameras, _roadAlerts);
+      });
+      unawaited(_syncMapLibreAnnotations());
+    } catch (error) {
+      debugPrint('Не удалось загрузить встроенную базу камер: $error');
+    }
+  }
+
+  List<RoadAlert> _mergeRoadAlerts(List<RoadAlert> bundled, List<RoadAlert> live) {
+    final byId = <String, RoadAlert>{};
+    for (final alert in bundled) { byId[alert.id] = alert; }
+    for (final alert in live) { byId[alert.id] = alert; }
+    return byId.values.toList();
   }
 
   static const String _savedRouteOriginKey = 'saved_route_origin_v1';
@@ -2583,46 +2606,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   List<RoadAlert> _roadAlertsVisibleOnMap() {
-    final collisionDistance = _mapMarkerCollisionDistanceMeters();
-    final protectedPoints = <LatLng>[
-      if (_currentLocation != null) _currentLocation!,
-      if (_navigationActive && _instructionIndex < _instructions.length)
-        _instructions[_instructionIndex].location,
-      if (_destination != null) _destination!,
-      ..._routeStops,
-      if (!_navigationActive && _routeOrigin != null && _routePoints.length > 1)
-        _routeOrigin!,
-    ];
-
-    // Keep the closest camera to the map center when camera markers cluster.
-    final center = _currentLocation ?? _shymkent;
-    final candidates = _roadAlerts
+    // Do not hide camera points near GPS, route markers, or other cameras.
+    return _roadAlerts
         .where((alert) => alert.kind == RoadAlertKind.speedCamera)
-        .toList()
-      ..sort((a, b) {
-        final distanceA = const Distance().as(
-          LengthUnit.Meter, center, a.location,
-        );
-        final distanceB = const Distance().as(
-          LengthUnit.Meter, center, b.location,
-        );
-        return distanceA.compareTo(distanceB);
-      });
-
-    final visible = <RoadAlert>[];
-    for (final alert in candidates) {
-      final overlapsImportantMarker = protectedPoints.any((point) =>
-          const Distance().as(LengthUnit.Meter, point, alert.location) <
-          collisionDistance);
-      if (overlapsImportantMarker) continue;
-
-      final overlapsCamera = visible.any((shown) =>
-          const Distance().as(
-            LengthUnit.Meter, shown.location, alert.location,
-          ) < collisionDistance);
-      if (!overlapsCamera) visible.add(alert);
-    }
-    return visible;
+        .toList();
   }
 
   Future<void> _updateRoadAlerts(LatLng position, double? gpsHeading) async {
@@ -2652,7 +2639,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           position,
           radiusMeters: 3000,
         );
-        _roadAlerts = loadedAlerts;
+        _roadAlerts = _mergeRoadAlerts(_bundledRoadAlerts, loadedAlerts);
         // Start the cooldown only after a successful server response. A failed
         // request must not suppress the next retry for 45 seconds.
         _lastRoadAlertLookup = DateTime.now();
