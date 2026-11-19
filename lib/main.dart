@@ -688,6 +688,29 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     ), duration: const Duration(milliseconds: 450)));
   }
 
+  Future<void> _setSatelliteOverlayFillOpacity(bool satelliteVisible) async {
+    final controller = _mapLibreController;
+    if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+
+    try {
+      // In the Liberty style, this is the only opaque polygon overlay drawn
+      // after the satellite insertion point. Keep its pedestrian-area pattern
+      // visible while allowing the imagery to show through.
+      const overlayLayerId = 'road_area_pattern';
+      final layerIds = await controller.getLayerIds();
+      if (!layerIds.contains(overlayLayerId)) return;
+
+      await controller.setLayerProperties(
+        overlayLayerId,
+        ml.FillLayerProperties(
+          fillOpacity: satelliteVisible ? 0.12 : 1.0,
+        ),
+      );
+    } catch (error) {
+      debugPrint('BAKE satellite overlay opacity update failed: $error');
+    }
+  }
+
   Future<void> _apply3DLayerVisibility() async {
     final controller = _mapLibreController;
     if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
@@ -698,6 +721,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           await controller.setLayerVisibility(id, _is3DMap);
         }
       }
+      await _setSatelliteOverlayFillOpacity(_is3DMap);
     } catch (error) {
       debugPrint('BAKE 3D layer visibility update failed: $error');
     }
@@ -1008,10 +1032,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
       final layerIds = await controller.getLayerIds();
       if (!layerIds.contains('bake-satellite-layer')) {
-        // Put satellite imagery above opaque land-use/building footprints,
-        // but below roads, bridges and labels. This keeps aerial detail
-        // visible when zooming in instead of letting gray vector polygons
-        // cover the photograph.
+        // Keep roads and labels above the raster. The single later pedestrian
+        // polygon overlay is made translucent by _setSatelliteOverlayFillOpacity.
         final roadOverlay = layerIds.cast<String?>().firstWhere(
           (id) => id != null && RegExp(r'^(road|transportation|bridge|tunnel)').hasMatch(id),
           orElse: () => null,
