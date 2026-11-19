@@ -1051,13 +1051,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             fillOutlineColor: '#FFFFFF',
           ));
         }
-      if (_currentLocation != null && _navigationActive) {
-        await controller.addSymbol(ml.SymbolOptions(
-          geometry: _toMapLibrePoint(_currentLocation!), textField: _routeDirectionCueText(),
-          textSize: 19, textColor: '#65A77D', textOpacity: 0.72,
-          textHaloColor: '#FFFFFF', textHaloWidth: 2, textOffset: const Offset(3.0, -2.0),
-        ));
-      }
       if (_currentLocation != null) {
         // Draw the live GPS position as a filled blue direction arrow.
         // A native polygon avoids text-glyph/font dependencies and replaces the old dot.
@@ -1067,8 +1060,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           geometry: [_directionArrowPolygon(
             _currentLocation!,
             gpsBearing,
-            lengthMeters: 36,
-            halfWidthMeters: 14,
+            lengthMeters: 20,
+            halfWidthMeters: 8,
           )],
           // High-contrast amber separates the GPS arrow from the blue route line.
           fillColor: '#FFC400',
@@ -1142,8 +1135,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             geometry: [_directionArrowPolygon(
               point,
               bearing,
-              lengthMeters: 36,
-              halfWidthMeters: 14,
+              lengthMeters: 20,
+              halfWidthMeters: 8,
             )],
             fillColor: '#FFC400',
             fillOpacity: 1,
