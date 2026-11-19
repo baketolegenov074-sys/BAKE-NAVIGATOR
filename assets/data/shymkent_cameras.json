@@ -2,8 +2,496 @@
   "city": "Shymkent",
   "country": "Kazakhstan",
   "source": "OpenStreetMap",
-  "osm_relation_id": null,
-  "downloaded_at": null,
-  "count": 0,
-  "cameras": []
+  "osm_boundary_type": "relation",
+  "osm_boundary_id": 3389772,
+  "downloaded_at": "2026-11-19T15:52:50Z",
+  "count": 28,
+  "speed_camera_count": 22,
+  "surveillance_count": 6,
+  "cameras": [
+    {
+      "osm_id": 1287219278,
+      "osm_type": "node",
+      "latitude": 42.2345965,
+      "longitude": 69.7967798,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1287379503,
+      "osm_type": "node",
+      "latitude": 42.249053,
+      "longitude": 69.7688029,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1302926245,
+      "osm_type": "node",
+      "latitude": 42.3142127,
+      "longitude": 69.5858197,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1302926249,
+      "osm_type": "node",
+      "latitude": 42.3162011,
+      "longitude": 69.5886233,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1302926255,
+      "osm_type": "node",
+      "latitude": 42.318528,
+      "longitude": 69.5824616,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1302926257,
+      "osm_type": "node",
+      "latitude": 42.3346551,
+      "longitude": 69.6035645,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1302926259,
+      "osm_type": "node",
+      "latitude": 42.3349366,
+      "longitude": 69.6036952,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1305478621,
+      "osm_type": "node",
+      "latitude": 42.3300517,
+      "longitude": 69.6360421,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1438096244,
+      "osm_type": "node",
+      "latitude": 42.2961276,
+      "longitude": 69.5712104,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1438096247,
+      "osm_type": "node",
+      "latitude": 42.2963446,
+      "longitude": 69.5716038,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1438096254,
+      "osm_type": "node",
+      "latitude": 42.3104834,
+      "longitude": 69.6308906,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1438096256,
+      "osm_type": "node",
+      "latitude": 42.313164,
+      "longitude": 69.6193806,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1438096257,
+      "osm_type": "node",
+      "latitude": 42.3182591,
+      "longitude": 69.5969558,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1438096258,
+      "osm_type": "node",
+      "latitude": 42.3184363,
+      "longitude": 69.5971131,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1438096259,
+      "osm_type": "node",
+      "latitude": 42.3186321,
+      "longitude": 69.5968434,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1438096260,
+      "osm_type": "node",
+      "latitude": 42.3385253,
+      "longitude": 69.6058974,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1438096261,
+      "osm_type": "node",
+      "latitude": 42.3388059,
+      "longitude": 69.6058133,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1438096262,
+      "osm_type": "node",
+      "latitude": 42.348851,
+      "longitude": 69.5956473,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 1438096263,
+      "osm_type": "node",
+      "latitude": 42.350419,
+      "longitude": 69.5883005,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 9223540593,
+      "osm_type": "node",
+      "latitude": 42.3073674,
+      "longitude": 69.6437275,
+      "maxspeed": null,
+      "direction": null,
+      "highway": null,
+      "man_made": "surveillance",
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": "Камера",
+      "tags": {
+        "man_made": "surveillance",
+        "name": "Камера"
+      }
+    },
+    {
+      "osm_id": 9224833689,
+      "osm_type": "node",
+      "latitude": 42.4374515,
+      "longitude": 69.5444882,
+      "maxspeed": null,
+      "direction": null,
+      "highway": null,
+      "man_made": "surveillance",
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "man_made": "surveillance"
+      }
+    },
+    {
+      "osm_id": 9229324595,
+      "osm_type": "node",
+      "latitude": 42.3163156,
+      "longitude": 69.588969,
+      "maxspeed": null,
+      "direction": null,
+      "highway": null,
+      "man_made": "surveillance",
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "man_made": "surveillance"
+      }
+    },
+    {
+      "osm_id": 9229709288,
+      "osm_type": "node",
+      "latitude": 42.225135,
+      "longitude": 69.8034015,
+      "maxspeed": null,
+      "direction": null,
+      "highway": null,
+      "man_made": "surveillance",
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": "Камера",
+      "tags": {
+        "man_made": "surveillance",
+        "name": "Камера"
+      }
+    },
+    {
+      "osm_id": 9229786281,
+      "osm_type": "node",
+      "latitude": 42.2257158,
+      "longitude": 69.8036476,
+      "maxspeed": null,
+      "direction": null,
+      "highway": null,
+      "man_made": "surveillance",
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": "Камера",
+      "tags": {
+        "man_made": "surveillance",
+        "name": "Камера"
+      }
+    },
+    {
+      "osm_id": 13316188126,
+      "osm_type": "node",
+      "latitude": 42.2437622,
+      "longitude": 69.7854102,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 13316188128,
+      "osm_type": "node",
+      "latitude": 42.2301935,
+      "longitude": 69.8011169,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 13316188130,
+      "osm_type": "node",
+      "latitude": 42.2214128,
+      "longitude": 69.80558,
+      "maxspeed": null,
+      "direction": null,
+      "highway": "speed_camera",
+      "man_made": null,
+      "surveillance": null,
+      "surveillance_type": null,
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "highway": "speed_camera"
+      }
+    },
+    {
+      "osm_id": 14300667289,
+      "osm_type": "node",
+      "latitude": 42.3254814,
+      "longitude": 69.5700672,
+      "maxspeed": null,
+      "direction": null,
+      "highway": null,
+      "man_made": "surveillance",
+      "surveillance": "public",
+      "surveillance_type": "camera",
+      "camera_type": null,
+      "name": null,
+      "tags": {
+        "camera:mount": "pole",
+        "man_made": "surveillance",
+        "surveillance": "public",
+        "surveillance:type": "camera",
+        "surveillance:zone": "town"
+      }
+    }
+  ],
+  "osm_relation_id": 3389772
 }
