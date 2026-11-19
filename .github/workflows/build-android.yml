@@ -179,11 +179,10 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Align sherpa_onnx Android plugins with the app Gradle version
+      - name: Verify sherpa_onnx Android plugin packages
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           pub_cache = Path.home() / ".pub-cache/hosted/pub.dev"
           expected = {
@@ -192,24 +191,21 @@ jobs:
               "sherpa_onnx_android_x86",
               "sherpa_onnx_android_x86_64",
           }
-          files = sorted(pub_cache.glob("sherpa_onnx_android_*/android/build.gradle"))
-          found = {path.parents[1].name.rsplit("-", 1)[0] for path in files}
+          packages = sorted(pub_cache.glob("sherpa_onnx_android_*-*/android"))
+          found = {path.parent.name.rsplit("-", 1)[0] for path in packages}
           if found != expected:
               raise SystemExit(
                   f"Expected sherpa_onnx Android packages {sorted(expected)}, found {sorted(found)}"
               )
 
-          pattern = r"""classpath\(["']com\.android\.tools\.build:gradle:7\.3\.0["']\)"""
-          replacement = 'classpath("com.android.tools.build:gradle:8.9.1")'
-          for path in files:
-              content = path.read_text()
-              updated, count = re.subn(pattern, replacement, content)
-              if count != 1:
-                  raise SystemExit(
-                      f"Expected one AGP 7.3.0 declaration in {path}, found {count}"
-                  )
-              path.write_text(updated)
-              print(f"Aligned {path.parent.parent.name} to AGP 8.9.1")
+          # Current sherpa_onnx 2.0.x Android modules use the app's centrally
+          # resolved Android Gradle Plugin. They do not carry a private
+          # AGP 7.3.0 classpath declaration, so do not rewrite their build files.
+          for package in sorted(packages):
+              gradle_files = list(package.glob("build.gradle*"))
+              if not gradle_files:
+                  raise SystemExit(f"Missing Gradle build file in {package}")
+              print(f"Verified {package.parent.name}; using project AGP configuration")
           PY
 
       - name: Save resolved dependency versions
