@@ -1114,6 +1114,27 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           textHaloColor: '#343434', textHaloWidth: 5,
         ));
       }
+      // Fixed speed-camera markers. They are refreshed with the map's
+      // other annotations and remain visible even when voice guidance is off.
+      for (final alert in _roadAlerts) {
+        if (alert.kind != RoadAlertKind.speedCamera) continue;
+        await controller.addCircle(ml.CircleOptions(
+          geometry: _toMapLibrePoint(alert.location),
+          circleRadius: 13,
+          circleColor: '#F04438',
+          circleOpacity: 1,
+          circleStrokeColor: '#FFFFFF',
+          circleStrokeWidth: 3,
+        ));
+        await controller.addSymbol(ml.SymbolOptions(
+          geometry: _toMapLibrePoint(alert.location),
+          textField: 'К',
+          textSize: 13,
+          textColor: '#FFFFFF',
+          textHaloColor: '#B42318',
+          textHaloWidth: 1,
+        ));
+      }
       if (_destination != null) {
         // The marker's ground anchor is exactly point B. Red glow rings are
         // drawn first so the smaller checkered flag remains clear above them.
@@ -2569,8 +2590,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       }
     }
 
-    if (!mounted || !_navigationActive || _voiceMode == 0) return;
+    if (!mounted || !_navigationActive) return;
 
+    // Camera markers are displayed regardless of voice mode. Voice alerts
+    // below are independently gated by the selected voice setting.
     // Prefer the live GPS course; when nearly stopped, use the next route step.
     double? travelBearing = gpsHeading;
     if (travelBearing == null && _instructionIndex < _instructions.length) {
@@ -2612,7 +2635,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final stage = alert.kind == RoadAlertKind.speedCamera
           ? (distance <= 200 ? 3 : distance <= 500 ? 2 : distance <= 1000 ? 1 : 0)
           : (distance <= 300 ? 2 : distance <= 1000 ? 1 : 0);
-      if (stage == 0 || stage <= (_announcedRoadAlertStages[alert.id] ?? 0)) {
+      if (_voiceMode == 0 || stage == 0 ||
+          stage <= (_announcedRoadAlertStages[alert.id] ?? 0)) {
         continue;
       }
       _announcedRoadAlertStages[alert.id] = stage;
@@ -4775,6 +4799,25 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ),
           ),
         ),
+      ..._roadAlerts
+          .where((alert) => alert.kind == RoadAlertKind.speedCamera)
+          .map((alert) => Marker(
+            point: alert.location,
+            width: 42,
+            height: 42,
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFF04438),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 3),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x44000000), blurRadius: 5, offset: Offset(0, 2)),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: const Icon(Icons.camera_alt, color: Colors.white, size: 22),
+            ),
+          )),
       ..._routeStops.asMap().entries.map((entry) => Marker(
         point: entry.value,
         width: 38,
