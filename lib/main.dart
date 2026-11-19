@@ -4970,28 +4970,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   color: Colors.white,
                   elevation: 5,
                   borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: _navigationActive ? null : _openRouteMenu,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              border: Border.all(color: const Color(0xFF202020), width: 2.2),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(_speedLimitKmh ?? '—', style: const TextStyle(fontSize: 25, height: 1, fontWeight: FontWeight.w900, color: Color(0xFF202020))),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            border: Border.all(color: const Color(0xFF202020), width: 2.2),
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          const Text('км/ч', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF343434))),
-                        ],
-                      ),
+                          alignment: Alignment.center,
+                          child: Text(_currentSpeedKmh.round().toString(), style: const TextStyle(fontSize: 25, height: 1, fontWeight: FontWeight.w900, color: Color(0xFF202020))),
+                        ),
+                        const Text('км/ч', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF343434))),
+                      ],
                     ),
                   ),
                 ),
