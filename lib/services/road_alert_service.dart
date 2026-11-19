@@ -211,6 +211,9 @@ class RoadAlertService {
       if (lat < 42.0 || lat > 42.7 || lon < 69.2 || lon > 70.0) continue;
       final category = row[categoryCol].trim().toLowerCase();
       final precision = row[precisionCol].trim().toLowerCase();
+      // Approximate address/intersection references are not camera coordinates.
+      // Keep them in the directory CSV, but never draw them as map markers.
+      if (precision != 'exact') continue;
       final kind = switch (category) {
         'speed' => RoadAlertKind.speedCamera,
         'traffic_signal' => RoadAlertKind.trafficSignalCamera,
