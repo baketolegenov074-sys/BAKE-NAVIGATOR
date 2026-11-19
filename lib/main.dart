@@ -772,15 +772,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
     try {
       final layerIds = await controller.getLayerIds();
+
+      // 3D view is the visual hybrid mode: satellite imagery underneath,
+      // with the Liberty roads, labels and place names retained above it.
+      // The settings switch remains an independent way to enable imagery.
+      final satelliteVisible = _is3DMap || _isSatelliteMap;
       if (layerIds.contains('bake-satellite-layer')) {
-        await controller.setLayerVisibility('bake-satellite-layer', _isSatelliteMap);
+        await controller.setLayerVisibility('bake-satellite-layer', satelliteVisible);
       }
       for (final id in ['building-3d', 'bake-buildings-3d']) {
         if (layerIds.contains(id)) {
           await controller.setLayerVisibility(id, _is3DMap);
         }
       }
-      await _setSatelliteOverlayFillOpacity(_isSatelliteMap);
+      await _setSatelliteOverlayFillOpacity(satelliteVisible);
     } catch (error) {
       debugPrint('BAKE 3D layer visibility update failed: $error');
     }
