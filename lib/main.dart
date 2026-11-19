@@ -2643,7 +2643,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       if (alert.isApproximate) 'Примерное место — камера здесь не подтверждена',
       if (alert.verificationStatus != null) 'Статус: ${alert.verificationStatus}',
       if (alert.source != null) 'Источник: ${alert.source}',
-    ].join('\\n');
+    ].join('\n');
     return Tooltip(
       message: details,
       child: SizedBox(
