@@ -2634,14 +2634,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         RoadAlertKind.unknownCamera => const Color(0xFF475467),
       };
 
-  IconData _roadAlertIcon(RoadAlert alert) => switch (alert.kind) {
-        RoadAlertKind.speedCamera => Icons.speed,
-        RoadAlertKind.trafficSignalCamera => Icons.traffic,
-        RoadAlertKind.surveillanceCamera => Icons.videocam,
-        RoadAlertKind.sergekCamera => Icons.camera_alt,
-        RoadAlertKind.unknownCamera => Icons.photo_camera_outlined,
-      };
-
   String _roadAlertGlyph(RoadAlert alert) => switch (alert.kind) {
         RoadAlertKind.speedCamera => '📷',
         RoadAlertKind.trafficSignalCamera => '🚦',
@@ -2679,7 +2671,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ],
               ),
               alignment: Alignment.center,
-              child: Icon(_roadAlertIcon(alert), color: color, size: 25),
+              child: Text(
+                _roadAlertGlyph(alert),
+                style: const TextStyle(fontSize: 24, height: 1),
+                textAlign: TextAlign.center,
+              ),
             ),
             if (alert.isApproximate)
               Positioned(
