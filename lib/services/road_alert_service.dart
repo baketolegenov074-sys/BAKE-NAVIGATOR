@@ -91,6 +91,69 @@ class RoadAlertService {
     return cameras;
   }
 
+  /// Loads Shymkent camera records exported from OpenStreetMap.
+  /// Node coordinates are retained as mapped camera positions. Way/relation
+  /// centers are map-only approximations and never trigger spoken alerts.
+  /// Ordinary surveillance objects are also map-only unless tagged as speed cameras.
+  Future<List<RoadAlert>> loadShymkentOsmCameras() async {
+    final raw = await rootBundle.loadString('assets/data/shymkent_cameras.json');
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Некорректный JSON камер Шымкента.');
+    }
+    final elements = decoded['cameras'];
+    if (elements is! List) {
+      throw const FormatException('В JSON отсутствует список cameras.');
+    }
+
+    final result = <RoadAlert>[];
+    for (final item in elements) {
+      if (item is! Map) continue;
+      final lat = (item['latitude'] as num?)?.toDouble();
+      final lon = (item['longitude'] as num?)?.toDouble();
+      if (lat == null || lon == null || !lat.isFinite || !lon.isFinite) continue;
+      if (lat < 42.0 || lat > 42.7 || lon < 69.2 || lon > 70.0) continue;
+
+      final tags = item['tags'] is Map
+          ? Map<String, dynamic>.from(item['tags'] as Map)
+          : <String, dynamic>{};
+      final highway = (item['highway'] ?? tags['highway'])?.toString();
+      final manMade = (item['man_made'] ?? tags['man_made'])?.toString();
+      final osmType = item['osm_type']?.toString() ?? 'node';
+      final isSpeedCamera = highway == 'speed_camera';
+      final isSurveillance = manMade == 'surveillance';
+      if (!isSpeedCamera && !isSurveillance) continue;
+
+      final rawSpeed = item['maxspeed']?.toString() ?? tags['maxspeed']?.toString();
+      final speed = rawSpeed == null
+          ? null
+          : int.tryParse(RegExp(r'\\d+').firstMatch(rawSpeed)?.group(0) ?? '');
+      final name = item['name']?.toString() ??
+          tags['name']?.toString() ??
+          (isSpeedCamera ? 'Камера контроля скорости' : 'Камера наблюдения');
+      final isExactNode = osmType == 'node';
+      final id = item['osm_id']?.toString() ?? 'unknown';
+
+      result.add(RoadAlert(
+        id: 'shymkent/osm/$osmType/$id',
+        kind: isSpeedCamera
+            ? RoadAlertKind.speedCamera
+            : RoadAlertKind.surveillanceCamera,
+        location: LatLng(lat, lon),
+        distanceMeters: 0,
+        maxSpeedKmh: isSpeedCamera ? speed : null,
+        direction: item['direction']?.toString() ?? tags['direction']?.toString(),
+        name: name,
+        isApproximate: !isExactNode || !isSpeedCamera,
+        source: 'OpenStreetMap',
+        verificationStatus: isExactNode
+            ? 'osm_node_not_field_verified'
+            : 'osm_center_approximate',
+      ));
+    }
+    return result;
+  }
+
   /// Returns every Shymkent source record, including address-only entries.
   /// Address-only records are for the directory and must not be mapped as GPS points.
   Future<List<Map<String, String>>> loadShymkentCameraDirectory() async {
