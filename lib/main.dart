@@ -2677,7 +2677,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   List<RoadAlert> _shymkentCameraAlerts() =>
       _bundledRoadAlerts.where(_isShymkentCamera).toList()
-        ..sort((a, b) => a.name.compareTo(b.name));
+        ..sort((a, b) => (a.name ?? '').compareTo(b.name ?? ''));
 
   List<RoadAlert> _roadAlertsVisibleOnMap() {
     final visible = _showShymkentCamerasOnMap
@@ -4291,7 +4291,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               title: Text(camera.name ?? AppLocale.tr('Камера')),
                               subtitle: Text(
                                 camera.isApproximate
-                                    ? '$coordinates · ${AppLocale.tr('примерный ориентир, не подтверждённая камера')}'
+                                    ? '$coordinates · примерный ориентир, камера не подтверждена'
                                     : coordinates,
                               ),
                               onTap: () {
