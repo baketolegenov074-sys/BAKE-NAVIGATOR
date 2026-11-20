@@ -8,6 +8,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_mbtiles/flutter_map_mbtiles.dart';
+import 'package:mbtiles/mbtiles.dart';
+import 'package:vector_map_tiles/vector_map_tiles.dart';
+import 'package:vector_map_tiles_mbtiles/vector_map_tiles_mbtiles.dart';
+import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -527,6 +531,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   MbTilesTileProvider? _offlineTileProvider;
+  MbTiles? _offlineVectorMbtiles;
+  MbTilesVectorTileProvider? _offlineVectorTileProvider;
+  final vtr.Theme _offlineVectorTheme = vtr.ProvidedThemes.lightTheme();
+
+  bool get _isOfflineMapActive =>
+      _isOfflineMapActive || _offlineVectorTileProvider != null;
+
+  void _disposeOfflineMap() {
+    _offlineTileProvider?.dispose();
+    _offlineTileProvider = null;
+    _offlineVectorMbtiles?.dispose();
+    _offlineVectorMbtiles = null;
+    _offlineVectorTileProvider = null;
+  }
 
   LatLng? _currentLocation;
   LatLng? _destination;
@@ -707,7 +725,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   void _applyMapViewMode() {
-    if (_offlineTileProvider != null) return;
+    if (_isOfflineMapActive) return;
     final controller = _mapLibreController;
     if (controller == null || !_mapLibreStyleReady) return;
     unawaited(_apply3DLayerVisibility());
@@ -724,7 +742,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _setSatelliteOverlayFillOpacity(bool satelliteVisible) async {
     final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+    if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
 
     try {
       final styleText = await controller.getStyle();
@@ -769,7 +787,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _apply3DLayerVisibility() async {
     final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+    if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
     try {
       final layerIds = await controller.getLayerIds();
 
@@ -953,17 +971,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   ml.LatLng _toMapLibrePoint(LatLng point) => ml.LatLng(point.latitude, point.longitude);
 
   LatLng get _mapCameraCenter {
-    if (_offlineTileProvider != null) return _mapController.camera.center;
+    if (_isOfflineMapActive) return _mapController.camera.center;
     final target = _mapLibreController?.cameraPosition?.target;
     return target == null ? (_currentLocation ?? _shymkent) : LatLng(target.latitude, target.longitude);
   }
 
-  double get _mapCameraZoom => _offlineTileProvider != null
+  double get _mapCameraZoom => _isOfflineMapActive
       ? _mapController.camera.zoom
       : (_mapLibreController?.cameraPosition?.zoom ?? 13);
 
   void _moveMapCamera(LatLng point, double zoom) {
-    if (_offlineTileProvider != null) {
+    if (_isOfflineMapActive) {
       _mapController.move(point, zoom);
       return;
     }
@@ -975,7 +993,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   void _updateNavigationCamera(LatLng point, double zoom, double heading) {
-    if (_offlineTileProvider != null) {
+    if (_isOfflineMapActive) {
       _mapController.move(point, zoom);
       _mapController.rotate(-heading);
       return;
@@ -998,7 +1016,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   void _rotateMapCamera(double rotation) {
-    if (_offlineTileProvider != null) {
+    if (_isOfflineMapActive) {
       _mapController.rotate(rotation);
       return;
     }
@@ -1017,7 +1035,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   void _fitMapCamera(List<LatLng> points) {
     if (points.isEmpty) return;
-    if (_offlineTileProvider != null) {
+    if (_isOfflineMapActive) {
       _mapController.fitCamera(CameraFit.coordinates(
         coordinates: points,
         padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
@@ -1078,7 +1096,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   // Diagnostic build: verify the satellite toggle and Esri raster tiles on device.
   Future<void> _ensure3DSatelliteLayer() async {
     final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+    if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
 
     try {
       final sourceIds = await controller.getSourceIds();
@@ -1126,7 +1144,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _ensure3DBuildingsLayer() async {
     final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+    if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
 
     try {
       // Preserve 3D building shapes, but make their surfaces translucent so
@@ -1193,7 +1211,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         final syncRoute = updateRoute || _mapLibreRouteSyncPending;
         _mapLibreRouteSyncPending = false;
         final controller = _mapLibreController;
-        if (controller == null || !_mapLibreStyleReady || _offlineTileProvider != null) return;
+        if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
         final visibleRoutePoints = _remainingRoutePoints();
         // GPS refreshes must never remove the already-rendered route line.
         // Only route/style changes are allowed to replace route geometry.
@@ -1439,7 +1457,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   @override
   void dispose() {
     _positionSubscription?.cancel();
-    _offlineTileProvider?.dispose();
+    _disposeOfflineMap();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _tts.stop();
@@ -1454,12 +1472,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final path = prefs.getString('offline_map_path');
     if (path == null || !await File(path).exists()) return;
     try {
-      final provider = MbTilesTileProvider.fromPath(path: path);
-      if (!mounted) {
-        provider.dispose();
-        return;
+      final database = MbTiles(mbtilesPath: path);
+      final format = database.getMetadata().format?.toLowerCase();
+      if (format == 'pbf' || format == 'mvt') {
+        final vectorProvider = MbTilesVectorTileProvider(mbtiles: database);
+        if (!mounted) {
+          database.dispose();
+          return;
+        }
+        setState(() {
+          _offlineTileProvider = null;
+          _offlineVectorMbtiles = database;
+          _offlineVectorTileProvider = vectorProvider;
+        });
+      } else {
+        database.dispose();
+        final provider = MbTilesTileProvider.fromPath(path: path);
+        if (!mounted) {
+          provider.dispose();
+          return;
+        }
+        setState(() {
+          _offlineVectorMbtiles = null;
+          _offlineVectorTileProvider = null;
+          _offlineTileProvider = provider;
+        });
       }
-      setState(() => _offlineTileProvider = provider);
     } catch (_) {
       // Keep the online map available if an offline archive cannot be opened.
     }
@@ -1491,14 +1529,30 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
     if (!mounted || selectedPath == null) return;
     if (selectedPath == '__use_online_map__') {
-      _offlineTileProvider?.dispose();
-      setState(() { _offlineTileProvider = null; _message = AppLocale.pick('Включена онлайн-карта.', 'Онлайн карта қосылды.', 'Online map enabled.'); });
+      _disposeOfflineMap();
+      setState(() { _message = AppLocale.pick('Включена онлайн-карта.', 'Онлайн карта қосылды.', 'Online map enabled.'); });
       return;
     }
     try {
-      final provider = MbTilesTileProvider.fromPath(path: selectedPath);
-      _offlineTileProvider?.dispose();
-      setState(() { _offlineTileProvider = provider; _message = AppLocale.pick('Офлайн-карта подключена. Для построения маршрута пока нужен интернет.', 'Офлайн карта қосылды. Маршрут құру үшін әзірге интернет қажет.', 'Offline map connected. Internet is still required to build routes.'); });
+      final database = MbTiles(mbtilesPath: selectedPath);
+      final format = database.getMetadata().format?.toLowerCase();
+      if (format == 'pbf' || format == 'mvt') {
+        final vectorProvider = MbTilesVectorTileProvider(mbtiles: database);
+        _disposeOfflineMap();
+        setState(() {
+          _offlineVectorMbtiles = database;
+          _offlineVectorTileProvider = vectorProvider;
+          _message = AppLocale.pick('Векторная офлайн-карта подключена.', 'Векторлық офлайн карта қосылды.', 'Vector offline map connected.');
+        });
+      } else {
+        database.dispose();
+        final provider = MbTilesTileProvider.fromPath(path: selectedPath);
+        _disposeOfflineMap();
+        setState(() {
+          _offlineTileProvider = provider;
+          _message = AppLocale.pick('Офлайн-карта подключена.', 'Офлайн карта қосылды.', 'Offline map connected.');
+        });
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = AppLocale.pick('Не удалось открыть офлайн-карту: $error', 'Офлайн картаны ашу мүмкін болмады: $error', 'Could not open offline map: $error'));
@@ -3891,7 +3945,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  _offlineTileProvider == null
+                  !_isOfflineMapActive
                       ? AppLocale.pick('Офлайн-карта не подключена. Размер и покрытие файла проверяются после выбора; готовые пакеты для скачивания пока не предоставляются.', 'Офлайн карта қосылмаған. Файл таңдалғаннан кейін оның өлшемі мен қамту аумағы тексеріледі; дайын жүктеу пакеттері әзірге берілмейді.', 'No offline map is connected. File size and coverage are checked after selection; ready-made download packages are not provided yet.')
                       : AppLocale.pick('Офлайн-карта подключена. Для построения маршрута пока нужен интернет.', 'Офлайн карта қосылды. Маршрут құру үшін әзірге интернет қажет.', 'Offline map connected. Internet is still required to build routes.'),
                   style: const TextStyle(fontSize: 12, color: Colors.black54),
@@ -5401,7 +5455,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       backgroundColor: const Color(0xFFF3F6FA),
       body: Stack(
         children: [
-          if (_offlineTileProvider == null)
+          if (!_isOfflineMapActive)
             ml.MapLibreMap(
               initialCameraPosition: ml.CameraPosition(
                 target: ml.LatLng(_shymkent.latitude, _shymkent.longitude),
@@ -5431,7 +5485,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 onLongPress: (_, point) => _openPointMenu(point),
               ),
               children: [
-                TileLayer(tileProvider: _offlineTileProvider!),
+                if (_offlineVectorTileProvider != null)
+                  VectorTileLayer(
+                    theme: _offlineVectorTheme,
+                    tileProviders: TileProviders({
+                      'openmaptiles': _offlineVectorTileProvider!,
+                    }),
+                    maximumZoom: 18,
+                  )
+                else
+                  TileLayer(tileProvider: _offlineTileProvider!),
                 if (visibleRoutePoints.isNotEmpty)
                   PolylineLayer(
                     polylines: [
@@ -5444,7 +5507,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ),
               ],
             ),
-          if (_offlineTileProvider == null)
+          if (!_isOfflineMapActive)
             Positioned(
               top: 88,
               right: 14,
@@ -6143,8 +6206,13 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
         if (await destination.exists()) await destination.delete();
         await source.copy(destination.path);
       }
-      final validationProvider = MbTilesTileProvider.fromPath(path: destination.path);
-      validationProvider.dispose();
+      final validationDatabase = MbTiles(mbtilesPath: destination.path);
+      final validationFormat = validationDatabase.getMetadata().format?.toLowerCase();
+      validationDatabase.dispose();
+      if (validationFormat != 'pbf' && validationFormat != 'mvt') {
+        final validationProvider = MbTilesTileProvider.fromPath(path: destination.path);
+        validationProvider.dispose();
+      }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('offline_map_path', destination.path);
       if (!mounted) return;
