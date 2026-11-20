@@ -112,8 +112,8 @@ jobs:
           # Valhalla's Kotlin artifacts are compiled with Kotlin metadata 2.3.0.
           # The Flutter 3.32.8 template uses Kotlin 2.1.0, which cannot read them.
           settings_content, kotlin_count = re.subn(
-              r'((?:id\\(["\\']org\\.jetbrains\\.kotlin\\.android["\\']\\)|["\\']org\\.jetbrains\\.kotlin\\.android["\\'])\\s+version\\s+["\\'])[^"\\']+(["\\'])',
-              r'\\g<1>2.3.0\\g<2>',
+              r'((?:id\(["\']org\.jetbrains\.kotlin\.android["\']\)|["\']org\.jetbrains\.kotlin\.android["\'])\s+version\s+["\'])[^"\']+(["\'])',
+              r'\g<1>2.3.0\g<2>',
               settings_content,
           )
           if kotlin_count != 1:
