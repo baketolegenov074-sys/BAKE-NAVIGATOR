@@ -3522,7 +3522,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
+      final failure = error.toString().replaceFirst('Exception: ', '');
+      setState(() => _message = routingNotice == null
+          ? failure
+          : '$routingNotice\\n$failure');
     } finally {
       if (mounted) setState(() => _isBuildingRoute = false);
     }
