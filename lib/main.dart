@@ -1503,6 +1503,38 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
+  Future<void> _toggleOfflineMapFromMap() async {
+    if (_isOfflineMapActive) {
+      _disposeOfflineMap();
+      if (mounted) {
+        setState(() {
+          _message = AppLocale.pick(
+            'Включена онлайн-карта.',
+            'Онлайн карта қосылды.',
+            'Online map enabled.',
+          );
+        });
+      }
+      return;
+    }
+
+    await _loadSavedOfflineMap();
+    if (!mounted) return;
+    setState(() {
+      _message = _isOfflineMapActive
+          ? AppLocale.pick(
+              'Включена офлайн-карта Шымкента.',
+              'Шымкенттің офлайн картасы қосылды.',
+              'Shymkent offline map enabled.',
+            )
+          : AppLocale.pick(
+              'Сначала импортируйте MBTiles-карту в настройках.',
+              'Алдымен баптаулардан MBTiles картасын импорттаңыз.',
+              'Import an MBTiles map in settings first.',
+            );
+    });
+  }
+
   Future<void> _openSettings() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -5507,6 +5539,44 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                 ),
               ],
             ),
+          Positioned(
+            top: 142,
+            right: 14,
+            child: SafeArea(
+              bottom: false,
+              child: Material(
+                color: Colors.white,
+                elevation: 5,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: _toggleOfflineMapFromMap,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _isOfflineMapActive ? Icons.cloud_outlined : Icons.download_for_offline_outlined,
+                          size: 18,
+                          color: const Color(0xFF202020),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _isOfflineMapActive ? 'Онлайн' : 'Офлайн',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF202020),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
           if (!_isOfflineMapActive)
             Positioned(
               top: 88,
