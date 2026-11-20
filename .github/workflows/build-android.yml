@@ -32,9 +32,10 @@ jobs:
             --strategy smart \
             --output shymkent-search.osm.pbf \
             kazakhstan-latest.osm.pbf
-          osmium tags-filter shymkent-search.osm.pbf \
-            nwr/name nwr/addr:housenumber nwr/addr:street \
-            --output shymkent-search-features.osm.pbf
+          osmium tags-filter \
+            --output shymkent-search-features.osm.pbf \
+            shymkent-search.osm.pbf \
+            nwr/name nwr/addr:housenumber nwr/addr:street
           osmium export \
             --output-format=geojsonseq \
             --format-option=print_record_separator=false \
