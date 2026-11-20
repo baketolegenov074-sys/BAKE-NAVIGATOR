@@ -2281,7 +2281,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
     final apiQueries = <String>{_photonQuery(trimmed)};
     final schoolMatch = RegExp(
-      r'(?:школа\s*№?\s*(\\d+)|№\s*(\\d+)\s*школа|(\\d+)\s*школа)',
+      r'(?:школа\s*№?\s*(\d+)|№\s*(\d+)\s*школа|(\d+)\s*школа)',
       caseSensitive: false,
     ).firstMatch(trimmed);
     final schoolNumber = schoolMatch?.group(1) ??
@@ -2295,7 +2295,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
 
     final addressMatch = RegExp(
-      r'^(.*?)\s+(\\d+[0-9а-яa-z]*(?:/\\d+[0-9а-яa-z]*)?)$',
+      r'^(.*?)\s+(\d+[0-9а-яa-z]*(?:/\d+[0-9а-яa-z]*)?)$',
       caseSensitive: false,
     ).firstMatch(trimmed);
     final requestUris = <Uri>[];
