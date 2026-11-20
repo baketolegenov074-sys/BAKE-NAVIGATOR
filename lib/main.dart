@@ -2336,7 +2336,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           : AppLocale.pick('Адрес найден. Автоматически строим маршрут от вашего GPS-положения…', 'Мекенжай табылды. GPS орналасқан жеріңізден маршрут автоматты түрде құрылады…', 'Address found. Building a route from your GPS location…'));
     } catch (error) {
       if (!mounted) return;
-      setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
+      final failure = error.toString().replaceFirst('Exception: ', '');
+      setState(() => _message = routingNotice == null
+          ? failure
+          : '$routingNotice\\n$failure');
     } finally {
       if (mounted) setState(() => _isSearching = false);
     }
@@ -3406,10 +3409,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             localData['routes'] = usableLocalRoutes;
             routeData = localData;
           } catch (error) {
+            final detail = error.toString().replaceFirst('Exception: ', '');
             routingNotice = AppLocale.pick(
-              'Офлайн-маршрут недоступен — пробуем интернет-маршрутизатор.',
-              'Офлайн маршрут қолжетімсіз — интернет маршрутизаторын тексереміз.',
-              'Offline routing is unavailable — trying the online router.',
+              'Valhalla: $detail. Пробуем интернет-маршрутизатор.',
+              'Valhalla: $detail. Интернет маршрутизаторын тексереміз.',
+              'Valhalla failed: $detail. Trying the online router.',
             );
             debugPrint('BAKE Valhalla route failed; falling back to OSRM: $error');
           }
@@ -6438,6 +6442,46 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
       if (initialized?['ready'] != true) {
         throw Exception('Valhalla не подтвердил готовность дорожного архива.');
       }
+
+      // Opening the tile extract is not enough: prove that the Android engine
+      // can calculate a real route before marking this archive as connected.
+      final diagnosticRaw = await _valhallaChannel.invokeMethod<String>(
+        'route',
+        <String, dynamic>{
+          'startLat': 42.3154,
+          'startLon': 69.5869,
+          'endLat': 42.3300,
+          'endLon': 69.6000,
+        },
+      );
+      if (diagnosticRaw == null || diagnosticRaw.isEmpty) {
+        throw Exception('Valhalla открыл архив, но вернул пустой ответ на тестовый маршрут.');
+      }
+      final diagnosticData = jsonDecode(diagnosticRaw) as Map<String, dynamic>;
+      final diagnosticRoutes = (diagnosticData['routes'] as List?) ?? const [];
+      final diagnosticRoute = diagnosticRoutes.isNotEmpty
+          ? diagnosticRoutes.first
+          : null;
+      final diagnosticGeometry = diagnosticRoute is Map<String, dynamic>
+          ? diagnosticRoute['geometry']
+          : null;
+      final diagnosticCoordinates = diagnosticGeometry is Map<String, dynamic>
+          ? diagnosticGeometry['coordinates']
+          : null;
+      if (diagnosticData['code'] != 'Ok' ||
+          diagnosticRoute is! Map<String, dynamic> ||
+          diagnosticRoute['distance'] is! num ||
+          diagnosticRoute['duration'] is! num ||
+          diagnosticCoordinates is! List ||
+          diagnosticCoordinates.length < 2) {
+        final nativeMessage = diagnosticData['message']?.toString();
+        throw Exception(
+          'Valhalla открыл архив, но тестовый маршрут не построен'
+          '${nativeMessage == null || nativeMessage.isEmpty ? '' : ': $nativeMessage'}',
+        );
+      }
+      final diagnosticDistanceKm =
+          ((diagnosticRoute['distance'] as num).toDouble() / 1000).toStringAsFixed(2);
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('valhalla_tile_extract_path', destination.path);
       if (!mounted) return;
@@ -6445,7 +6489,12 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
         _valhallaExtractPath = destination.path;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Офлайн-маршрутизатор Valhalla подключён.')),
+        SnackBar(
+          content: Text(
+            'Valhalla проверена: тестовый маршрут построен ($diagnosticDistanceKm км).',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
       );
     } catch (error) {
       if (!mounted) return;
