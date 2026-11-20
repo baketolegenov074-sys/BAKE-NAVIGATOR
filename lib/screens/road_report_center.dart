@@ -81,7 +81,7 @@ class RoadReportCenter extends StatelessWidget {
   Future<void> _capture(BuildContext context, _ReportType type) async {
     final messenger = ScaffoldMessenger.of(context);
     void notify(SnackBar snackBar) {
-      if (context.mounted) notify(snackBar);
+      if (context.mounted) messenger.showSnackBar(snackBar);
     }
     try {
       var permission = await Geolocator.checkPermission();
