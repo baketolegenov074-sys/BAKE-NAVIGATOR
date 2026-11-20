@@ -495,6 +495,47 @@ class RouteInstruction {
   final String maneuverModifier;
 }
 
+String _valhallaErrorForUser(Object error, {bool duringImport = false}) {
+  final details = error.toString().toLowerCase();
+  if (details.contains('not initialized')) {
+    return AppLocale.pick(
+      'Офлайн-маршрутизатор не запустился. Проверьте архив дорожных данных.',
+      'Офлайн маршруттау құралы іске қосылмады. Жол деректерінің архивін тексеріңіз.',
+      'Offline routing did not start. Check the road-data archive.',
+    );
+  }
+  if (details.contains('not found') ||
+      details.contains('no such file') ||
+      details.contains('tile extract') ||
+      details.contains('archive')) {
+    return AppLocale.pick(
+      'Не удалось открыть архив дорожных данных. Проверьте файл Valhalla .tar.',
+      'Жол деректерінің архивін ашу мүмкін болмады. Valhalla .tar файлын тексеріңіз.',
+      'Could not open the road-data archive. Check the Valhalla .tar file.',
+    );
+  }
+  if (details.contains('no route') ||
+      details.contains('route not found') ||
+      details.contains('no suitable')) {
+    return AppLocale.pick(
+      'Архив открылся, но тестовый маршрут по нему не построен.',
+      'Архив ашылды, бірақ сынақ маршруты құрылмады.',
+      'The archive opened, but the test route could not be built.',
+    );
+  }
+  return duringImport
+      ? AppLocale.pick(
+          'Не удалось проверить офлайн-маршрутизатор. Проверьте архив Valhalla и попробуйте ещё раз.',
+          'Офлайн маршруттау құралын тексеру мүмкін болмады. Valhalla архивін тексеріп, қайталап көріңіз.',
+          'Could not verify offline routing. Check the Valhalla archive and try again.',
+        )
+      : AppLocale.pick(
+          'Не удалось построить маршрут по офлайн-дорожным данным.',
+          'Офлайн жол деректері бойынша маршрут құру мүмкін болмады.',
+          'Could not build a route using offline road data.',
+        );
+}
+
 class NavigatorScreen extends StatefulWidget {
   const NavigatorScreen({super.key});
 
@@ -3376,7 +3417,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               },
             );
             if (raw == null || raw.isEmpty) {
-              throw Exception('Valhalla returned an empty response.');
+              throw Exception('Пустой ответ офлайн-маршрутизатора.');
             }
             final localData = jsonDecode(raw) as Map<String, dynamic>;
             final localRoutes = (localData['routes'] as List?) ?? const [];
@@ -3400,17 +3441,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             }).toList();
             if (localData['code'] != 'Ok' || usableLocalRoutes.isEmpty) {
               throw Exception(
-                'Valhalla did not return usable GeoJSON route geometry.',
+                'Офлайн-маршрутизатор вернул некорректные данные маршрута.',
               );
             }
             localData['routes'] = usableLocalRoutes;
             routeData = localData;
           } catch (error) {
-            final detail = error.toString().replaceFirst('Exception: ', '');
             routingNotice = AppLocale.pick(
-              'Valhalla: $detail. Пробуем интернет-маршрутизатор.',
-              'Valhalla: $detail. Интернет маршрутизаторын тексереміз.',
-              'Valhalla failed: $detail. Trying the online router.',
+              '${_valhallaErrorForUser(error)} Пробуем построить маршрут через интернет.',
+              '${_valhallaErrorForUser(error)} Интернет арқылы маршрут құрып көреміз.',
+              '${_valhallaErrorForUser(error)} Trying the online router.',
             );
             debugPrint('BAKE Valhalla route failed; falling back to OSRM: $error');
           }
@@ -3522,7 +3562,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final failure = error.toString().replaceFirst('Exception: ', '');
       setState(() => _message = routingNotice == null
           ? failure
-          : '$routingNotice\n$failure');
+          : AppLocale.pick(
+              '$routingNotice Интернет-маршрут тоже не ответил. Проверьте подключение.',
+              '$routingNotice Интернет маршруты да жауап бермеді. Байланысты тексеріңіз.',
+              '$routingNotice The online router also did not respond. Check your connection.',
+            ));
     } finally {
       if (mounted) setState(() => _isBuildingRoute = false);
     }
@@ -6397,7 +6441,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(content: Text(_valhallaErrorForUser(error, duringImport: true))),
       );
     } finally {
       if (mounted) setState(() => _importingOfflineMap = false);
@@ -6448,14 +6492,14 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
       final diagnosticRaw = await _valhallaChannel.invokeMethod<String>(
         'route',
         <String, dynamic>{
-          'startLat': 42.3154,
-          'startLon': 69.5869,
-          'endLat': 42.3300,
-          'endLon': 69.6000,
+          'startLat': 42.3640, // Shymkent Airport area
+          'startLon': 69.4780,
+          'endLat': 42.3154, // Central Shymkent
+          'endLon': 69.5869,
         },
       );
       if (diagnosticRaw == null || diagnosticRaw.isEmpty) {
-        throw Exception('Valhalla открыл архив, но вернул пустой ответ на тестовый маршрут.');
+        throw Exception('Пустой ответ на тестовый маршрут.');
       }
       final diagnosticData = jsonDecode(diagnosticRaw) as Map<String, dynamic>;
       final diagnosticRoutes = (diagnosticData['routes'] as List?) ?? const [];
@@ -6474,11 +6518,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
           diagnosticRoute['duration'] is! num ||
           diagnosticCoordinates is! List ||
           diagnosticCoordinates.length < 2) {
-        final nativeMessage = diagnosticData['message']?.toString();
-        throw Exception(
-          'Valhalla открыл архив, но тестовый маршрут не построен'
-          '${nativeMessage == null || nativeMessage.isEmpty ? '' : ': $nativeMessage'}',
-        );
+        throw Exception('Тестовый маршрут по архиву Valhalla не построен.');
       }
       final diagnosticDistanceKm =
           ((diagnosticRoute['distance'] as num).toDouble() / 1000).toStringAsFixed(2);
@@ -6491,7 +6531,11 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Valhalla проверена: тестовый маршрут построен ($diagnosticDistanceKm км).',
+            AppLocale.pick(
+              'Офлайн-маршрутизатор проверен: маршрут через Шымкент построен ($diagnosticDistanceKm км).',
+              'Офлайн маршруттау құралы тексерілді: Шымкент арқылы маршрут құрылды ($diagnosticDistanceKm км).',
+              'Offline routing verified: a route across Shymkent was built ($diagnosticDistanceKm km).',
+            ),
           ),
           duration: const Duration(seconds: 5),
         ),
