@@ -69,7 +69,7 @@ class OfflineAddressSearch {
       var allTokensMatch = true;
       for (final token in queryTokens) {
         final hasWholeToken = RegExp(
-          '(^| )${RegExp.escape(token)}($| )',
+          '(^| )${RegExp.escape(token)}(\$| )',
         ).hasMatch(haystack);
         if (hasWholeToken) {
           score += 20;
