@@ -99,9 +99,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tar -tf output/shymkent-valhalla.tar | head -n 20
-          tar -tf output/shymkent-valhalla.tar | grep -q 'index'
-          tar -tf output/shymkent-valhalla.tar | grep -q '\.gph$'
+          tar -tf output/shymkent-valhalla.tar > output/archive-contents.txt
+          head -n 20 output/archive-contents.txt
+          grep -q 'index' output/archive-contents.txt
+          grep -q '\\.gph$' output/archive-contents.txt
           IMAGE="ghcr.io/valhalla/valhalla:latest"
           docker run --rm -v "$PWD:/data" "$IMAGE" \
             valhalla_service /data/valhalla/valhalla.json route \
