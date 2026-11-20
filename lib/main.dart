@@ -2255,37 +2255,118 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query) async {
-    final uri = Uri.https('photon.komoot.io', '/api/', {
-      'q': _photonQuery(query),
-      'lat': '42.3417',
-      'lon': '69.5901',
-      'bbox': '69.40,42.15,69.85,42.50',
-      'limit': '10',
-    });
-    final response = await http.get(uri, headers: const {
-      'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
-      'Accept': 'application/geo+json, application/json',
-    }).timeout(const Duration(seconds: 15));
-    if (response.statusCode != 200) {
-      throw Exception(AppLocale.pick(
-        'Поиск адресов временно недоступен.',
-        'Мекенжай іздеу уақытша қолжетімсіз.',
-        'Address search is temporarily unavailable.',
-      ));
+    Future<List<Map<String, dynamic>>> request(Uri uri) async {
+      final response = await http.get(uri, headers: const {
+        'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+        'Accept': 'application/geo+json, application/json',
+      }).timeout(const Duration(seconds: 7));
+      if (response.statusCode != 200) return <Map<String, dynamic>>[];
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! Map) return <Map<String, dynamic>>[];
+      final rawFeatures = decoded['features'];
+      if (rawFeatures is! List) return <Map<String, dynamic>>[];
+      return rawFeatures.whereType<Map>().map(
+        (item) => Map<String, dynamic>.from(item),
+      ).where((feature) {
+        final geometry = feature['geometry'];
+        final coordinates = geometry is Map ? geometry['coordinates'] : null;
+        return coordinates is List && coordinates.length >= 2 &&
+            double.tryParse(coordinates[0].toString()) != null &&
+            double.tryParse(coordinates[1].toString()) != null;
+      }).toList();
     }
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-    if (decoded is! Map) return <Map<String, dynamic>>[];
-    final rawFeatures = decoded['features'];
-    if (rawFeatures is! List) return <Map<String, dynamic>>[];
-    return rawFeatures.whereType<Map>().map(
-      (item) => Map<String, dynamic>.from(item),
-    ).where((feature) {
-      final geometry = feature['geometry'];
-      final coordinates = geometry is Map ? geometry['coordinates'] : null;
-      return coordinates is List && coordinates.length >= 2 &&
-          double.tryParse(coordinates[0].toString()) != null &&
-          double.tryParse(coordinates[1].toString()) != null;
-    }).toList();
+
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return <Map<String, dynamic>>[];
+
+    final apiQueries = <String>{_photonQuery(trimmed)};
+    final schoolMatch = RegExp(
+      r'(?:школа\\s*№?\\s*(\\d+)|№\\s*(\\d+)\\s*школа|(\\d+)\\s*школа)',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    final schoolNumber = schoolMatch?.group(1) ??
+        schoolMatch?.group(2) ??
+        schoolMatch?.group(3);
+    if (schoolNumber != null) {
+      apiQueries
+        ..add('Школа №$schoolNumber Шымкент')
+        ..add('$schoolNumber школа Шымкент')
+        ..add('Мектеп $schoolNumber Шымкент');
+    }
+
+    final addressMatch = RegExp(
+      r'^(.*?)\\s+(\\d+[0-9а-яa-z]*(?:/\\d+[0-9а-яa-z]*)?)$',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    final requestUris = <Uri>[];
+    for (final apiQuery in apiQueries.take(3)) {
+      requestUris.add(Uri.https('photon.komoot.io', '/api/', {
+        'q': apiQuery,
+        'lat': '42.3417',
+        'lon': '69.5901',
+        'bbox': '69.40,42.15,69.85,42.50',
+        'countrycode': 'KZ',
+        'lang': 'ru',
+        'limit': '15',
+      }));
+    }
+
+    // Address-shaped input gets a structured district/street + house-number
+    // lookup as well as the ordinary free-text query.
+    if (addressMatch != null) {
+      final areaOrStreet = addressMatch.group(1)!.trim();
+      final house = addressMatch.group(2)!.trim();
+      final district = areaOrStreet.replaceAll(RegExp(r'\\s+'), '-');
+      requestUris.insert(0, Uri.https('photon.komoot.io', '/structured', {
+        'city': 'Шымкент',
+        'district': district,
+        'housenumber': house,
+        'countrycode': 'KZ',
+        'lang': 'ru',
+        'lat': '42.3417',
+        'lon': '69.5901',
+        'limit': '15',
+      }));
+      requestUris.add(Uri.https('photon.komoot.io', '/structured', {
+        'city': 'Шымкент',
+        'street': areaOrStreet,
+        'housenumber': house,
+        'countrycode': 'KZ',
+        'lang': 'ru',
+        'lat': '42.3417',
+        'lon': '69.5901',
+        'limit': '15',
+      }));
+      requestUris.add(Uri.https('photon.komoot.io', '/api/', {
+        'q': '$district $house Шымкент',
+        'lat': '42.3417',
+        'lon': '69.5901',
+        'bbox': '69.40,42.15,69.85,42.50',
+        'countrycode': 'KZ',
+        'lang': 'ru',
+        'limit': '15',
+      }));
+    }
+
+    final groups = await Future.wait(
+      requestUris.toSet().map(request),
+    );
+    final merged = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    for (final group in groups) {
+      for (final feature in group) {
+        final properties = feature['properties'] is Map
+            ? Map<String, dynamic>.from(feature['properties'] as Map)
+            : <String, dynamic>{};
+        final geometry = feature['geometry'] as Map;
+        final coordinates = geometry['coordinates'] as List;
+        final identity = properties['osm_id'] != null
+            ? '${properties['osm_type'] ?? ''}:${properties['osm_id']}'
+            : '${properties['name'] ?? ''}:${coordinates[0]}:${coordinates[1]}';
+        if (seen.add(identity)) merged.add(feature);
+      }
+    }
+    return merged.take(20).toList();
   }
 
   Future<List<Map<String, dynamic>>> _fetchAddressFeatures(
@@ -2302,7 +2383,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     // A short timeout keeps a disconnected phone from waiting on the network.
     try {
       return await _fetchPhotonFeatures(query).timeout(
-        const Duration(seconds: 4),
+        const Duration(seconds: 8),
       );
     } catch (error) {
       debugPrint('BAKE online address search unavailable; using offline index: $error');
@@ -2338,19 +2419,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           'Address not found. Try a more specific street or house name.',
         ));
         return;
-      }
-      if (!results.any((feature) => feature['_offline'] == true)) {
-        results.sort((a, b) {
-          List<double> coords(Map<String, dynamic> feature) {
-            final geometry = feature['geometry'] as Map;
-            final values = geometry['coordinates'] as List;
-            return [double.parse(values[1].toString()), double.parse(values[0].toString())];
-          }
-          final ac = coords(a);
-          final bc = coords(b);
-          return _distanceKm(anchor, LatLng(ac[0], ac[1]))
-              .compareTo(_distanceKm(anchor, LatLng(bc[0], bc[1])));
-        });
       }
       final selected = await showModalBottomSheet<Map<String, dynamic>>(
         context: context,
