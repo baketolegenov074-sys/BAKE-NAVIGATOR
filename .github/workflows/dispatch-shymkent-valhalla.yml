@@ -1,0 +1,11 @@
+name: Dispatch Shymkent Valhalla Tiles
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-shymkent-valhalla:
+    uses: baketolegenov074-sys/BAKE-NAVIGATOR/.github/workflows/build-shymkent-valhalla-tiles.yml@fix/address-gps-route-reset
