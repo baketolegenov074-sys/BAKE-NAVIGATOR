@@ -1117,6 +1117,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   void _onMapLibreStyleLoaded() {
     _mapLibreStyleReady = true;
+    unawaited(_ensureMapLibreLabelLayers());
     unawaited(_syncMapLibreAnnotations(updateRoute: true));
     // GPS may finish before MapLibre has created its controller. In that case
     // the first camera move is ignored, so center the map again when the style
@@ -1184,6 +1185,26 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     } catch (error) {
       // A satellite tile failure must never disable the normal vector map.
       debugPrint('BAKE satellite imagery unavailable: $error');
+    }
+  }
+
+  Future<void> _ensureMapLibreLabelLayers() async {
+    final controller = _mapLibreController;
+    if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
+    try {
+      final layerIds = await controller.getLayerIds();
+      final labelLayerPattern = RegExp(r'(^|[_-])(name|label|place|housenumber|poi|street)([_-]|$)', caseSensitive: false);
+      for (final layerId in layerIds) {
+        if (labelLayerPattern.hasMatch(layerId)) {
+          try {
+            await controller.setLayerVisibility(layerId, true);
+          } catch (error) {
+            debugPrint('BAKE map label layer $layerId could not be enabled: $error');
+          }
+        }
+      }
+    } catch (error) {
+      debugPrint('BAKE map labels unavailable: $error');
     }
   }
 
@@ -2194,6 +2215,77 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     ) / 1000;
   }
 
+  String _photonQuery(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return trimmed;
+    return RegExp(r'шымкент', caseSensitive: false).hasMatch(trimmed)
+        ? trimmed
+        : '$trimmed Шымкент';
+  }
+
+  String valueForPhotonFeature(Map<String, dynamic> feature) {
+    final address = _photonFeatureAddress(feature);
+    return address.isEmpty ? 'Шымкент' : address;
+  }
+
+  String _photonFeatureAddress(Map<String, dynamic> feature) {
+    final raw = feature['properties'];
+    final properties = raw is Map
+        ? Map<String, dynamic>.from(raw)
+        : <String, dynamic>{};
+    final parts = <String>[];
+    final name = properties['name']?.toString().trim() ?? '';
+    final street = properties['street']?.toString().trim() ?? '';
+    final house = properties['housenumber']?.toString().trim() ?? '';
+    final district = (properties['district'] ?? properties['suburb'])?.toString().trim() ?? '';
+    final city = properties['city']?.toString().trim() ?? '';
+    if (name.isNotEmpty && name != street) parts.add(name);
+    if (street.isNotEmpty) parts.add(street);
+    if (house.isNotEmpty) parts.add(house);
+    if (district.isNotEmpty && !parts.contains(district)) parts.add(district);
+    if (city.isNotEmpty && !parts.contains(city)) parts.add(city);
+    if (parts.isEmpty) {
+      final label = properties['label']?.toString().trim() ?? '';
+      if (label.isNotEmpty) parts.add(label);
+    }
+    return parts.join(', ');
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query) async {
+    final uri = Uri.https('photon.komoot.io', '/api/', {
+      'q': _photonQuery(query),
+      'lat': '42.3417',
+      'lon': '69.5901',
+      'bbox': '69.40,42.15,69.85,42.50',
+      'limit': '10',
+    });
+    final response = await http.get(uri, headers: const {
+      'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+      'Accept': 'application/geo+json, application/json',
+    }).timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      throw Exception(AppLocale.pick(
+        'Поиск адресов временно недоступен.',
+        'Мекенжай іздеу уақытша қолжетімсіз.',
+        'Address search is temporarily unavailable.',
+      ));
+    }
+    final dynamic data = response.body;
+    final decoded = data is String ? jsonDecode(data) : data;
+    if (decoded is! Map) return <Map<String, dynamic>>[];
+    final rawFeatures = decoded['features'];
+    if (rawFeatures is! List) return <Map<String, dynamic>>[];
+    return rawFeatures.whereType<Map>().map(
+      (item) => Map<String, dynamic>.from(item),
+    ).where((feature) {
+      final geometry = feature['geometry'];
+      final coordinates = geometry is Map ? geometry['coordinates'] : null;
+      return coordinates is List && coordinates.length >= 2 &&
+          double.tryParse(coordinates[0].toString()) != null &&
+          double.tryParse(coordinates[1].toString()) != null;
+    }).toList();
+  }
+
   Future<void> _searchAddress({bool selectAsOrigin = false}) async {
     final query = _searchController.text.trim();
     if (query.isEmpty || _isSearching) return;
@@ -2204,79 +2296,36 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     await prefs.setStringList('search_history', history.take(20).toList());
     setState(() {
       _isSearching = true;
-      _message = selectAsOrigin ? AppLocale.pick('Ищем начальную точку…', 'Бастапқы нүкте ізделуде…', 'Searching for starting point…') : AppLocale.pick('Ищем пункт назначения…', 'Межелі орын ізделуде…', 'Searching for destination…');
+      _message = selectAsOrigin
+          ? AppLocale.pick('Ищем начальную точку…', 'Бастапқы нүкте ізделуде…', 'Searching for starting point…')
+          : AppLocale.pick('Ищем пункт назначения…', 'Межелі орын ізделуде…', 'Searching for destination…');
     });
     var shouldBuildRoute = false;
     try {
-      // Prefer the live GPS position; use Shymkent only before GPS is available.
       final anchor = selectAsOrigin
           ? (_currentLocation ?? _routeOrigin ?? _shymkent)
           : (_routeOrigin ?? _currentLocation ?? _shymkent);
-      final west = (anchor.longitude - 0.45).toStringAsFixed(6);
-      final north = (anchor.latitude + 0.45).toStringAsFixed(6);
-      final east = (anchor.longitude + 0.45).toStringAsFixed(6);
-      final south = (anchor.latitude - 0.45).toStringAsFixed(6);
-
-      Future<List<dynamic>> requestSearch({required bool bounded, String limit = '12'}) async {
-        final params = <String, String>{
-          'q': query,
-          'format': 'jsonv2',
-          'limit': limit,
-          'countrycodes': 'kz',
-          'accept-language': 'ru,kk',
-          'addressdetails': '1',
-          'viewbox': '$west,$north,$east,$south',
-          if (bounded) 'bounded': '1',
-        };
-        final uri = Uri.https('nominatim.openstreetmap.org', '/search', params);
-        final response = await http.get(
-          uri,
-          headers: const {
-            'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
-          },
-        ).timeout(const Duration(seconds: 20));
-        if (response.statusCode == 429) {
-          throw Exception(AppLocale.pick('Сервис поиска просит подождать. Повторите через минуту.', 'Іздеу қызметі күте тұруды сұрайды. Бір минуттан кейін қайталаңыз.', 'Search service asks you to wait. Try again in a minute.'));
-        }
-        if (response.statusCode != 200) {
-          throw Exception(AppLocale.pick('Поиск адресов временно недоступен.', 'Мекенжай іздеу уақытша қолжетімсіз.', 'Address search is temporarily unavailable.'));
-        }
-        return jsonDecode(response.body) as List<dynamic>;
-      }
-
-      // Search Kazakhstan without a hard 50 km cutoff. Keep the local area
-      // as the ranking anchor so nearby streets appear before distant matches.
-      final results = await requestSearch(bounded: false, limit: '40');
+      final results = await _fetchPhotonFeatures(query);
       if (!mounted) return;
       if (results.isEmpty) {
-        setState(() => _message = AppLocale.pick('Такой объект не найден в Казахстане. Проверьте название.', 'Қазақстаннан мұндай нысан табылмады. Атауын тексеріңіз.', 'This place was not found in Kazakhstan. Check the name.'));
+        setState(() => _message = AppLocale.pick(
+          'Адрес не найден. Попробуйте уточнить название улицы или дома.',
+          'Мекенжай табылмады. Көше немесе үй атауын нақтылап көріңіз.',
+          'Address not found. Try a more specific street or house name.',
+        ));
         return;
       }
-
-      final valid = results.whereType<Map<String, dynamic>>().where((item) {
-        final lat = double.tryParse(item['lat']?.toString() ?? '');
-        final lon = double.tryParse(item['lon']?.toString() ?? '');
-        return lat != null && lon != null &&
-            lat >= 40.0 && lat <= 56.0 && lon >= 46.0 && lon <= 88.0;
-      }).toList();
-
-      valid.sort((a, b) {
-        final aPoint = LatLng(
-          double.parse(a['lat'].toString()),
-          double.parse(a['lon'].toString()),
-        );
-        final bPoint = LatLng(
-          double.parse(b['lat'].toString()),
-          double.parse(b['lon'].toString()),
-        );
-        return _distanceKm(anchor, aPoint).compareTo(_distanceKm(anchor, bPoint));
+      results.sort((a, b) {
+        List<double> coords(Map<String, dynamic> feature) {
+          final geometry = feature['geometry'] as Map;
+          final values = geometry['coordinates'] as List;
+          return [values[1] as double? ?? double.parse(values[1].toString()), values[0] as double? ?? double.parse(values[0].toString())];
+        }
+        final ac = coords(a);
+        final bc = coords(b);
+        return _distanceKm(anchor, LatLng(ac[0], ac[1]))
+            .compareTo(_distanceKm(anchor, LatLng(bc[0], bc[1])));
       });
-
-      if (valid.isEmpty) {
-        setState(() => _message = AppLocale.pick('Поиск вернул некорректные координаты. Попробуйте другое название.', 'Іздеу қате координаттарды қайтарды. Басқа атауды қолданып көріңіз.', 'Search returned invalid coordinates. Try another name.'));
-        return;
-      }
-
       final selected = await showModalBottomSheet<Map<String, dynamic>>(
         context: context,
         isScrollControlled: true,
@@ -2292,33 +2341,28 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD6D9DE),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
+                Center(child: Container(
+                  width: 42, height: 5,
+                  decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8)),
+                )),
                 const SizedBox(height: 14),
                 Text(
-                  selectAsOrigin
-                      ? AppLocale.tr('Выберите начальную точку')
-                      : AppLocale.tr('Выберите пункт назначения'),
+                  selectAsOrigin ? AppLocale.tr('Выберите начальную точку') : AppLocale.tr('Выберите пункт назначения'),
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 10),
                 Expanded(
                   child: ListView.separated(
-                    itemCount: valid.length,
+                    itemCount: results.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
                     itemBuilder: (context, index) {
-                      final item = valid[index];
+                      final feature = results[index];
+                      final address = _photonFeatureAddress(feature);
+                      final geometry = feature['geometry'] as Map;
+                      final coordinates = geometry['coordinates'] as List;
                       final point = LatLng(
-                        double.parse(item['lat'].toString()),
-                        double.parse(item['lon'].toString()),
+                        double.parse(coordinates[1].toString()),
+                        double.parse(coordinates[0].toString()),
                       );
                       final distance = _distanceKm(anchor, point);
                       final distanceLabel = distance < 1
@@ -2326,42 +2370,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           : '${distance.toStringAsFixed(1)} км от точки поиска';
                       return ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: const Icon(
-                          Icons.location_on_outlined,
-                          color: Color(0xFF343434),
-                        ),
-                        title: Text(
-                          item['name']?.toString().isNotEmpty == true
-                              ? item['name'].toString()
-                              : (item['display_name']?.toString() ?? 'Адрес'),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          '${item['display_name'] ?? ''}\n$distanceLabel',
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        onTap: () => Navigator.of(sheetContext).pop(item),
+                        leading: const Icon(Icons.location_on_outlined, color: Color(0xFF343434)),
+                        title: Text(address.isEmpty ? 'Адрес' : address, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(distanceLabel),
+                        onTap: () => Navigator.of(sheetContext).pop(feature),
                       );
                     },
                   ),
                 ),
                 const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () => Navigator.of(sheetContext).pop(),
-                  child: Text(AppLocale.tr('Отмена')),
-                ),
+                TextButton(onPressed: () => Navigator.of(sheetContext).pop(), child: Text(AppLocale.tr('Отмена'))),
               ],
             ),
           ),
         ),
       );
       if (selected == null || !mounted) return;
-      final lat = double.tryParse(selected['lat']?.toString() ?? '');
-      final lon = double.tryParse(selected['lon']?.toString() ?? '');
+      final geometry = selected['geometry'];
+      final coordinates = geometry is Map ? geometry['coordinates'] : null;
+      if (coordinates is! List || coordinates.length < 2) {
+        setState(() => _message = AppLocale.tr('Поиск вернул некорректные координаты.'));
+        return;
+      }
+      final lon = double.tryParse(coordinates[0].toString());
+      final lat = double.tryParse(coordinates[1].toString());
       if (lat == null || lon == null || lat < 40 || lat > 56 || lon < 46 || lon > 88) {
-        setState(() => _message = AppLocale.pick('Координаты результата не относятся к Казахстану.', 'Нәтиже координаттары Қазақстан аумағына жатпайды.', 'The result coordinates are outside Kazakhstan.'));
+        setState(() => _message = AppLocale.tr('Координаты результата не относятся к Казахстану.'));
         return;
       }
       final point = LatLng(lat, lon);
@@ -2372,20 +2406,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         shouldBuildRoute = true;
       }
       _moveMapCamera(point, 16);
-      setState(() => _message = selectAsOrigin
-          ? AppLocale.pick('Начальная точка выбрана. Теперь введите пункт назначения.', 'Бастапқы нүкте таңдалды. Енді межелі орынды енгізіңіз.', 'Starting point selected. Now enter your destination.')
-          : AppLocale.pick('Адрес найден. Автоматически строим маршрут от вашего GPS-положения…', 'Мекенжай табылды. GPS орналасқан жеріңізден маршрут автоматты түрде құрылады…', 'Address found. Building a route from your GPS location…'));
+      final address = _photonFeatureAddress(selected);
+      setState(() => _message = address.isEmpty
+          ? AppLocale.pick('Адрес найден.', 'Мекенжай табылды.', 'Address found.')
+          : address);
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isSearching = false);
     }
-    // Once a destination is selected, calculate the route automatically.
-    // The user only needs to review it and tap «Поехали».
-    if (shouldBuildRoute && mounted) {
-      await _buildRoute();
-    }
+    if (shouldBuildRoute && mounted) await _buildRoute();
   }
 
   void _selectRouteOrigin(LatLng point) {
@@ -3739,31 +3770,102 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
               children: [
-                TextField(
-                  controller: _searchController,
-                  autofocus: true,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) {
-                    Navigator.pop(pageContext);
-                    _searchAddress();
+                StatefulBuilder(
+                  builder: (searchContext, refreshSearch) {
+                    List<Map<String, dynamic>> suggestions = <Map<String, dynamic>>[];
+                    bool loadingSuggestions = false;
+                    Timer? debounce;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextField(
+                          controller: _searchController,
+                          autofocus: true,
+                          textInputAction: TextInputAction.search,
+                          onChanged: (value) {
+                            debounce?.cancel();
+                            if (value.trim().length < 2) {
+                              refreshSearch(() {
+                                suggestions = <Map<String, dynamic>>[];
+                                loadingSuggestions = false;
+                              });
+                              return;
+                            }
+                            refreshSearch(() => loadingSuggestions = true);
+                            debounce = Timer(const Duration(milliseconds: 350), () async {
+                              try {
+                                final found = await _fetchPhotonFeatures(value);
+                                if (!searchContext.mounted) return;
+                                refreshSearch(() {
+                                  suggestions = found;
+                                  loadingSuggestions = false;
+                                });
+                              } catch (_) {
+                                if (!searchContext.mounted) return;
+                                refreshSearch(() => loadingSuggestions = false);
+                              }
+                            });
+                          },
+                          onSubmitted: (_) {
+                            debounce?.cancel();
+                            Navigator.pop(pageContext);
+                            _searchAddress();
+                          },
+                          decoration: InputDecoration(
+                            hintText: AppLocale.tr('Куда едем?'),
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: IconButton(
+                              tooltip: AppLocale.tr('Найти'),
+                              onPressed: _isSearching
+                                  ? null
+                                  : () {
+                                      debounce?.cancel();
+                                      Navigator.pop(pageContext);
+                                      _searchAddress();
+                                    },
+                              icon: const Icon(Icons.arrow_forward),
+                            ),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                        ),
+                        if (loadingSuggestions)
+                          const Padding(
+                            padding: EdgeInsets.all(10),
+                            child: LinearProgressIndicator(minHeight: 2),
+                          ),
+                        if (suggestions.isNotEmpty)
+                          Container(
+                            constraints: const BoxConstraints(maxHeight: 260),
+                            margin: const EdgeInsets.only(top: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border.all(color: const Color(0xFFE3E6EA)),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: suggestions.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final feature = suggestions[index];
+                                final label = _photonFeatureAddress(feature);
+                                return ListTile(
+                                  dense: true,
+                                  leading: const Icon(Icons.location_on_outlined, size: 20),
+                                  title: Text(label.isEmpty ? 'Адрес' : label, maxLines: 2, overflow: TextOverflow.ellipsis),
+                                  onTap: () {
+                                    debounce?.cancel();
+                                    _searchController.text = label.isEmpty ? valueForPhotonFeature(feature) : label;
+                                    Navigator.pop(pageContext);
+                                    _searchAddress();
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                      ],
+                    );
                   },
-                  decoration: InputDecoration(
-                    hintText: AppLocale.tr('Куда едем?'),
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: IconButton(
-                      tooltip: AppLocale.tr('Найти'),
-                      onPressed: _isSearching
-                          ? null
-                          : () {
-                              Navigator.pop(pageContext);
-                              _searchAddress();
-                            },
-                      icon: const Icon(Icons.arrow_forward),
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
                 ),
                 const SizedBox(height: 22),
                 Text(
@@ -4315,6 +4417,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
     _selectDestination(point);
     _moveMapCamera(point, 15);
+    unawaited(_resolveSelectedMapPointAddress(point));
     if (mounted) {
       setState(() => _message = AppLocale.pick(
         'Пункт назначения выбран на карте. Строим маршрут…',
@@ -4370,26 +4473,50 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     );
   }
 
+  Future<String> _lookupPhotonReverseAddress(LatLng point) async {
+    final uri = Uri.https('photon.komoot.io', '/reverse', {
+      'lon': point.longitude.toString(),
+      'lat': point.latitude.toString(),
+    });
+    final response = await http.get(uri, headers: const {
+      'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+      'Accept': 'application/geo+json, application/json',
+    }).timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      throw Exception('Сервис адресов временно недоступен.');
+    }
+    final dynamic data = response.body;
+    final decoded = data is String ? jsonDecode(data) : data;
+    if (decoded is! Map) return 'Адрес не найден.';
+    final rawFeatures = decoded['features'];
+    if (rawFeatures is! List || rawFeatures.isEmpty || rawFeatures.first is! Map) {
+      return 'Адрес не найден.';
+    }
+    final feature = Map<String, dynamic>.from(rawFeatures.first as Map);
+    final address = _photonFeatureAddress(feature);
+    return address.isEmpty ? 'Адрес не найден.' : address;
+  }
+
+  Future<void> _resolveSelectedMapPointAddress(LatLng point) async {
+    try {
+      final address = await _lookupPhotonReverseAddress(point);
+      if (!mounted || _destination != point || address == 'Адрес не найден.') return;
+      setState(() => _message = 'Метка: $address');
+    } catch (error) {
+      debugPrint('BAKE Photon reverse lookup failed: $error');
+    }
+  }
+
   Future<void> _showPointDetails(LatLng point) async {
     try {
-      final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
-        'lat': point.latitude.toString(),
-        'lon': point.longitude.toString(),
-        'format': 'jsonv2',
-        'zoom': '18',
-        'accept-language': 'ru,kk',
-      });
-      final response = await http.get(uri, headers: const {'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)'}).timeout(const Duration(seconds: 15));
-      if (response.statusCode != 200) throw Exception('Сервис адресов временно недоступен.');
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final address = data['display_name']?.toString() ?? 'Адрес не найден в OpenStreetMap.';
+      final address = await _lookupPhotonReverseAddress(point);
       if (!mounted) return;
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: Text(AppLocale.tr('Что здесь')),
           content: Text('$address\\n\\n${AppLocale.tr('Координаты: ')}${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
-          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(AppLocale.tr('Закрыть')))],
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(AppLocale.tr('Закрыть'))],
         ),
       );
     } catch (error) {
