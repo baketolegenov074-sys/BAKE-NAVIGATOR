@@ -4499,8 +4499,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     if (response.statusCode != 200) {
       throw Exception('Сервис адресов временно недоступен.');
     }
-    final dynamic data = response.body;
-    final decoded = data is String ? jsonDecode(data) : data;
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     if (decoded is! Map) return 'Адрес не найден.';
     final rawFeatures = decoded['features'];
     if (rawFeatures is! List || rawFeatures.isEmpty || rawFeatures.first is! Map) {
