@@ -536,7 +536,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   final vtr.Theme _offlineVectorTheme = vtr.ProvidedThemes.lightTheme();
 
   bool get _isOfflineMapActive =>
-      _isOfflineMapActive || _offlineVectorTileProvider != null;
+      _offlineTileProvider != null || _offlineVectorTileProvider != null;
 
   void _disposeOfflineMap() {
     _offlineTileProvider?.dispose();
