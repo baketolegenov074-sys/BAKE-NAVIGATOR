@@ -2,7 +2,7 @@ package kz.bake.bake_navigator
 
 import android.os.Handler
 import android.os.Looper
-import com.valhalla.config.ValhallaConfigBuilder
+import com.valhalla.valhalla.config.ValhallaConfigFactory
 import com.valhalla.valhalla.Valhalla
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
@@ -61,9 +61,7 @@ class ValhallaRoutingBridge(
                         require(tileFile.isAbsolute && tileFile.isFile) {
                             "Valhalla tile extract was not found: $tilePath"
                         }
-                        val config = ValhallaConfigBuilder()
-                            .withTileExtract(tileFile.absolutePath)
-                            .build()
+                        val config = ValhallaConfigFactory.usingTileExtract(tileFile.absolutePath)
                         val newEngine = Valhalla(appContext, config)
                         val oldEngine = engine
                         engine = newEngine
