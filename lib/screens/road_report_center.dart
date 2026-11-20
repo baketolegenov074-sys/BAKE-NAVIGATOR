@@ -107,8 +107,8 @@ class RoadReportCenter extends StatelessWidget {
         try {
           final old = jsonDecode(raw) as Map<String, dynamic>;
           final sameType = old['type'] == type.title;
-          final samePlace = (old['latitude'] as num? ?? 999).toDouble() - position.latitude.abs() < 0.00008 &&
-              (old['longitude'] as num? ?? 999).toDouble() - position.longitude.abs() < 0.00008;
+          final samePlace = ( (old['latitude'] as num? ?? 999).toDouble() - position.latitude).abs() < 0.00008 &&
+              ( (old['longitude'] as num? ?? 999).toDouble() - position.longitude).abs() < 0.00008;
           final recent = now.difference(DateTime.tryParse(old['createdAt']?.toString() ?? '') ?? DateTime(2000)).inMinutes < 2;
           return sameType && samePlace && recent;
         } catch (_) { return false; }
@@ -135,6 +135,42 @@ class RoadReportCenter extends StatelessWidget {
       messenger.showSnackBar(SnackBar(content: Text('Не удалось получить GPS или сохранить отметку: $error')));
     }
   }
+}
+
+class RoadToolsMenu extends StatelessWidget {
+  const RoadToolsMenu({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Дорожные инструменты')),
+    body: ListView(padding: const EdgeInsets.all(12), children: [
+      Card(child: ListTile(
+        leading: const Icon(Icons.add_location_alt_outlined),
+        title: const Text('Сообщить об объекте'),
+        subtitle: const Text('Один тап — сохранить объект с GPS'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RoadReportCenter())),
+      )),
+      Card(child: ListTile(
+        leading: const Icon(Icons.bookmarks_outlined),
+        title: const Text('Мои дорожные отметки'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MyRoadMarksPage())),
+      )),
+      Card(child: ListTile(
+        leading: const Icon(Icons.edit_location_alt_outlined),
+        title: const Text('Исправить адрес'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddressCorrectionPage())),
+      )),
+      Card(child: ListTile(
+        leading: const Icon(Icons.admin_panel_settings_outlined),
+        title: const Text('Кабинет администратора'),
+        subtitle: const Text('Локальный просмотр отметок на этом устройстве'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RoadAdminPage())),
+      )),
+    ]),
+  );
 }
 
 class _ReportType {
