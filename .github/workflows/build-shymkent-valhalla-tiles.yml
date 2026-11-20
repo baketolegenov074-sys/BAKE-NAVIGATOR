@@ -1,0 +1,138 @@
+name: Build Shymkent Valhalla Routing Tiles
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shymkent-valhalla-tiles
+  cancel-in-progress: false
+
+jobs:
+  build-routing-tiles:
+    name: Build offline road graph for Shymkent
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout BAKE Navigator
+        uses: actions/checkout@v4
+
+      - name: Install OSM extraction tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y osmium-tool jq
+
+      - name: Download current Kazakhstan OSM data
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf"
+          curl --fail --location --retry 5 --retry-all-errors \
+            --retry-delay 10 --connect-timeout 30 \
+            "$URL" -o kazakhstan-latest.osm.pbf
+          test -s kazakhstan-latest.osm.pbf
+          osmium fileinfo kazakhstan-latest.osm.pbf
+
+      - name: Extract Shymkent with a routing buffer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p valhalla/tiles output
+          # Buffered bbox extends beyond the map MBTiles area so routes near
+          # the edge do not immediately terminate at the display-map boundary.
+          osmium extract \
+            --bbox 69.35,42.12,69.90,42.53 \
+            --strategy smart \
+            --output shymkent-routing.osm.pbf \
+            kazakhstan-latest.osm.pbf
+          test -s shymkent-routing.osm.pbf
+          osmium fileinfo shymkent-routing.osm.pbf
+
+      - name: Prepare Valhalla configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/valhalla/valhalla:latest"
+          docker pull "$IMAGE"
+          docker run --rm -v "$PWD:/data" "$IMAGE" \
+            valhalla_build_config \
+              --mjolnir-tile-dir /data/valhalla/tiles \
+              --mjolnir-tile-extract /data/output/shymkent-valhalla.tar \
+              --mjolnir-timezone /data/valhalla/tiles/timezones.sqlite \
+              --mjolnir-admin /data/valhalla/tiles/admins.sqlite \
+            > valhalla/valhalla.json
+          test -s valhalla/valhalla.json
+
+      - name: Build timezone and administrative databases
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/valhalla/valhalla:latest"
+          docker run --rm -v "$PWD:/data" "$IMAGE" \
+            valhalla_build_timezones \
+            > valhalla/tiles/timezones.sqlite
+          docker run --rm -v "$PWD:/data" "$IMAGE" \
+            valhalla_build_admins \
+              -c /data/valhalla/valhalla.json \
+              /data/shymkent-routing.osm.pbf
+          test -s valhalla/tiles/timezones.sqlite
+          test -s valhalla/tiles/admins.sqlite
+
+      - name: Build Valhalla road graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/valhalla/valhalla:latest"
+          docker run --rm -v "$PWD:/data" "$IMAGE" \
+            valhalla_build_tiles \
+              -c /data/valhalla/valhalla.json \
+              /data/shymkent-routing.osm.pbf
+          find valhalla/tiles -type f -name '*.gph' -print -quit | grep -q .
+          docker run --rm -v "$PWD:/data" "$IMAGE" \
+            valhalla_build_extract \
+              -c /data/valhalla/valhalla.json -v
+          test -s output/shymkent-valhalla.tar
+
+      - name: Verify the generated archive and a sample route
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -tf output/shymkent-valhalla.tar | head -n 20
+          tar -tf output/shymkent-valhalla.tar | grep -q 'index'
+          tar -tf output/shymkent-valhalla.tar | grep -q '\.gph$'
+          IMAGE="ghcr.io/valhalla/valhalla:latest"
+          docker run --rm -v "$PWD:/data" "$IMAGE" \
+            valhalla_service /data/valhalla/valhalla.json route \
+            '{"locations":[{"lat":42.3154,"lon":69.5869,"type":"break"},{"lat":42.3300,"lon":69.6000,"type":"break"}],"costing":"auto","units":"kilometers"}' \
+            > output/sample-route.json
+          jq -e '.trip.summary.length > 0' output/sample-route.json
+          sha256sum output/shymkent-valhalla.tar > output/SHA256SUMS.txt
+          cat > output/README_RU.txt <<'EOF'
+          BAKE Navigator — офлайн-дорожный граф Valhalla для Шымкента
+
+          Файл: shymkent-valhalla.tar
+          Формат: Valhalla tile extract (не MBTiles).
+          Источник дорожных данных: OpenStreetMap / Geofabrik Kazakhstan.
+          Область: 69.35,42.12 — 69.90,42.53 (Шымкент с буфером).
+          Назначение: автомобильная офлайн-маршрутизация Valhalla.
+          Проверка: архив содержит index и graph tiles; тестовый маршрут
+          должен иметь ненулевую длину.
+
+          © OpenStreetMap contributors. Данные распространяются по ODbL.
+          Архив ещё нужно импортировать в BAKE Navigator через раздел
+          «Офлайн-маршрутизация». Этот workflow не собирает APK.
+          EOF
+
+      - name: Upload Valhalla routing archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: BAKE-Shymkent-Valhalla-Tiles
+          path: |
+            output/shymkent-valhalla.tar
+            output/README_RU.txt
+            output/SHA256SUMS.txt
+            output/sample-route.json
+          if-no-files-found: error
+          retention-days: 30
