@@ -6097,7 +6097,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   child: IconButton(
                     tooltip: 'Дорожные отметки',
                     onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const RoadReportCenter()),
+                      MaterialPageRoute(builder: (_) => const RoadToolsMenu()),
                     ),
                     icon: const Icon(Icons.menu, color: Color(0xFF343434)),
                   ),
