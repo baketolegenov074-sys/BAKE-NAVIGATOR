@@ -16,6 +16,36 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Build bundled offline Shymkent address and POI index
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y osmium-tool
+          curl --fail --location --retry 5 --retry-all-errors \
+            --retry-delay 10 --connect-timeout 30 \
+            https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf \
+            --output kazakhstan-latest.osm.pbf
+          test -s kazakhstan-latest.osm.pbf
+          osmium extract \
+            --bbox 69.35,42.12,69.90,42.53 \
+            --strategy smart \
+            --output shymkent-search.osm.pbf \
+            kazakhstan-latest.osm.pbf
+          osmium tags-filter shymkent-search.osm.pbf \
+            nwr/name nwr/addr:housenumber nwr/addr:street \
+            --output shymkent-search-features.osm.pbf
+          osmium export \
+            --output-format=geojsonseq \
+            --output=shymkent-search.geojsonseq \
+            shymkent-search-features.osm.pbf
+          python3 scripts/build_shymkent_search_index.py \
+            --input shymkent-search.geojsonseq \
+            --output assets/data/shymkent_search.json.gz
+          test -s assets/data/shymkent_search.json.gz
+          ls -lh assets/data/shymkent_search.json.gz
+
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
