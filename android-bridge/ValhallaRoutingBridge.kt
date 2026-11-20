@@ -94,6 +94,7 @@ class ValhallaRoutingBridge(
                             .put("locations", locations)
                             .put("costing", "auto")
                             .put("format", "osrm")
+                            .put("shape_format", "geojson")
                             .toString()
                         val responseJson = activeEngine.routeRaw(request)
                         postSuccess(result, responseJson)
