@@ -37,6 +37,7 @@ jobs:
             --output shymkent-search-features.osm.pbf
           osmium export \
             --output-format=geojsonseq \
+            --format-option=print_record_separator=false \
             --output=shymkent-search.geojsonseq \
             shymkent-search-features.osm.pbf
           python3 scripts/build_shymkent_search_index.py \
