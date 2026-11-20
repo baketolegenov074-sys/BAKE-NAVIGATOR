@@ -136,7 +136,7 @@ jobs:
           app_content = app_gradle.read_text()
           app_content, min_sdk_count = re.subn(
               r"minSdk\s*=\s*flutter\.minSdkVersion",
-              "minSdk = 23",
+              "minSdk = 24",
               app_content,
           )
           if min_sdk_count != 1:
