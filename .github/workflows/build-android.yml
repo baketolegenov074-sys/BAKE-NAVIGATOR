@@ -156,7 +156,7 @@ jobs:
 
           app_content, ndk_count = re.subn(
               r"ndkVersion\s*=\s*flutter\.ndkVersion",
-              'ndkVersion = "28.1.13356709"',
+              'ndkVersion = "29.0.14206865"',
               app_content,
           )
           if ndk_count != 1:
@@ -166,7 +166,7 @@ jobs:
 
           app_gradle.write_text(app_content)
           print("Android compileSdk pinned to 36")
-          print("Android NDK pinned to 28.1.13356709")
+          print("Android NDK pinned to 29.0.14206865")
           PY
 
       - name: Add required Android permissions and app label
@@ -195,6 +195,36 @@ jobs:
                   manifest = manifest.replace("    <application", line + "    <application", 1)
           manifest = manifest.replace('android:label="bake_navigator"', 'android:label="BAKE Navigator"')
           path.write_text(manifest)
+          PY
+
+      - name: Add Valhalla offline routing dependencies
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("android/app/build.gradle")
+          if not path.exists():
+              path = Path("android/app/build.gradle.kts")
+          if not path.exists():
+              raise SystemExit("Generated Android app Gradle file was not found")
+
+          content = path.read_text()
+          dependencies = [
+              'implementation("io.github.rallista:valhalla-mobile:0.6.6")',
+              'implementation("io.github.rallista:valhalla-models:0.6.0")',
+              'implementation("io.github.rallista:valhalla-models-config:0.6.0")',
+              'implementation("com.stadiamaps:osrm-openapi:0.0.10")',
+          ]
+          missing = [item for item in dependencies if item not in content]
+          if missing:
+              block = re.search(r"dependencies\\s*\\{", content)
+              if not block:
+                  raise SystemExit("Android dependencies block was not found")
+              insert_at = block.end()
+              content = content[:insert_at] + "\\n    " + "\\n    ".join(missing) + content[insert_at:]
+              path.write_text(content)
+          print("Valhalla Mobile 0.6.6 and matching 0.6.0 models configured")
           PY
 
       - name: Install dependencies
