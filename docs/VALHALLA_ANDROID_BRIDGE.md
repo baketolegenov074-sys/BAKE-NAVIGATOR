@@ -66,7 +66,7 @@ Engine 0.6.4 публикуется с Kotlin stdlib 2.2.10. Шаблон Androi
 - возвращает Flutter исходный JSON-ответ, не меняя Dart-парсер;
 - выполняет native routing в отдельном однопоточном executor и закрывает engine при dispose.
 
-Workflow после `flutter create` копирует этот source в Android package и регистрирует `bake.navigator/valhalla` в `MainActivity`. Gradle dependency injection больше не требует заранее существующего блока `dependencies {}`: при необходимости workflow добавляет отдельный блок с синтаксисом выбранного Gradle DSL. Dart пока не вызывает канал автоматически; для этого отдельно нужны настройка пути к tile archive и подключение fallback-логики. Также нужен этап преобразования OSM PBF в Valhalla tile extract: PBF напрямую движок не читает.
+Workflow после `flutter create` копирует этот source в Android package и регистрирует `bake.navigator/valhalla` в `MainActivity`. Gradle dependency injection больше не требует заранее существующего блока `dependencies {}`: при необходимости workflow добавляет отдельный блок с синтаксисом выбранного Gradle DSL. Flutter-вызов канала, выбор архива и fallback на OSRM описаны в разделе «Текущее подключение Flutter» ниже. Для работы офлайн всё ещё требуется заранее преобразовать OSM PBF в Valhalla tile extract: PBF напрямую движок не читает.
 
 ## Текущее подключение Flutter
 
