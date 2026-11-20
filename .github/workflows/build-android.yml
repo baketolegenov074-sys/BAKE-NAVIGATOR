@@ -224,7 +224,7 @@ jobs:
                   lines = [f"    implementation '{coordinate}'" for coordinate in missing]
               # A separate dependencies block is valid Gradle and also works when
               # the current Flutter template contains no app-level block.
-              content = content.rstrip() + "\\n\\ndependencies {\\n" + "\\n".join(lines) + "\\n}\\n"
+              content = content.rstrip() + "\n\ndependencies {\n" + "\n".join(lines) + "\n}\n"
               path.write_text(content)
           print(f"Valhalla dependencies configured in {path}")
 
