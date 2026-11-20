@@ -24,6 +24,73 @@ import 'kazakh_voice_service.dart';
 import 'services/road_alert_service.dart';
 import 'services/offline_address_search.dart';
 
+
+// Offline label layers for the OpenMapTiles schema in shymkent.mbtiles.
+// This renderer paints text with Flutter's local/system fonts; MapLibre PBF
+// glyph URLs are not used by vector_tile_renderer.
+vtr.Theme _buildBakeOfflineVectorTheme() {
+  final base = vtr.ProvidedThemes.lightTheme();
+  final labels = vtr.ThemeReader().read({
+    'id': 'bake-shymkent-offline-labels',
+    'metadata': {'version': '1'},
+    'sources': {
+      'openmaptiles': {'type': 'vector'},
+    },
+    'layers': [
+      {
+        'id': 'bake_transportation_name',
+        'type': 'symbol',
+        'source': 'openmaptiles',
+        'source-layer': 'transportation_name',
+        'minzoom': 11,
+        'layout': {
+          'symbol-placement': 'line',
+          'text-anchor': 'center',
+          'text-field': '{name}',
+          'text-font': ['Roboto'],
+          'text-size': 13,
+          'text-max-width': 12,
+          'text-offset': [0, 0.15],
+        },
+        'paint': {
+          'text-color': '#66594b',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.2,
+        },
+      },
+      {
+        'id': 'bake_house_numbers',
+        'type': 'symbol',
+        'source': 'openmaptiles',
+        'source-layer': 'housenumber',
+        'minzoom': 14,
+        'layout': {
+          'symbol-placement': 'point',
+          'text-anchor': 'center',
+          'text-field': '{housenumber}',
+          'text-font': ['Roboto'],
+          'text-size': 11,
+          'text-offset': [0, 0],
+        },
+        'paint': {
+          'text-color': '#4b4b4b',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.3,
+        },
+      },
+    ],
+  });
+
+  return vtr.Theme(
+    id: 'bake-shymkent-offline',
+    version: '1',
+    layers: [
+      ...base.layers.where((layer) => layer.id != 'road_label'),
+      ...labels.layers,
+    ],
+  );
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
@@ -580,7 +647,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   MbTilesTileProvider? _offlineTileProvider;
   MbTiles? _offlineVectorMbtiles;
   MbTilesVectorTileProvider? _offlineVectorTileProvider;
-  final vtr.Theme _offlineVectorTheme = vtr.ProvidedThemes.lightTheme();
+  final vtr.Theme _offlineVectorTheme = _buildBakeOfflineVectorTheme();
 
   bool get _isOfflineMapActive =>
       _offlineTileProvider != null || _offlineVectorTileProvider != null;
@@ -2230,6 +2297,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final properties = raw is Map
         ? Map<String, dynamic>.from(raw)
         : <String, dynamic>{};
+    final displayLabel = properties['display_label']?.toString().trim() ?? '';
+    if (displayLabel.isNotEmpty) return displayLabel;
     final parts = <String>[];
     final name = properties['name']?.toString().trim() ?? '';
     final street = properties['street']?.toString().trim() ?? '';
@@ -2355,40 +2424,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       query,
       near: near ?? _currentLocation ?? _shymkent,
     );
+    // The built-in Shymkent directory and bundled OSM index are authoritative
+    // for local offline searches. Use Photon only when they have no match.
+    if (localResults.isNotEmpty) return localResults;
 
-    // Search online even when the Shymkent offline index has matches. This lets
-    // the user find other cities while preserving useful offline suggestions.
     try {
-      final onlineResults = await _fetchPhotonFeatures(query).timeout(
+      return await _fetchPhotonFeatures(query).timeout(
         const Duration(seconds: 8),
       );
-      final merged = <Map<String, dynamic>>[];
-      final seen = <String>{};
-      void addUnique(Iterable<Map<String, dynamic>> features) {
-        for (final feature in features) {
-          final rawProperties = feature['properties'];
-          final properties = rawProperties is Map
-              ? Map<String, dynamic>.from(rawProperties)
-              : <String, dynamic>{};
-          final rawGeometry = feature['geometry'];
-          final coordinates = rawGeometry is Map
-              ? rawGeometry['coordinates']
-              : null;
-          final identity = properties['osm_id'] != null
-              ? '${properties['osm_type'] ?? ''}:${properties['osm_id']}'
-              : '${properties['name'] ?? properties['label'] ?? ''}:'
-                  '${coordinates is List && coordinates.isNotEmpty ? coordinates[0] : ''}:'
-                  '${coordinates is List && coordinates.length > 1 ? coordinates[1] : ''}';
-          if (seen.add(identity)) merged.add(feature);
-        }
-      }
-
-      addUnique(localResults);
-      addUnique(onlineResults);
-      return merged.take(20).toList();
     } catch (error) {
-      debugPrint('BAKE online address search unavailable; using offline index: $error');
-      return localResults;
+      debugPrint('BAKE Photon address search unavailable: $error');
+      return <Map<String, dynamic>>[];
     }
   }
 
