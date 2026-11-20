@@ -42,3 +42,4 @@ flutter:
     - assets/data/kazakhstan_speed_cameras.csv
     - assets/data/shymkent_camera_candidates.csv
     - assets/data/shymkent_cameras.json
+    - assets/data/shymkent_search.json.gz
