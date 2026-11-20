@@ -126,6 +126,8 @@ class RoadReportCenter extends StatelessWidget {
         'headingDegrees': position.heading,
         'createdAt': now.toIso8601String(),
         'status': 'На проверке',
+        if (type.title == 'Камера скорости') 'cameraOperationalStatus': 'Неизвестно',
+        if (type.title == 'Ремонт или перекрытие') 'validUntil': null,
         'syncStatus': 'Ожидает подключения сервера',
       };
       rows.insert(0, jsonEncode(record));
@@ -231,15 +233,83 @@ class _MyRoadMarksPageState extends State<MyRoadMarksPage> {
   );
 }
 
-class AddressCorrectionPage extends StatelessWidget {
+class AddressCorrectionPage extends StatefulWidget {
   const AddressCorrectionPage({super.key});
+  @override
+  State<AddressCorrectionPage> createState() => _AddressCorrectionPageState();
+}
+
+class _AddressCorrectionPageState extends State<AddressCorrectionPage> {
+  final _addressController = TextEditingController();
+  final _detailsController = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _addressController.dispose();
+    _detailsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveCorrection() async {
+    if (_addressController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Укажите адрес или опишите, что нужно исправить.')));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever || !await Geolocator.isLocationServiceEnabled()) {
+        throw Exception('Для привязки исправления включите GPS и разрешите доступ к местоположению.');
+      }
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 15)),
+      );
+      if (position.accuracy > 30) throw Exception('GPS пока неточный (±${position.accuracy.toStringAsFixed(0)} м). Повторите позже.');
+      final prefs = await SharedPreferences.getInstance();
+      final rows = prefs.getStringList('bake_address_corrections_v1') ?? <String>[];
+      rows.insert(0, jsonEncode({
+        'id': DateTime.now().microsecondsSinceEpoch.toString(),
+        'address': _addressController.text.trim(),
+        'details': _detailsController.text.trim(),
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'accuracyMeters': position.accuracy,
+        'createdAt': DateTime.now().toIso8601String(),
+        'status': 'На проверке',
+        'syncStatus': 'Ожидает подключения сервера',
+      }));
+      await prefs.setStringList('bake_address_corrections_v1', rows);
+      if (!mounted) return;
+      _addressController.clear();
+      _detailsController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Исправление сохранено на телефоне. Отправка на сервер пока не подключена.')));
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Исправить адрес')),
-    body: const Padding(
-      padding: EdgeInsets.all(20),
-      child: Text('Выберите точку на карте и подготовьте сообщение об ошибке адреса. Отправка и проверка адресов появятся после подключения серверной службы.'),
-    ),
+    body: ListView(padding: const EdgeInsets.all(16), children: [
+      const Text('Опишите ошибку адреса', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+      const SizedBox(height: 12),
+      TextField(controller: _addressController, decoration: const InputDecoration(labelText: 'Адрес или название места', border: OutlineInputBorder())),
+      const SizedBox(height: 12),
+      TextField(controller: _detailsController, minLines: 3, maxLines: 5, decoration: const InputDecoration(labelText: 'Что нужно исправить (необязательно)', border: OutlineInputBorder())),
+      const SizedBox(height: 16),
+      FilledButton.icon(
+        onPressed: _saving ? null : _saveCorrection,
+        icon: _saving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.my_location),
+        label: Text(_saving ? 'Сохраняем…' : 'Сохранить с GPS'),
+      ),
+      const SizedBox(height: 8),
+      const Text('Исправление сохранится локально с координатами и точностью GPS. Для отправки и общей модерации нужен сервер BAKE.', style: TextStyle(color: Colors.black54)),
+    ]),
   );
 }
 
