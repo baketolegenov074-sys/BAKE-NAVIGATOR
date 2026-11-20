@@ -2336,7 +2336,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           : AppLocale.pick('Адрес найден. Автоматически строим маршрут от вашего GPS-положения…', 'Мекенжай табылды. GPS орналасқан жеріңізден маршрут автоматты түрде құрылады…', 'Address found. Building a route from your GPS location…'));
     } catch (error) {
       if (!mounted) return;
-      setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
+      final failure = error.toString().replaceFirst('Exception: ', '');
+      setState(() => _message = routingNotice == null
+          ? failure
+          : '$routingNotice\\n$failure');
     } finally {
       if (mounted) setState(() => _isSearching = false);
     }
@@ -3353,12 +3356,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _message = automaticReroute ? AppLocale.pick('Вы отклонились от маршрута. Перестраиваем…', 'Маршруттан ауытқыдыңыз. Қайта құрудамыз…', 'You left the route. Recalculating…') : AppLocale.pick('Строим варианты маршрута…', 'Маршрут нұсқалары құрылуда…', 'Building route options…');
     });
 
+    String? routingNotice;
     try {
       final coordinates = <LatLng>[routeOrigin, ..._routeStops, _destination!]
           .map((point) => '${point.longitude},${point.latitude}')
           .join(';');
       Map<String, dynamic>? routeData;
-      String? routingNotice;
 
       // Valhalla currently supports a direct A→B request in this bridge.
       // Keep OSRM for trips with intermediate stops and as an internet fallback.
