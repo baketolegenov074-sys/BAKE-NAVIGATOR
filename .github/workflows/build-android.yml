@@ -35,8 +35,10 @@ jobs:
           osmium tags-filter \
             --output shymkent-search-features.osm.pbf \
             shymkent-search.osm.pbf \
-            nwr/name nwr/official_name nwr/short_name nwr/ref \
-            nwr/amenity=school nwr/addr:housenumber nwr/addr:street
+            nwr/name nwr/name:ru nwr/name:kk nwr/name:en \
+            nwr/official_name nwr/short_name nwr/alt_name nwr/brand \
+            nwr/operator nwr/ref nwr/amenity=school \
+            nwr/addr:housenumber nwr/addr:street nwr/addr:place
           osmium export \
             --output-format=geojsonseq \
             --format-option=print_record_separator=false \
