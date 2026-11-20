@@ -108,6 +108,18 @@ jobs:
               raise SystemExit(
                   f"Expected one generated Android application plugin version 8.7.3, found {agp_count}"
               )
+
+          # Valhalla's Kotlin artifacts are compiled with Kotlin metadata 2.3.0.
+          # The Flutter 3.32.8 template uses Kotlin 2.1.0, which cannot read them.
+          settings_content, kotlin_count = re.subn(
+              r'((?:id\\(["\\']org\\.jetbrains\\.kotlin\\.android["\\']\\)|["\\']org\\.jetbrains\\.kotlin\\.android["\\'])\\s+version\\s+["\\'])[^"\\']+(["\\'])',
+              r'\\g<1>2.3.0\\g<2>',
+              settings_content,
+          )
+          if kotlin_count != 1:
+              raise SystemExit(
+                  f"Expected one generated Kotlin Android plugin version, found {kotlin_count}"
+              )
           settings.write_text(settings_content)
 
           wrapper = Path("android/gradle/wrapper/gradle-wrapper.properties")
