@@ -2218,7 +2218,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   String _photonQuery(String value) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) return trimmed;
-    return RegExp(r'шымкент', caseSensitive: false).hasMatch(trimmed)
+    return RegExp(r'шымкент|shymkent', caseSensitive: false).hasMatch(trimmed)
         ? trimmed
         : '$trimmed Шымкент';
   }
@@ -2319,7 +2319,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         List<double> coords(Map<String, dynamic> feature) {
           final geometry = feature['geometry'] as Map;
           final values = geometry['coordinates'] as List;
-          return [values[1] as double? ?? double.parse(values[1].toString()), values[0] as double? ?? double.parse(values[0].toString())];
+          return [double.parse(values[1].toString()), double.parse(values[0].toString())];
         }
         final ac = coords(a);
         final bc = coords(b);
@@ -3746,6 +3746,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _openSearchPanel() async {
     final prefs = await SharedPreferences.getInstance();
+    List<Map<String, dynamic>> photonSuggestions = <Map<String, dynamic>>[];
+    bool photonLoadingSuggestions = false;
+    Timer? photonDebounce;
+    var photonRequestVersion = 0;
     final history = prefs.getStringList('search_history') ?? <String>[];
     if (!mounted) return;
     const categories = <Map<String, Object>>[
@@ -3772,9 +3776,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               children: [
                 StatefulBuilder(
                   builder: (searchContext, refreshSearch) {
-                    List<Map<String, dynamic>> suggestions = <Map<String, dynamic>>[];
-                    bool loadingSuggestions = false;
-                    Timer? debounce;
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -3783,31 +3784,34 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                           autofocus: true,
                           textInputAction: TextInputAction.search,
                           onChanged: (value) {
-                            debounce?.cancel();
+                            photonDebounce?.cancel();
+                            final requestVersion = ++photonRequestVersion;
                             if (value.trim().length < 2) {
                               refreshSearch(() {
-                                suggestions = <Map<String, dynamic>>[];
-                                loadingSuggestions = false;
+                                photonSuggestions = <Map<String, dynamic>>[];
+                                photonLoadingSuggestions = false;
                               });
                               return;
                             }
-                            refreshSearch(() => loadingSuggestions = true);
-                            debounce = Timer(const Duration(milliseconds: 350), () async {
+                            refreshSearch(() => photonLoadingSuggestions = true);
+                            photonDebounce = Timer(const Duration(milliseconds: 350), () async {
                               try {
                                 final found = await _fetchPhotonFeatures(value);
                                 if (!searchContext.mounted) return;
+                                if (requestVersion != photonRequestVersion) return;
                                 refreshSearch(() {
-                                  suggestions = found;
-                                  loadingSuggestions = false;
+                                  photonSuggestions = found;
+                                  photonLoadingSuggestions = false;
                                 });
                               } catch (_) {
                                 if (!searchContext.mounted) return;
-                                refreshSearch(() => loadingSuggestions = false);
+                                if (requestVersion != photonRequestVersion) return;
+                                refreshSearch(() => photonLoadingSuggestions = false);
                               }
                             });
                           },
                           onSubmitted: (_) {
-                            debounce?.cancel();
+                            photonDebounce?.cancel();
                             Navigator.pop(pageContext);
                             _searchAddress();
                           },
@@ -3819,7 +3823,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                               onPressed: _isSearching
                                   ? null
                                   : () {
-                                      debounce?.cancel();
+                                      photonDebounce?.cancel();
                                       Navigator.pop(pageContext);
                                       _searchAddress();
                                     },
@@ -3828,12 +3832,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                           ),
                         ),
-                        if (loadingSuggestions)
+                        if (photonLoadingSuggestions)
                           const Padding(
                             padding: EdgeInsets.all(10),
                             child: LinearProgressIndicator(minHeight: 2),
                           ),
-                        if (suggestions.isNotEmpty)
+                        if (photonSuggestions.isNotEmpty)
                           Container(
                             constraints: const BoxConstraints(maxHeight: 260),
                             margin: const EdgeInsets.only(top: 6),
@@ -3844,17 +3848,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             ),
                             child: ListView.separated(
                               shrinkWrap: true,
-                              itemCount: suggestions.length,
+                              itemCount: photonSuggestions.length,
                               separatorBuilder: (_, __) => const Divider(height: 1),
                               itemBuilder: (context, index) {
-                                final feature = suggestions[index];
+                                final feature = photonSuggestions[index];
                                 final label = _photonFeatureAddress(feature);
                                 return ListTile(
                                   dense: true,
                                   leading: const Icon(Icons.location_on_outlined, size: 20),
                                   title: Text(label.isEmpty ? 'Адрес' : label, maxLines: 2, overflow: TextOverflow.ellipsis),
                                   onTap: () {
-                                    debounce?.cancel();
+                                    photonDebounce?.cancel();
                                     _searchController.text = label.isEmpty ? valueForPhotonFeature(feature) : label;
                                     Navigator.pop(pageContext);
                                     _searchAddress();
@@ -3952,6 +3956,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ),
       ),
     );
+    photonDebounce?.cancel();
   }
 
   Future<void> _openMoreSearchCategories() async {
