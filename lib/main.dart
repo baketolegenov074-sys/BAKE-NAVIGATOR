@@ -3380,9 +3380,30 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             }
             final localData = jsonDecode(raw) as Map<String, dynamic>;
             final localRoutes = (localData['routes'] as List?) ?? const [];
-            if (localData['code'] != 'Ok' || localRoutes.isEmpty) {
-              throw Exception('Valhalla did not return a usable route.');
+            // The shared route renderer expects OSRM-compatible GeoJSON geometry.
+            // Reject malformed Valhalla responses here so the online fallback runs
+            // instead of failing later while drawing the route.
+            final usableLocalRoutes = localRoutes.where((route) {
+              if (route is! Map<String, dynamic>) return false;
+              final geometry = route['geometry'];
+              if (geometry is! Map<String, dynamic>) return false;
+              final coordinates = geometry['coordinates'];
+              return route['distance'] is num &&
+                  route['duration'] is num &&
+                  coordinates is List &&
+                  coordinates.length >= 2 &&
+                  coordinates.every((pair) =>
+                      pair is List &&
+                      pair.length >= 2 &&
+                      pair[0] is num &&
+                      pair[1] is num);
+            }).toList();
+            if (localData['code'] != 'Ok' || usableLocalRoutes.isEmpty) {
+              throw Exception(
+                'Valhalla did not return usable GeoJSON route geometry.',
+              );
             }
+            localData['routes'] = usableLocalRoutes;
             routeData = localData;
           } catch (error) {
             routingNotice = AppLocale.pick(
