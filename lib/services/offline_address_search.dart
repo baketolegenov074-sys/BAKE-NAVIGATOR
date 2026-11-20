@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:latlong2/latlong.dart';
@@ -73,17 +74,16 @@ class OfflineAddressSearch {
       final house = _fold(item['house']?.toString() ?? '');
       if (house.isNotEmpty && queryTokens.contains(house)) score += 45;
       final name = _fold(item['name']?.toString() ?? '');
-      if (name.isNotEmpty && queryTokens.every(name.contains)) score += 25;
+      if (name.isNotEmpty && queryTokens.every((token) => name.contains(token))) score += 25;
       final street = _fold(item['street']?.toString() ?? '');
-      if (street.isNotEmpty && queryTokens.every(street.contains)) score += 18;
+      if (street.isNotEmpty && queryTokens.every((token) => street.contains(token))) score += 18;
 
       final lat = (item['lat'] as num?)?.toDouble();
       final lon = (item['lon'] as num?)?.toDouble();
       if (lat == null || lon == null) continue;
       final distance = near == null
           ? 0.0
-          : const Distance().as(
-              LengthUnit.Kilometer,
+          : _distanceKm(
               near,
               LatLng(lat, lon),
             );
@@ -121,6 +121,19 @@ class OfflineAddressSearch {
         },
       };
     }).toList(growable: false);
+  }
+
+  double _distanceKm(LatLng a, LatLng b) {
+    const earthRadiusKm = 6371.0088;
+    final lat1 = a.latitude * math.pi / 180;
+    final lat2 = b.latitude * math.pi / 180;
+    final deltaLat = (b.latitude - a.latitude) * math.pi / 180;
+    final deltaLon = (b.longitude - a.longitude) * math.pi / 180;
+    final sinLat = math.sin(deltaLat / 2);
+    final sinLon = math.sin(deltaLon / 2);
+    final h = (sinLat * sinLat) +
+        math.cos(lat1) * math.cos(lat2) * sinLon * sinLon;
+    return earthRadiusKm * 2 * math.asin(math.sqrt(h.clamp(0.0, 1.0)));
   }
 
   String _fold(String value) {
