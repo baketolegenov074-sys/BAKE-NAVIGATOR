@@ -27,7 +27,14 @@ class OfflineAddressSearch {
       }
       _items = (decoded['items'] as List)
           .whereType<Map>()
-          .map((item) => Map<String, dynamic>.from(item))
+          .map((item) {
+            final record = Map<String, dynamic>.from(item);
+            record['_searchFolded'] = _fold(record['search']?.toString() ?? '');
+            record['_nameFolded'] = _fold(record['name']?.toString() ?? '');
+            record['_streetFolded'] = _fold(record['street']?.toString() ?? '');
+            record['_houseFolded'] = _fold(record['house']?.toString() ?? '');
+            return record;
+          })
           .toList(growable: false);
     } catch (error) {
       _items = <Map<String, dynamic>>[];
@@ -55,7 +62,7 @@ class OfflineAddressSearch {
 
     final matches = <({int score, double distance, Map<String, dynamic> item})>[];
     for (final item in _items) {
-      final haystack = _fold(item['search']?.toString() ?? '');
+      final haystack = item['_searchFolded']?.toString() ?? '';
       if (haystack.isEmpty) continue;
 
       var score = 0;
@@ -71,11 +78,11 @@ class OfflineAddressSearch {
       if (!allTokensMatch) continue;
 
       if (haystack.contains(normalizedQuery)) score += 60;
-      final house = _fold(item['house']?.toString() ?? '');
+      final house = item['_houseFolded']?.toString() ?? '';
       if (house.isNotEmpty && queryTokens.contains(house)) score += 45;
-      final name = _fold(item['name']?.toString() ?? '');
+      final name = item['_nameFolded']?.toString() ?? '';
       if (name.isNotEmpty && queryTokens.every((token) => name.contains(token))) score += 25;
-      final street = _fold(item['street']?.toString() ?? '');
+      final street = item['_streetFolded']?.toString() ?? '';
       if (street.isNotEmpty && queryTokens.every((token) => street.contains(token))) score += 18;
 
       final lat = (item['lat'] as num?)?.toDouble();
