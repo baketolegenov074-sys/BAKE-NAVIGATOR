@@ -147,9 +147,11 @@ jobs:
 
           app_content = app_gradle.read_text()
           if app_gradle.suffix == ".kts":
+              # Kotlin 2.3 requires compilerOptions on the top-level Kotlin
+              # extension, not inside the Android DSL block.
               app_content, jvm_target_count = re.subn(
-                  r"kotlinOptions\s*\{[^}]*jvmTarget\s*=\s*JavaVersion\.VERSION_11\.toString\(\)[^}]*\}",
-                  "compilerOptions {\n        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11\n    }",
+                  r"(?m)^\s*kotlinOptions\s*\{\s*jvmTarget\s*=\s*JavaVersion\.VERSION_11\.toString\(\)\s*\}\s*\n?",
+                  "",
                   app_content,
                   count=1,
               )
@@ -157,6 +159,16 @@ jobs:
                   raise SystemExit(
                       f"Expected one generated Kotlin jvmTarget setting, found {jvm_target_count}"
                   )
+              if re.search(r"(?m)^kotlin\s*\{", app_content):
+                  raise SystemExit("Unexpected existing top-level kotlin block")
+              app_content = app_content.rstrip() + """
+          
+          kotlin {
+              compilerOptions {
+                  jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+              }
+          }
+          """
           app_content, min_sdk_count = re.subn(
               r"minSdk\s*=\s*flutter\.minSdkVersion",
               "minSdk = 24",
