@@ -218,11 +218,11 @@ jobs:
           ]
           missing = [item for item in dependencies if item not in content]
           if missing:
-              block = re.search(r"dependencies\\s*\\{", content)
+              block = re.search(r"dependencies\s*\{", content)
               if not block:
                   raise SystemExit("Android dependencies block was not found")
               insert_at = block.end()
-              content = content[:insert_at] + "\\n    " + "\\n    ".join(missing) + content[insert_at:]
+              content = content[:insert_at] + "\n    " + "\n    ".join(missing) + content[insert_at:]
               path.write_text(content)
           print("Valhalla Mobile 0.6.6 and matching 0.6.0 models configured")
           PY
