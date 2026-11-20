@@ -148,8 +148,8 @@ jobs:
           app_content = app_gradle.read_text()
           if app_gradle.suffix == ".kts":
               app_content, jvm_target_count = re.subn(
-                  r"kotlinOptions\\s*\\{[^}]*jvmTarget\\s*=\\s*JavaVersion\\.VERSION_11\\.toString\\(\\)[^}]*\\}",
-                  "compilerOptions {\\n        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11\\n    }",
+                  r"kotlinOptions\s*\{[^}]*jvmTarget\s*=\s*JavaVersion\.VERSION_11\.toString\(\)[^}]*\}",
+                  "compilerOptions {\n        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11\n    }",
                   app_content,
                   count=1,
               )
