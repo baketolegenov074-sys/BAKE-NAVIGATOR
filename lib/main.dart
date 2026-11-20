@@ -2218,13 +2218,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     ) / 1000;
   }
 
-  String _photonQuery(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty) return trimmed;
-    return RegExp(r'шымкент|shymkent', caseSensitive: false).hasMatch(trimmed)
-        ? trimmed
-        : '$trimmed Шымкент';
-  }
+  String _photonQuery(String value) => value.trim();
 
   String valueForPhotonFeature(Map<String, dynamic> feature) {
     final address = _photonFeatureAddress(feature);
@@ -2289,9 +2283,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         schoolMatch?.group(3);
     if (schoolNumber != null) {
       apiQueries
-        ..add('Школа №$schoolNumber Шымкент')
-        ..add('$schoolNumber школа Шымкент')
-        ..add('Мектеп $schoolNumber Шымкент');
+        ..add('Школа №$schoolNumber')
+        ..add('$schoolNumber школа')
+        ..add('Мектеп $schoolNumber');
     }
 
     final addressMatch = RegExp(
@@ -2302,10 +2296,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     for (final apiQuery in apiQueries.take(3)) {
       requestUris.add(Uri.https('photon.komoot.io', '/api/', {
         'q': apiQuery,
-        'lat': '42.3417',
-        'lon': '69.5901',
-        'bbox': '69.40,42.15,69.85,42.50',
-        'countrycode': 'KZ',
         'lang': 'ru',
         'limit': '15',
       }));
@@ -2318,31 +2308,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final house = addressMatch.group(2)!.trim();
       final district = areaOrStreet.replaceAll(RegExp(r'\s+'), '-');
       requestUris.insert(0, Uri.https('photon.komoot.io', '/structured', {
-        'city': 'Шымкент',
         'district': district,
         'housenumber': house,
-        'countrycode': 'KZ',
         'lang': 'ru',
-        'lat': '42.3417',
-        'lon': '69.5901',
         'limit': '15',
       }));
       requestUris.add(Uri.https('photon.komoot.io', '/structured', {
-        'city': 'Шымкент',
         'street': areaOrStreet,
         'housenumber': house,
-        'countrycode': 'KZ',
         'lang': 'ru',
-        'lat': '42.3417',
-        'lon': '69.5901',
         'limit': '15',
       }));
       requestUris.add(Uri.https('photon.komoot.io', '/api/', {
-        'q': '$district $house Шымкент',
-        'lat': '42.3417',
-        'lon': '69.5901',
-        'bbox': '69.40,42.15,69.85,42.50',
-        'countrycode': 'KZ',
+        'q': '$district $house',
         'lang': 'ru',
         'limit': '15',
       }));
@@ -2377,14 +2355,37 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       query,
       near: near ?? _currentLocation ?? _shymkent,
     );
-    if (localResults.isNotEmpty) return localResults;
 
-    // Photon remains an online fallback for places missing from the bundled OSM index.
-    // A short timeout keeps a disconnected phone from waiting on the network.
+    // Search online even when the Shymkent offline index has matches. This lets
+    // the user find other cities while preserving useful offline suggestions.
     try {
-      return await _fetchPhotonFeatures(query).timeout(
+      final onlineResults = await _fetchPhotonFeatures(query).timeout(
         const Duration(seconds: 8),
       );
+      final merged = <Map<String, dynamic>>[];
+      final seen = <String>{};
+      void addUnique(Iterable<Map<String, dynamic>> features) {
+        for (final feature in features) {
+          final rawProperties = feature['properties'];
+          final properties = rawProperties is Map
+              ? Map<String, dynamic>.from(rawProperties)
+              : <String, dynamic>{};
+          final rawGeometry = feature['geometry'];
+          final coordinates = rawGeometry is Map
+              ? rawGeometry['coordinates']
+              : null;
+          final identity = properties['osm_id'] != null
+              ? '${properties['osm_type'] ?? ''}:${properties['osm_id']}'
+              : '${properties['name'] ?? properties['label'] ?? ''}:'
+                  '${coordinates is List && coordinates.isNotEmpty ? coordinates[0] : ''}:'
+                  '${coordinates is List && coordinates.length > 1 ? coordinates[1] : ''}';
+          if (seen.add(identity)) merged.add(feature);
+        }
+      }
+
+      addUnique(localResults);
+      addUnique(onlineResults);
+      return merged.take(20).toList();
     } catch (error) {
       debugPrint('BAKE online address search unavailable; using offline index: $error');
       return localResults;
