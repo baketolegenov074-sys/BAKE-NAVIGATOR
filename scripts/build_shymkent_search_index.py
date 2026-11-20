@@ -166,7 +166,7 @@ def main() -> None:
     seen: set[tuple[str, str, str, int, int]] = set()
     with args.input.open("r", encoding="utf-8") as source:
         for line_number, line in enumerate(source, start=1):
-            line = line.strip().lstrip("\\x1e").strip()
+            line = line.strip().lstrip("\x1e").strip()
             if not line:
                 continue
             try:
