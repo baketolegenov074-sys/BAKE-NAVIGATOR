@@ -22,6 +22,7 @@ import 'package:maplibre_gl/maplibre_gl.dart' as ml;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'kazakh_voice_service.dart';
 import 'services/road_alert_service.dart';
+import 'services/offline_address_search.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -565,6 +566,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
+  final OfflineAddressSearch _offlineAddressSearch = OfflineAddressSearch();
   List<RoadAlert> _roadAlerts = <RoadAlert>[];
   List<RoadAlert> _bundledRoadAlerts = <RoadAlert>[];
   final Map<String, int> _announcedRoadAlertStages = <String, int>{};
@@ -631,6 +633,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     super.initState();
     _configureVoice();
     unawaited(_loadBundledRoadAlerts());
+    unawaited(_offlineAddressSearch.initialize());
     _loadSavedOfflineMap();
     _loadSavedRoutePoints();
     unawaited(_loadMapViewPreference());
@@ -2285,6 +2288,28 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }).toList();
   }
 
+  Future<List<Map<String, dynamic>>> _fetchAddressFeatures(
+    String query, {
+    LatLng? near,
+  }) async {
+    final localResults = await _offlineAddressSearch.search(
+      query,
+      near: near ?? _currentLocation ?? _shymkent,
+    );
+    if (localResults.isNotEmpty) return localResults;
+
+    // Photon remains an online fallback for places missing from the bundled OSM index.
+    // A short timeout keeps a disconnected phone from waiting on the network.
+    try {
+      return await _fetchPhotonFeatures(query).timeout(
+        const Duration(seconds: 4),
+      );
+    } catch (error) {
+      debugPrint('BAKE online address search unavailable; using offline index: $error');
+      return localResults;
+    }
+  }
+
   Future<void> _searchAddress({bool selectAsOrigin = false}) async {
     final query = _searchController.text.trim();
     if (query.isEmpty || _isSearching) return;
@@ -2304,7 +2329,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final anchor = selectAsOrigin
           ? (_currentLocation ?? _routeOrigin ?? _shymkent)
           : (_routeOrigin ?? _currentLocation ?? _shymkent);
-      final results = await _fetchPhotonFeatures(query);
+      final results = await _fetchAddressFeatures(query, near: anchor);
       if (!mounted) return;
       if (results.isEmpty) {
         setState(() => _message = AppLocale.pick(
@@ -2314,17 +2339,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ));
         return;
       }
-      results.sort((a, b) {
-        List<double> coords(Map<String, dynamic> feature) {
-          final geometry = feature['geometry'] as Map;
-          final values = geometry['coordinates'] as List;
-          return [double.parse(values[1].toString()), double.parse(values[0].toString())];
-        }
-        final ac = coords(a);
-        final bc = coords(b);
-        return _distanceKm(anchor, LatLng(ac[0], ac[1]))
-            .compareTo(_distanceKm(anchor, LatLng(bc[0], bc[1])));
-      });
+      if (!results.any((feature) => feature['_offline'] == true)) {
+        results.sort((a, b) {
+          List<double> coords(Map<String, dynamic> feature) {
+            final geometry = feature['geometry'] as Map;
+            final values = geometry['coordinates'] as List;
+            return [double.parse(values[1].toString()), double.parse(values[0].toString())];
+          }
+          final ac = coords(a);
+          final bc = coords(b);
+          return _distanceKm(anchor, LatLng(ac[0], ac[1]))
+              .compareTo(_distanceKm(anchor, LatLng(bc[0], bc[1])));
+        });
+      }
       final selected = await showModalBottomSheet<Map<String, dynamic>>(
         context: context,
         isScrollControlled: true,
@@ -3795,7 +3822,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                             refreshSearch(() => photonLoadingSuggestions = true);
                             photonDebounce = Timer(const Duration(milliseconds: 350), () async {
                               try {
-                                final found = await _fetchPhotonFeatures(value);
+                                final found = await _fetchAddressFeatures(
+                                  value,
+                                  near: _currentLocation ?? _shymkent,
+                                );
                                 if (!searchContext.mounted) return;
                                 if (requestVersion != photonRequestVersion) return;
                                 refreshSearch(() {
@@ -3856,6 +3886,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                   dense: true,
                                   leading: const Icon(Icons.location_on_outlined, size: 20),
                                   title: Text(label.isEmpty ? 'Адрес' : label, maxLines: 2, overflow: TextOverflow.ellipsis),
+                                  subtitle: feature['_offline'] == true
+                                      ? const Text('Офлайн-база Шымкента')
+                                      : null,
                                   onTap: () {
                                     photonDebounce?.cancel();
                                     final geometry = feature['geometry'];
