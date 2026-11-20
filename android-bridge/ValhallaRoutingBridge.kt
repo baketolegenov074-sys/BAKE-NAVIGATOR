@@ -88,8 +88,8 @@ class ValhallaRoutingBridge(
                         val activeEngine = engine
                             ?: error("Valhalla is not initialized. Call initialize first.")
                         val locations = JSONArray()
-                            .put(JSONObject().put("lat", startLat).put("lon", startLon))
-                            .put(JSONObject().put("lat", endLat).put("lon", endLon))
+                            .put(JSONObject().put("lat", startLat).put("lon", startLon).put("type", "break"))
+                            .put(JSONObject().put("lat", endLat).put("lon", endLon).put("type", "break"))
                         val request = JSONObject()
                             .put("locations", locations)
                             .put("costing", "auto")
