@@ -1,0 +1,122 @@
+name: Build Shymkent Offline Map
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "25 3 1 * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: shymkent-offline-map
+  cancel-in-progress: false
+
+jobs:
+  build-map:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout BAKE Navigator
+        uses: actions/checkout@v4
+
+      - name: Install map build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             build-essential cmake git curl jq sqlite3             osmium-tool             libboost-all-dev liblua5.3-dev libshp-dev             libsqlite3-dev rapidjson-dev
+
+      - name: Download current Kazakhstan OSM extract
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf"
+          curl --fail --location --retry 5 --retry-all-errors \
+            --retry-delay 10 --connect-timeout 30 \
+            "$URL" -o kazakhstan-latest.osm.pbf
+          test -s kazakhstan-latest.osm.pbf
+          osmium fileinfo kazakhstan-latest.osm.pbf
+
+      - name: Extract Shymkent region
+        run: |
+          osmium extract \
+            --bbox 69.45,42.20,69.80,42.45 \
+            --strategy smart \
+            --output shymkent.osm.pbf \
+            kazakhstan-latest.osm.pbf
+          test -s shymkent.osm.pbf
+          osmium fileinfo shymkent.osm.pbf
+
+      - name: Build Tilemaker
+        run: |
+          git clone --depth 1 https://github.com/systemed/tilemaker.git /tmp/tilemaker
+          make -C /tmp/tilemaker -j2
+          /tmp/tilemaker/tilemaker --help
+
+      - name: Configure zoom levels 10-17
+        run: |
+          jq '
+            .settings.minzoom = 10
+            | .settings.maxzoom = 17
+            | .settings.basezoom = 17
+            | .settings.combine_below = 17
+            | .settings.name = "BAKE Navigator - Shymkent"
+            | .settings.version = "1.0"
+            | .settings.description = "Offline OpenStreetMap vector map for Shymkent, Kazakhstan"
+            | .settings.filemetadata.attribution = "© OpenStreetMap contributors"
+            | .layers |= with_entries(.value.maxzoom = 17)
+            | .layers.housenumber.minzoom = 14
+            | .layers.building.minzoom = 13
+          ' /tmp/tilemaker/resources/config-openmaptiles.json > /tmp/config-shymkent.json
+
+      - name: Generate MBTiles
+        run: |
+          /tmp/tilemaker/tilemaker \
+            --input shymkent.osm.pbf \
+            --output shymkent.mbtiles \
+            --config /tmp/config-shymkent.json \
+            --process /tmp/tilemaker/resources/process-openmaptiles.lua \
+            --store /tmp/tilemaker-store \
+            --threads 2
+          test -s shymkent.mbtiles
+
+      - name: Validate MBTiles database
+        run: |
+          sqlite3 shymkent.mbtiles "PRAGMA integrity_check;" | grep -qx ok
+          sqlite3 shymkent.mbtiles "SELECT name || '=' || value FROM metadata ORDER BY name;"
+          TILE_COUNT="$(sqlite3 shymkent.mbtiles 'SELECT COUNT(*) FROM tiles;')"
+          echo "Tile count: $TILE_COUNT"
+          test "$TILE_COUNT" -gt 0
+          sqlite3 shymkent.mbtiles "SELECT zoom_level, COUNT(*) FROM tiles GROUP BY zoom_level ORDER BY zoom_level;"
+          mkdir -p output
+          cp shymkent.mbtiles output/shymkent.mbtiles
+          cat > output/README_RU.txt <<'EOF'
+          BAKE Navigator — офлайн-карта Шымкента
+          Источник: © OpenStreetMap contributors, лицензия ODbL.
+          Формат: MBTiles, векторные тайлы PBF.
+          Регион: прямоугольная область 69.45,42.20 — 69.80,42.45.
+          Зумы: 10–17.
+          Важно: граница задана прямоугольником, не административным полигоном.
+          Пакет содержит картографические тайлы, но не граф офлайн-маршрутизации и не поисковый индекс.
+          EOF
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BAKE-Shymkent-MBTiles
+          path: output/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish latest map package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="shymkent-map-latest"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" output/shymkent.mbtiles output/README_RU.txt --clobber
+            gh release edit "$TAG" --title "BAKE Navigator — Shymkent offline map" --notes "Обновляемая офлайн-векторная карта Шымкента. © OpenStreetMap contributors, ODbL. Область: 69.45,42.20,69.80,42.45. Зумы 10–17. Не включает офлайн-маршрутизатор и индекс поиска."
+          else
+            gh release create "$TAG" output/shymkent.mbtiles output/README_RU.txt \
+              --title "BAKE Navigator — Shymkent offline map" \
+              --notes "Офлайн-векторная карта Шымкента. © OpenStreetMap contributors, ODbL. Зумы 10–17."
+          fi
