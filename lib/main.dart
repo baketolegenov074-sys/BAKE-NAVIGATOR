@@ -23,6 +23,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'kazakh_voice_service.dart';
 import 'services/road_alert_service.dart';
 import 'services/offline_address_search.dart';
+import 'screens/road_report_center.dart';
 
 
 // Offline label layers for the OpenMapTiles schema in shymkent.mbtiles.
@@ -6077,6 +6078,28 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         const Text('км/ч', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF343434))),
                       ],
                     ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: _navigationActive ? 12 : 64,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Material(
+                  color: Colors.white,
+                  elevation: 5,
+                  shape: const CircleBorder(),
+                  child: IconButton(
+                    tooltip: 'Дорожные отметки',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const RoadReportCenter()),
+                    ),
+                    icon: const Icon(Icons.menu, color: Color(0xFF343434)),
                   ),
                 ),
               ),
