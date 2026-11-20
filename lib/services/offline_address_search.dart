@@ -268,10 +268,10 @@ class OfflineAddressSearch {
         final foldedAlias = _normalizeQuery(alias);
         if (foldedAlias.isEmpty) continue;
         if (foldedAlias == normalizedQuery) {
-          bestScore = math.max(bestScore, 100);
+          if (bestScore < 100) bestScore = 100;
         } else if (normalizedQuery.length >= 4 &&
             foldedAlias.startsWith(normalizedQuery)) {
-          bestScore = math.max(bestScore, 78);
+          if (bestScore < 78) bestScore = 78;
         } else {
           final queryWords = normalizedQuery.split(' ');
           final aliasWords = foldedAlias.split(' ');
@@ -281,7 +281,7 @@ class OfflineAddressSearch {
                   (word.length >= 4 && candidate.startsWith(word)),
             ),
           );
-          if (allWordsFound) bestScore = math.max(bestScore, 65);
+          if (allWordsFound && bestScore < 65) bestScore = 65;
         }
       }
       if (bestScore == 0) continue;
