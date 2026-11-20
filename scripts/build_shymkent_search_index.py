@@ -31,6 +31,7 @@ ADDRESS_KEYS = (
     "addr:suburb",
     "addr:district",
     "addr:city",
+    "ref",
 )
 
 
@@ -93,7 +94,14 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
     ).strip()
     house = str(properties.get("addr:housenumber") or "").strip()
     place = str(properties.get("addr:place") or "").strip()
-    if not names and not house:
+    district = str(
+        properties.get("addr:suburb")
+        or properties.get("addr:district")
+        or ""
+    ).strip()
+    amenity = str(properties.get("amenity") or "").strip().lower()
+    reference = str(properties.get("ref") or "").strip()
+    if not names and not house and not (amenity == "school" and reference):
         return None
 
     point = feature_point(feature)
@@ -106,32 +114,52 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     primary_name = names[0] if names else ""
+    if not primary_name and amenity == "school" and reference:
+        primary_name = f"Школа №{reference}"
+
     if house and street:
         label = f"{street}, {house}"
         if primary_name and primary_name != street:
             label = f"{primary_name}, {street}, {house}"
+    elif house and district:
+        label = f"{district}, {house}"
+        if primary_name:
+            label = f"{primary_name}, {district}, {house}"
     elif primary_name:
         label = primary_name
         if street and street != primary_name:
             label += f", {street}"
+        if district and district not in label:
+            label += f", {district}"
         if house:
             label += f", {house}"
     else:
-        label = f"{place or street or 'Дом'}, {house}".strip(", ")
+        label = f"{place or street or district or 'Дом'}, {house}".strip(", ")
 
     if house:
         kind = "address"
     elif properties.get("highway"):
         kind = "street"
-    elif any(
+    elif amenity or any(
         key in properties
-        for key in ("amenity", "shop", "tourism", "leisure", "office", "healthcare")
+        for key in ("shop", "tourism", "leisure", "office", "healthcare")
     ):
         kind = "poi"
     else:
         kind = "place"
 
     aliases = list(names)
+    if district:
+        aliases.append(district)
+    if amenity == "school":
+        aliases.extend(["школа", "мектеп", "school"])
+        if reference:
+            aliases.extend([
+                reference,
+                f"школа {reference}",
+                f"школа №{reference}",
+                f"мектеп {reference}",
+            ])
     for key in ADDRESS_KEYS:
         raw = properties.get(key)
         if raw is not None:
@@ -139,7 +167,7 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
                 part.strip() for part in str(raw).split(";") if part.strip()
             )
     aliases = list(dict.fromkeys(aliases))
-    search_text = " ".join([label, *aliases])
+    search_text = " ".join([label, *aliases, amenity, reference])
 
     return {
         "label": label,
