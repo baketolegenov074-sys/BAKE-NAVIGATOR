@@ -6259,12 +6259,14 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     setState(() => _importingOfflineMap = true);
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['mbtiles'],
+        type: FileType.any,
         allowMultiple: false,
         withData: false,
       );
       if (result == null || result.files.isEmpty) return;
+      if (!result.files.single.name.toLowerCase().endsWith('.mbtiles')) {
+        throw Exception('Выберите файл с расширением .mbtiles.');
+      }
       final sourcePath = result.files.single.path;
       if (sourcePath == null) {
         throw Exception('Сначала сохраните файл карты в память телефона, затем выберите его.');
