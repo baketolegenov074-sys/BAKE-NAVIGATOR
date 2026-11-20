@@ -2270,8 +2270,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         'Address search is temporarily unavailable.',
       ));
     }
-    final dynamic data = response.body;
-    final decoded = data is String ? jsonDecode(data) : data;
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     if (decoded is! Map) return <Map<String, dynamic>>[];
     final rawFeatures = decoded['features'];
     if (rawFeatures is! List) return <Map<String, dynamic>>[];
