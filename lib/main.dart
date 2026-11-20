@@ -504,6 +504,10 @@ class NavigatorScreen extends StatefulWidget {
 
 class _NavigatorScreenState extends State<NavigatorScreen> {
   static const LatLng _shymkent = LatLng(42.3154, 69.5869);
+  static const MethodChannel _valhallaChannel =
+      MethodChannel('bake.navigator/valhalla');
+  bool _valhallaReady = false;
+  String? _valhallaExtractPath;
 
   final MapController _mapController = MapController();
   ml.MapLibreMapController? _mapLibreController;
@@ -1500,6 +1504,29 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       }
     } catch (_) {
       // Keep the online map available if an offline archive cannot be opened.
+    }
+  }
+
+  Future<bool> _ensureValhallaReady() async {
+    final prefs = await SharedPreferences.getInstance();
+    final path = prefs.getString('valhalla_tile_extract_path');
+    _valhallaExtractPath = path;
+    if (path == null || path.isEmpty || !await File(path).exists()) {
+      _valhallaReady = false;
+      return false;
+    }
+    if (_valhallaReady) return true;
+    try {
+      final result = await _valhallaChannel.invokeMapMethod<String, dynamic>(
+        'initialize',
+        <String, dynamic>{'tileExtractPath': path},
+      );
+      _valhallaReady = result?['ready'] == true;
+      return _valhallaReady;
+    } catch (error) {
+      _valhallaReady = false;
+      debugPrint('BAKE Valhalla initialization failed: $error');
+      return false;
     }
   }
 
@@ -3330,15 +3357,62 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final coordinates = <LatLng>[routeOrigin, ..._routeStops, _destination!]
           .map((point) => '${point.longitude},${point.latitude}')
           .join(';');
-      final uri = Uri.parse(
-        'https://router.project-osrm.org/route/v1/driving/$coordinates'
-        '?overview=full&geometries=geojson&steps=true&alternatives=true',
-      );
-      // Public OSRM demo endpoint is for testing, not production traffic.
-      final response = await http.get(uri).timeout(const Duration(seconds: 25));
-      if (response.statusCode != 200) throw Exception(AppLocale.pick('Сервис маршрутов временно недоступен.', 'Маршрут қызметі уақытша қолжетімсіз.', 'Route service is temporarily unavailable.'));
+      Map<String, dynamic>? routeData;
+      String? routingNotice;
 
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      // Valhalla currently supports a direct A→B request in this bridge.
+      // Keep OSRM for trips with intermediate stops and as an internet fallback.
+      if (_routeStops.isEmpty) {
+        final valhallaReady = await _ensureValhallaReady();
+        if (valhallaReady) {
+          try {
+            final raw = await _valhallaChannel.invokeMethod<String>(
+              'route',
+              <String, dynamic>{
+                'startLat': routeOrigin.latitude,
+                'startLon': routeOrigin.longitude,
+                'endLat': _destination!.latitude,
+                'endLon': _destination!.longitude,
+              },
+            );
+            if (raw == null || raw.isEmpty) {
+              throw Exception('Valhalla returned an empty response.');
+            }
+            final localData = jsonDecode(raw) as Map<String, dynamic>;
+            final localRoutes = (localData['routes'] as List?) ?? const [];
+            if (localData['code'] != 'Ok' || localRoutes.isEmpty) {
+              throw Exception('Valhalla did not return a usable route.');
+            }
+            routeData = localData;
+          } catch (error) {
+            routingNotice = AppLocale.pick(
+              'Офлайн-маршрут недоступен — пробуем интернет-маршрутизатор.',
+              'Офлайн маршрут қолжетімсіз — интернет маршрутизаторын тексереміз.',
+              'Offline routing is unavailable — trying the online router.',
+            );
+            debugPrint('BAKE Valhalla route failed; falling back to OSRM: $error');
+          }
+        } else if (_valhallaExtractPath != null) {
+          routingNotice = AppLocale.pick(
+            'Офлайн-карта маршрутов не запустилась — пробуем интернет-маршрутизатор.',
+            'Офлайн маршрут картасы іске қосылмады — интернет маршрутизаторын тексереміз.',
+            'Offline routing data could not be opened — trying the online router.',
+          );
+        }
+      }
+
+      if (routeData == null) {
+        final uri = Uri.parse(
+          'https://router.project-osrm.org/route/v1/driving/$coordinates'
+          '?overview=full&geometries=geojson&steps=true&alternatives=true',
+        );
+        // Public OSRM demo endpoint is for testing, not production traffic.
+        final response = await http.get(uri).timeout(const Duration(seconds: 25));
+        if (response.statusCode != 200) throw Exception(AppLocale.pick('Сервис маршрутов временно недоступен.', 'Маршрут қызметі уақытша қолжетімсіз.', 'Route service is temporarily unavailable.'));
+        routeData = jsonDecode(response.body) as Map<String, dynamic>;
+      }
+
+      final data = routeData!;
       final routes = (data['routes'] as List?) ?? const [];
       if (data['code'] != 'Ok' || routes.isEmpty) {
         throw Exception(AppLocale.pick('Маршрут не найден. Попробуйте изменить выбранные точки.', 'Маршрут табылмады. Таңдалған нүктелерді өзгертіп көріңіз.', 'Route not found. Try changing the selected points.'));
@@ -3391,9 +3465,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         _routeDistanceMeters = distance;
         _routeDurationSeconds = duration;
         // Keep the map clear; route alternatives are presented in the route-search screen.
-        _message = automaticReroute
+        _message = routingNotice ?? (automaticReroute
             ? AppLocale.pick('Маршрут перестроен. Продолжаем навигацию.', 'Маршрут қайта құрылды. Навигация жалғасуда.', 'Route recalculated. Continuing navigation.')
-            : '';
+            : '');
       });
       if (points.isNotEmpty) {
         unawaited(_syncMapLibreAnnotations(updateRoute: true));
@@ -6228,6 +6302,10 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   bool _loading = true;
   String? _offlineMapPath;
   bool _importingOfflineMap = false;
+  String? _valhallaExtractPath;
+  bool _importingValhallaExtract = false;
+  static const MethodChannel _valhallaChannel =
+      MethodChannel('bake.navigator/valhalla');
   double _voiceVolume = 1.0;
   double _voiceRate = 0.48;
   bool _avoidTolls = false;
@@ -6247,6 +6325,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     _vehicleColor.text = prefs.getString('vehicle_color') ?? '';
     _vehiclePlate.text = prefs.getString('vehicle_plate') ?? '';
     _offlineMapPath = prefs.getString('offline_map_path');
+    _valhallaExtractPath = prefs.getString('valhalla_tile_extract_path');
     _voiceVolume = prefs.getDouble('voice_volume') ?? 1.0;
     _voiceRate = prefs.getDouble('voice_rate') ?? 0.48;
     _avoidTolls = prefs.getBool('avoid_tolls') ?? false;
@@ -6306,6 +6385,66 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     if (!mounted) return;
     setState(() => _offlineMapPath = null);
     Navigator.of(context).pop('__use_online_map__');
+  }
+
+  Future<void> _importValhallaExtract() async {
+    if (_importingValhallaExtract) return;
+    setState(() => _importingValhallaExtract = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['tar'],
+        allowMultiple: false,
+        withData: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final sourcePath = result.files.single.path;
+      if (sourcePath == null) {
+        throw Exception('Сначала сохраните Valhalla .tar-файл в память телефона.');
+      }
+      final directory = await getApplicationSupportDirectory();
+      final destination = File(
+        '${directory.path}/bake_valhalla_tiles_${DateTime.now().millisecondsSinceEpoch}.tar',
+      );
+      await File(sourcePath).copy(destination.path);
+
+      // The native engine validates and opens the archive before it is saved
+      // as the active routing dataset. A normal MBTiles map is not accepted.
+      final initialized = await _valhallaChannel.invokeMapMethod<String, dynamic>(
+        'initialize',
+        <String, dynamic>{'tileExtractPath': destination.path},
+      );
+      if (initialized?['ready'] != true) {
+        throw Exception('Valhalla не подтвердил готовность дорожного архива.');
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('valhalla_tile_extract_path', destination.path);
+      if (!mounted) return;
+      setState(() {
+        _valhallaExtractPath = destination.path;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Офлайн-маршрутизатор Valhalla подключён.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _importingValhallaExtract = false);
+    }
+  }
+
+  Future<void> _removeValhallaExtract() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('valhalla_tile_extract_path');
+    try {
+      await _valhallaChannel.invokeMethod<void>('dispose');
+    } catch (_) {
+      // The app can continue using OSRM if the native engine is already closed.
+    }
+    if (mounted) setState(() => _valhallaExtractPath = null);
   }
 
   Future<void> _saveNavigationPreferences() async {
@@ -6454,6 +6593,49 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                           ),
                         Text(
                           AppLocale.tr('Исходный OSM PBF не является готовой MBTiles-картой. Для офлайн-режима нужны отдельно подготовленные тайлы.'),
+                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text('Офлайн-маршрутизация', style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.alt_route),
+                          title: const Text('Дорожный граф Valhalla'),
+                          subtitle: Text(_valhallaExtractPath == null
+                              ? 'Файл дорожного графа ещё не выбран. Это отдельный файл, не MBTiles-карта.'
+                              : 'Архив Valhalla выбран на этом устройстве.'),
+                        ),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: _importingValhallaExtract ? null : _importValhallaExtract,
+                            icon: _importingValhallaExtract
+                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                                : const Icon(Icons.route_outlined),
+                            label: Text(_importingValhallaExtract
+                                ? 'Проверяем архив…'
+                                : 'Подключить архив Valhalla (.tar)'),
+                          ),
+                        ),
+                        if (_valhallaExtractPath != null)
+                          TextButton.icon(
+                            onPressed: _removeValhallaExtract,
+                            icon: const Icon(Icons.delete_outline),
+                            label: const Text('Отключить офлайн-маршрутизатор'),
+                          ),
+                        const Text(
+                          'Valhalla строит маршруты по отдельному дорожному графу. Обычный MBTiles-файл карты и исходный OSM PBF для этого не подходят. Если офлайн-маршрут не сработает, приложение попробует OSRM через интернет.',
                           style: TextStyle(fontSize: 12, color: Colors.black54),
                         ),
                       ],
