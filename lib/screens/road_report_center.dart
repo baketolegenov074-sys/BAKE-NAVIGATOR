@@ -80,24 +80,27 @@ class RoadReportCenter extends StatelessWidget {
 
   Future<void> _capture(BuildContext context, _ReportType type) async {
     final messenger = ScaffoldMessenger.of(context);
+    void notify(SnackBar snackBar) {
+      if (context.mounted) notify(snackBar);
+    }
     try {
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
       if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-        messenger.showSnackBar(const SnackBar(content: Text('Нет разрешения на GPS. Разрешите доступ к местоположению и повторите.')));
+        notify(const SnackBar(content: Text('Нет разрешения на GPS. Разрешите доступ к местоположению и повторите.')));
         return;
       }
       if (!await Geolocator.isLocationServiceEnabled()) {
-        messenger.showSnackBar(const SnackBar(content: Text('GPS выключен. Включите геолокацию и повторите.')));
+        notify(const SnackBar(content: Text('GPS выключен. Включите геолокацию и повторите.')));
         return;
       }
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 15)),
       );
       if (position.accuracy > 30) {
-        messenger.showSnackBar(SnackBar(content: Text('GPS пока неточный: ±${position.accuracy.toStringAsFixed(0)} м. Подождите улучшения сигнала и повторите.')));
+        notify(SnackBar(content: Text('GPS пока неточный: ±${position.accuracy.toStringAsFixed(0)} м. Подождите улучшения сигнала и повторите.')));
         return;
       }
       final prefs = await SharedPreferences.getInstance();
@@ -114,7 +117,7 @@ class RoadReportCenter extends StatelessWidget {
         } catch (_) { return false; }
       });
       if (duplicate) {
-        messenger.showSnackBar(const SnackBar(content: Text('Такая отметка уже сохранена рядом.')));
+        notify(const SnackBar(content: Text('Такая отметка уже сохранена рядом.')));
         return;
       }
       final record = <String, dynamic>{
@@ -132,9 +135,9 @@ class RoadReportCenter extends StatelessWidget {
       };
       rows.insert(0, jsonEncode(record));
       await prefs.setStringList('bake_road_reports_v1', rows);
-      messenger.showSnackBar(SnackBar(content: Text('Отметка «${type.title}» сохранена на телефоне.')));
+      notify(SnackBar(content: Text('Отметка «${type.title}» сохранена на телефоне.')));
     } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text('Не удалось получить GPS или сохранить отметку: $error')));
+      notify(SnackBar(content: Text('Не удалось получить GPS или сохранить отметку: $error')));
     }
   }
 }
@@ -205,6 +208,18 @@ class _MyRoadMarksPageState extends State<MyRoadMarksPage> {
   }
 
   Future<void> _delete(String id) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить отметку?'),
+        content: const Text('Эта отметка будет удалена только с этого телефона.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Удалить')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     final prefs = await SharedPreferences.getInstance();
     _records.removeWhere((e) => e['id'] == id);
     await prefs.setStringList('bake_road_reports_v1', _records.map(jsonEncode).toList());
