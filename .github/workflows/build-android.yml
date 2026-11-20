@@ -44,6 +44,7 @@ jobs:
             --input shymkent-search.geojsonseq \
             --output assets/data/shymkent_search.json.gz
           test -s assets/data/shymkent_search.json.gz
+          gzip -t assets/data/shymkent_search.json.gz
           ls -lh assets/data/shymkent_search.json.gz
 
 
