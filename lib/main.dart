@@ -3859,9 +3859,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                                   title: Text(label.isEmpty ? 'Адрес' : label, maxLines: 2, overflow: TextOverflow.ellipsis),
                                   onTap: () {
                                     photonDebounce?.cancel();
+                                    final geometry = feature['geometry'];
+                                    final coordinates = geometry is Map ? geometry['coordinates'] : null;
+                                    if (coordinates is! List || coordinates.length < 2) return;
+                                    final lon = double.tryParse(coordinates[0].toString());
+                                    final lat = double.tryParse(coordinates[1].toString());
+                                    if (lat == null || lon == null || lat < 40 || lat > 56 || lon < 46 || lon > 88) return;
+                                    final point = LatLng(lat, lon);
                                     _searchController.text = label.isEmpty ? valueForPhotonFeature(feature) : label;
                                     Navigator.pop(pageContext);
-                                    _searchAddress();
+                                    _selectDestination(point);
+                                    _moveMapCamera(point, 16);
+                                    setState(() => _message = label.isEmpty ? 'Адрес найден.' : label);
+                                    unawaited(_buildRoute());
                                   },
                                 );
                               },
@@ -4521,7 +4531,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         builder: (dialogContext) => AlertDialog(
           title: Text(AppLocale.tr('Что здесь')),
           content: Text('$address\\n\\n${AppLocale.tr('Координаты: ')}${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
-          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(AppLocale.tr('Закрыть'))],
+          actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(AppLocale.tr('Закрыть')))],
         ),
       );
     } catch (error) {
