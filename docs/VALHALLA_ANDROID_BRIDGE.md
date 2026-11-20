@@ -1,6 +1,6 @@
 # BAKE Navigator — подготовка Android-моста Valhalla
 
-Статус: подготовительный документ. Рабочий Kotlin-код и Flutter MethodChannel пока не подключены.
+Статус: Kotlin-мост регистрируется в генерируемом Android MainActivity через build workflow. Вызов маршрута из Dart и импорт Valhalla tile archive в интерфейсе ещё не подключены.
 
 ## Цель первого этапа
 
@@ -66,7 +66,7 @@ Engine 0.6.4 публикуется с Kotlin stdlib 2.2.10. Шаблон Androi
 - возвращает Flutter исходный JSON-ответ, не меняя Dart-парсер;
 - выполняет native routing в отдельном однопоточном executor и закрывает engine при dispose.
 
-Этот source пока не подключён к `MainActivity`, а workflow не изменён. Это сделано намеренно: сначала нужно подтвердить совместимость Kotlin Gradle plugin / Gradle / Android Gradle Plugin с Kotlin stdlib 2.2.10. Дополнительно нужен этап преобразования исходного OSM PBF в Valhalla tile extract: PBF напрямую движок не читает.
+Workflow после `flutter create` копирует этот source в Android package и регистрирует `bake.navigator/valhalla` в `MainActivity`. Gradle dependency injection больше не требует заранее существующего блока `dependencies {}`: при необходимости workflow добавляет отдельный блок с синтаксисом выбранного Gradle DSL. Dart пока не вызывает канал автоматически; для этого отдельно нужны настройка пути к tile archive и подключение fallback-логики. Также нужен этап преобразования OSM PBF в Valhalla tile extract: PBF напрямую движок не читает.
 
 ## Следующий безопасный шаг
 
