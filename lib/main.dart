@@ -2336,10 +2336,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           : AppLocale.pick('Адрес найден. Автоматически строим маршрут от вашего GPS-положения…', 'Мекенжай табылды. GPS орналасқан жеріңізден маршрут автоматты түрде құрылады…', 'Address found. Building a route from your GPS location…'));
     } catch (error) {
       if (!mounted) return;
-      final failure = error.toString().replaceFirst('Exception: ', '');
-      setState(() => _message = routingNotice == null
-          ? failure
-          : '$routingNotice\\n$failure');
+      setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _isSearching = false);
     }
@@ -3525,7 +3522,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       final failure = error.toString().replaceFirst('Exception: ', '');
       setState(() => _message = routingNotice == null
           ? failure
-          : '$routingNotice\\n$failure');
+          : '$routingNotice\n$failure');
     } finally {
       if (mounted) setState(() => _isBuildingRoute = false);
     }
