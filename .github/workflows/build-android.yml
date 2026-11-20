@@ -197,36 +197,70 @@ jobs:
           path.write_text(manifest)
           PY
 
-      - name: Add Valhalla offline routing dependencies
+      - name: Install Valhalla offline routing and Flutter bridge
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
+          import shutil
 
-          path = Path("android/app/build.gradle")
-          if not path.exists():
-              path = Path("android/app/build.gradle.kts")
-          if not path.exists():
+          # Flutter 3.32 generates Kotlin DSL by default. Support either Gradle DSL.
+          candidates = [Path("android/app/build.gradle.kts"), Path("android/app/build.gradle")]
+          path = next((candidate for candidate in candidates if candidate.exists()), None)
+          if path is None:
               raise SystemExit("Generated Android app Gradle file was not found")
 
-          content = path.read_text()
-          dependencies = [
-              'implementation("io.github.rallista:valhalla-mobile:0.6.6")',
-              'implementation("io.github.rallista:valhalla-models:0.6.0")',
-              'implementation("io.github.rallista:valhalla-models-config:0.6.0")',
-              'implementation("com.stadiamaps:osrm-openapi:0.0.10")',
+          artifacts = [
+              "io.github.rallista:valhalla-mobile:0.6.6",
+              "io.github.rallista:valhalla-models:0.6.0",
+              "io.github.rallista:valhalla-models-config:0.6.0",
+              "com.stadiamaps:osrm-openapi:0.0.10",
           ]
-          missing = [item for item in dependencies if item not in content]
+          content = path.read_text()
+          missing = [coordinate for coordinate in artifacts if coordinate not in content]
           if missing:
-              block = re.search(r"dependencies\s*\{", content)
-              if not block:
-                  raise SystemExit("Android dependencies block was not found")
-              insert_at = block.end()
-              content = content[:insert_at] + "\n    " + "\n    ".join(missing) + content[insert_at:]
+              if path.suffix == ".kts":
+                  lines = [f'    implementation("{coordinate}")' for coordinate in missing]
+              else:
+                  lines = [f"    implementation '{coordinate}'" for coordinate in missing]
+              # A separate dependencies block is valid Gradle and also works when
+              # the current Flutter template contains no app-level block.
+              content = content.rstrip() + "\\n\\ndependencies {\\n" + "\\n".join(lines) + "\\n}\\n"
               path.write_text(content)
-          print("Valhalla Mobile 0.6.6 and matching 0.6.0 models configured")
-          PY
+          print(f"Valhalla dependencies configured in {path}")
 
+          package_dir = Path("android/app/src/main/kotlin/kz/bake/bake_navigator")
+          package_dir.mkdir(parents=True, exist_ok=True)
+          bridge_source = Path("android-bridge/ValhallaRoutingBridge.kt")
+          if not bridge_source.is_file():
+              raise SystemExit("Checked-in Valhalla bridge source is missing")
+          shutil.copy2(bridge_source, package_dir / "ValhallaRoutingBridge.kt")
+
+          main_activity = package_dir / "MainActivity.kt"
+          main_activity.write_text("""package kz.bake.bake_navigator
+
+          import io.flutter.embedding.android.FlutterActivity
+          import io.flutter.embedding.engine.FlutterEngine
+
+          class MainActivity : FlutterActivity() {
+              private var valhallaBridge: ValhallaRoutingBridge? = null
+
+              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+                  super.configureFlutterEngine(flutterEngine)
+                  valhallaBridge = ValhallaRoutingBridge(
+                      flutterEngine.dartExecutor.binaryMessenger,
+                      applicationContext
+                  )
+              }
+
+              override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+                  valhallaBridge?.close()
+                  valhallaBridge = null
+                  super.cleanUpFlutterEngine(flutterEngine)
+              }
+          }
+          """)
+          print("Valhalla MethodChannel registered in generated MainActivity")
+          PY
       - name: Install dependencies
         run: flutter pub get
 
