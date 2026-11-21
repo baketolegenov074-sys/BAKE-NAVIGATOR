@@ -619,7 +619,7 @@ class NavigatorScreen extends StatefulWidget {
   State<NavigatorScreen> createState() => _NavigatorScreenState();
 }
 
-class _NavigatorScreenState extends State<NavigatorScreen> {
+class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingObserver {
   static const LatLng _shymkent = LatLng(42.3154, 69.5869);
   static const MethodChannel _valhallaChannel =
       MethodChannel('bake.navigator/valhalla');
@@ -644,6 +644,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
+  Timer? _roadReportRetryTimer;
+  bool _roadReportRetryInProgress = false;
   final OfflineAddressSearch _offlineAddressSearch = OfflineAddressSearch();
   List<RoadAlert> _roadAlerts = <RoadAlert>[];
   List<RoadAlert> _bundledRoadAlerts = <RoadAlert>[];
@@ -710,6 +712,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _roadReportRetryTimer = Timer.periodic(
+      const Duration(seconds: 45),
+      (_) => unawaited(_retryPendingRoadReports()),
+    );
     _configureVoice();
     unawaited(_loadBundledRoadAlerts());
     unawaited(_loadConfirmedRoadReports());
@@ -1632,6 +1639,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _roadReportRetryTimer?.cancel();
     _positionSubscription?.cancel();
     _disposeOfflineMap();
     _searchController.dispose();
@@ -3364,6 +3373,50 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_retryPendingRoadReports());
+      unawaited(_loadConfirmedRoadReports());
+    }
+  }
+
+  /// Re-send locally stored reports that have not reached Supabase yet.
+  /// This runs on app resume and every 45 seconds while the app is open.
+  Future<void> _retryPendingRoadReports() async {
+    if (_roadReportRetryInProgress) return;
+    _roadReportRetryInProgress = true;
+    try {
+      if (!RoadReportSyncService.isConfigured) return;
+      if (!RoadReportSyncService.isInitialized) {
+        await RoadReportSyncService.initialize();
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final rows = prefs.getStringList('bake_road_reports_v1') ?? <String>[];
+      var changed = false;
+      for (var index = 0; index < rows.length; index++) {
+        try {
+          final record = Map<String, dynamic>.from(jsonDecode(rows[index]) as Map);
+          if (record['status'] != 'На проверке' ||
+              record['syncStatus'] == 'Синхронизировано') {
+            continue;
+          }
+          await RoadReportSyncService.uploadReport(record);
+          record['syncStatus'] = 'Синхронизировано';
+          rows[index] = jsonEncode(record);
+          changed = true;
+        } catch (error) {
+          debugPrint('BAKE pending report retry failed: ${error.runtimeType}');
+        }
+      }
+      if (changed) await prefs.setStringList('bake_road_reports_v1', rows);
+    } catch (error) {
+      debugPrint('BAKE pending report retry unavailable: ${error.runtimeType}');
+    } finally {
+      _roadReportRetryInProgress = false;
+    }
   }
 
   Future<void> _loadConfirmedRoadReports() async {
