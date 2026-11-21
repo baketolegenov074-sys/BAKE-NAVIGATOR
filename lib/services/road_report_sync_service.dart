@@ -105,7 +105,7 @@ class RoadReportSyncService {
         'accuracyMeters': row['accuracy_meters'],
         'headingDegrees': row['heading_degrees'],
         'createdAt': row['created_at'],
-        'status': row['status'],
+        'status': row['status'] == 'approved' ? 'Подтверждено' : row['status'] == 'rejected' ? 'Отклонено' : row['status'],
         if (row['camera_operational_status'] != null)
           'cameraOperationalStatus': row['camera_operational_status'],
         if (row['valid_until'] != null) 'validUntil': row['valid_until'],
@@ -133,7 +133,7 @@ class RoadReportSyncService {
     final rows = await _client
         .from('road_reports')
         .select()
-        .eq('status', 'approved')
+        .eq('status', 'Подтверждено')
         .order('created_at', ascending: false);
     return rows.map((row) => _fromDatabase(row)).toList();
   }
@@ -146,11 +146,11 @@ class RoadReportSyncService {
   }
 
   static Future<void> updateReportStatus(String id, String status) async {
-    if (status != 'approved' && status != 'rejected') {
+    if (status != 'Подтверждено' && status != 'Отклонено') {
       throw ArgumentError.value(status, 'status', 'Недопустимый статус');
     }
     _requireAdmin();
-    await _client.from('road_reports').update({'status': status}).eq('id', id);
+    await _client.from('road_reports').update({'status': status, 'reviewed_at': DateTime.now().toUtc().toIso8601String(), 'reviewed_by': _client.auth.currentUser!.id}).eq('id', id);
   }
 
   static Future<void> deleteReport(String id) async {
