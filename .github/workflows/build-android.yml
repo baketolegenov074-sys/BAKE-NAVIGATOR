@@ -1,4 +1,5 @@
 name: Build BAKE Navigator APK
+# Build requested after road-report Supabase diagnostics and retry fixes.
 
 on:
   workflow_dispatch:
