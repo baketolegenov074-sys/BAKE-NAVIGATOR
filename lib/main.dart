@@ -45,20 +45,20 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         'type': 'symbol',
         'source': 'openmaptiles',
         'source-layer': 'transportation_name',
-        'minzoom': 11,
+        'minzoom': 8,
         'layout': {
           'symbol-placement': 'line',
           'text-anchor': 'center',
           'text-field': '{name}',
           'text-font': ['Roboto'],
-          'text-size': 13,
+          'text-size': 15,
           'text-max-width': 12,
           'text-offset': [0, 0.15],
         },
         'paint': {
           'text-color': '#66594b',
           'text-halo-color': '#ffffff',
-          'text-halo-width': 1.2,
+          'text-halo-width': 2,
         },
       },
       {
@@ -78,7 +78,7 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         'paint': {
           'text-color': '#4b4b4b',
           'text-halo-color': '#ffffff',
-          'text-halo-width': 1.3,
+          'text-halo-width': 2,
         },
       },
     ],
@@ -567,12 +567,14 @@ class RouteInstruction {
     required this.distanceMeters,
     required this.maneuverType,
     required this.maneuverModifier,
+    this.laneGuidance = const <bool>[],
   });
   final LatLng location;
   final String text;
   final double distanceMeters;
   final String maneuverType;
   final String maneuverModifier;
+  final List<bool> laneGuidance;
 }
 
 String _valhallaErrorForUser(Object error, {bool duringImport = false}) {
@@ -699,6 +701,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   double? _routeDistanceMeters;
   double? _routeDurationSeconds;
   StreamSubscription<Position>? _positionSubscription;
+  Future<void> _gpsStreamQueue = Future<void>.value();
+  bool _appInForeground = true;
+  DateTime? _lastCameraUpdateAt;
+  DateTime? _lastMapAnnotationUpdateAt;
+  bool _speedingVoiceActive = false;
+  bool _trafficLayerEnabled = false;
+  String? _activeConfirmedCameraId;
+  double? _activeConfirmedCameraDistance;
+  final Set<String> _passedConfirmedCameraIds = <String>{};
+  final Map<String, int> _confirmedCameraStages = <String, int>{};
   bool _isLocating = false;
   bool _gpsAvailable = false;
   bool _isSearching = false;
@@ -1134,10 +1146,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   void _restoreHeadingUpCamera() {
     _headingUpGestureActive = false;
-    if (!mounted || _northUpLocked) return;
+    if (!mounted || (_northUpLocked && !_navigationActive)) return;
     final point = _currentLocation;
     if (point == null) return;
-    final heading = _gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0;
+    final routeHeading = _navigationActive && _routePoints.length > 1
+        ? _routeBearingAt(point)
+        : null;
+    final heading = _gpsHeadingDegrees ?? routeHeading ?? _lastCameraHeadingDegrees ?? 0.0;
     _lastCameraHeadingDegrees = heading;
     _updateNavigationCamera(point, math.max(_mapCameraZoom, 16.0).toDouble(), heading);
   }
@@ -1156,6 +1171,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   void _updateNavigationCamera(LatLng point, double zoom, double heading) {
     _lastCameraHeadingDegrees = heading;
+    if (!_appInForeground) return;
     if (_isOfflineMapActive) {
       _mapController.move(point, zoom);
       _mapController.rotate(-heading);
@@ -1323,7 +1339,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                   const ml.SymbolLayerProperties(
                     textColor: '#202020',
                     textHaloColor: '#FFFFFF',
-                    textHaloWidth: 1.2,
+                    textHaloWidth: 2,
+                    textSize: 14,
                   ),
                 );
               } catch (_) {
@@ -1594,6 +1611,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           textHaloColor: '#FFFFFF',
           textHaloWidth: 1.5,
         ));
+      }
+      if (_trafficLayerEnabled) {
+        for (final report in _trafficReports) {
+          final trafficPoint = ml.LatLng(
+            (report['latitude'] as num).toDouble(),
+            (report['longitude'] as num).toDouble(),
+          );
+          final color = _trafficReportColor(report).value.toRadixString(16).substring(2);
+          await controller.addCircle(ml.CircleOptions(
+            geometry: trafficPoint,
+            circleRadius: 13,
+            circleColor: '#$color',
+            circleOpacity: 0.32,
+            circleStrokeColor: '#$color',
+            circleStrokeWidth: 2.5,
+          ));
+        }
       }
       for (final alert in _roadAlertsVisibleOnMap()) {
         await controller.addCircle(ml.CircleOptions(
@@ -1870,13 +1904,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (_isOfflineMapActive) {
       _disposeOfflineMap();
       if (mounted) {
-        setState(() {
-          _message = AppLocale.pick(
+        setState(() => _message = '');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(AppLocale.pick(
             'Включена онлайн-карта.',
             'Онлайн карта қосылды.',
             'Online map enabled.',
-          );
-        });
+          )),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ));
       }
       return;
     }
@@ -1931,7 +1968,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (!mounted || selectedPath == null) return;
     if (selectedPath == '__use_online_map__') {
       _disposeOfflineMap();
-      setState(() { _message = AppLocale.pick('Включена онлайн-карта.', 'Онлайн карта қосылды.', 'Online map enabled.'); });
+      setState(() => _message = '');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(AppLocale.pick('Включена онлайн-карта.', 'Онлайн карта қосылды.', 'Online map enabled.')),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ));
       return;
     }
     try {
@@ -1957,6 +1999,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = AppLocale.pick('Не удалось открыть офлайн-карту: $error', 'Офлайн картаны ашу мүмкін болмады: $error', 'Could not open offline map: $error'));
+    }
+    if (mounted && _isOfflineMapActive) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(AppLocale.pick('Офлайн-карта Шымкента включена.', 'Шымкенттің офлайн картасы қосылды.', 'Shymkent offline map enabled.')),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ));
     }
   }
 
@@ -2364,8 +2413,30 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   Future<void> _startLiveLocationUpdates({
     bool backgroundNavigation = false,
     bool waitForFirstFix = false,
+  }) {
+    final previousStart = _gpsStreamQueue;
+    final startCompleter = Completer<void>();
+    _gpsStreamQueue = startCompleter.future;
+    return () async {
+      try {
+        await previousStart;
+        await _startLiveLocationUpdatesInternal(
+          backgroundNavigation: backgroundNavigation,
+          waitForFirstFix: waitForFirstFix,
+        );
+      } finally {
+        if (!startCompleter.isCompleted) startCompleter.complete();
+      }
+    }();
+  }
+
+  Future<void> _startLiveLocationUpdatesInternal({
+    bool backgroundNavigation = false,
+    bool waitForFirstFix = false,
   }) async {
-    await _positionSubscription?.cancel();
+    final previousSubscription = _positionSubscription;
+    _positionSubscription = null;
+    await previousSubscription?.cancel();
     if (!mounted) return;
 
     final firstFix = Completer<void>();
@@ -2415,7 +2486,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                   point.latitude,
                   point.longitude,
                 ) >= 20);
-        unawaited(_syncMapLibreAnnotations(updateRoute: shouldRefreshRouteLine));
+        final annotationNow = DateTime.now();
+        final shouldRefreshAnnotations = shouldRefreshRouteLine ||
+            _lastMapAnnotationUpdateAt == null ||
+            annotationNow.difference(_lastMapAnnotationUpdateAt!) >=
+                const Duration(milliseconds: 900);
+        if (shouldRefreshAnnotations) {
+          _lastMapAnnotationUpdateAt = annotationNow;
+          unawaited(_syncMapLibreAnnotations(updateRoute: shouldRefreshRouteLine));
+        }
+        _checkSpeedingWarning();
+        _updateConfirmedCameraWarning(
+          point,
+          position.heading.isFinite && position.speed >= 0.8
+              ? position.heading
+              : null,
+        );
         unawaited(_refreshRoadSpeedLimit(point));
         // Load and display nearby speed cameras whenever GPS is available,
         // including normal map browsing without an active route.
@@ -2438,15 +2524,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           _headingUpResumeTimer?.cancel();
           _headingUpGestureActive = false;
         }
-        if (!_headingUpGestureActive) {
+        final cameraNow = DateTime.now();
+        final cameraUpdateDue = _lastCameraUpdateAt == null ||
+            cameraNow.difference(_lastCameraUpdateAt!) >=
+                const Duration(milliseconds: 650);
+        if (_appInForeground && cameraUpdateDue && !_headingUpGestureActive) {
+          _lastCameraUpdateAt = cameraNow;
           final cameraCenter = _mapCameraCenter;
           final shouldRecenter = Geolocator.distanceBetween(
                 cameraCenter.latitude, cameraCenter.longitude,
                 point.latitude, point.longitude,
               ) > 3;
-          final heading = _northUpLocked
-              ? 0.0
-              : (_gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0);
+          final routeHeading = _navigationActive && _routePoints.length > 1
+              ? _routeBearingAt(point)
+              : null;
+          final heading = _navigationActive
+              ? (_gpsHeadingDegrees ?? routeHeading ?? _lastCameraHeadingDegrees ?? 0.0)
+              : (_northUpLocked ? 0.0 : (_gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0));
           final normalizedHeading = (heading % 360 + 360) % 360;
           final previousHeading = _lastCameraHeadingDegrees;
           final difference = previousHeading == null
@@ -3141,6 +3235,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final maneuver = step['maneuver'] as Map<String, dynamic>? ?? {};
         final location = maneuver['location'] as List<dynamic>?;
         if (location == null || location.length < 2) continue;
+        final intersections = step['intersections'] as List<dynamic>? ?? const [];
+        List<bool> laneGuidance = <bool>[];
+        for (final intersection in intersections) {
+          if (intersection is! Map<String, dynamic>) continue;
+          final lanes = intersection['lanes'];
+          if (lanes is! List || lanes.isEmpty) continue;
+          laneGuidance = lanes.map((lane) =>
+              lane is Map && (lane['valid'] == true || lane['valid_indication'] == true)
+          ).toList();
+          break;
+        }
         result.add(RouteInstruction(
           location: LatLng(
             (location[1] as num).toDouble(),
@@ -3150,6 +3255,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           distanceMeters: (step['distance'] as num?)?.toDouble() ?? 0,
           maneuverType: maneuver['type']?.toString() ?? '',
           maneuverModifier: maneuver['modifier']?.toString() ?? '',
+          laneGuidance: laneGuidance,
         ));
       }
     }
@@ -3285,6 +3391,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _announcedManeuverStage = 0;
       _offRouteSamples = 0;
       _message = AppLocale.tr('Навигация завершена.');
+      _searchController.clear();
+      _activeConfirmedCameraId = null;
+      _activeConfirmedCameraDistance = null;
+      _passedConfirmedCameraIds.clear();
+      _confirmedCameraStages.clear();
     });
     await _tts.stop();
     await _removeSavedRoutePoint(_savedRouteDestinationKey);
@@ -3331,6 +3442,202 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _currentLocation!.longitude,
       target.latitude,
       target.longitude,
+    );
+  }
+
+  int get _effectiveSpeedLimitKmh {
+    final point = _currentLocation;
+    if (point != null) {
+      for (final report in _confirmedRoadReports) {
+        final status = report['status']?.toString();
+        if (status != 'Подтверждено' && status != 'approved') continue;
+        final type = (report['type'] ?? '').toString().toLowerCase();
+        final details = [
+          report['type'], report['title'], report['address'], report['comment'],
+        ].whereType<Object>().join(' ').toLowerCase();
+        final distance = Geolocator.distanceBetween(
+          point.latitude,
+          point.longitude,
+          (report['latitude'] as num).toDouble(),
+          (report['longitude'] as num).toDouble(),
+        );
+        if (distance <= 500 &&
+            (type.contains('школ') ||
+                (type.contains('знак') && RegExp(r'\b40\b').hasMatch(details)))) {
+          return 40;
+        }
+      }
+    }
+    return int.tryParse(_speedLimitKmh ?? '') ?? 60;
+  }
+
+  bool get _isSpeeding => _currentSpeedKmh > _effectiveSpeedLimitKmh;
+
+  void _checkSpeedingWarning() {
+    if (_isSpeeding && !_speedingVoiceActive) {
+      _speedingVoiceActive = true;
+      if (_voiceMode > 0) {
+        unawaited(_speakText(_localized(
+          'Превышение скорости',
+          'Жылдамдықты асыру',
+          'Speed limit exceeded',
+        )));
+      }
+    } else if (!_isSpeeding) {
+      _speedingVoiceActive = false;
+    }
+  }
+
+  void _updateConfirmedCameraWarning(LatLng point, double? heading) {
+    if (!_navigationActive) {
+      _activeConfirmedCameraId = null;
+      _activeConfirmedCameraDistance = null;
+      return;
+    }
+
+    Map<String, dynamic>? nearest;
+    var nearestDistance = double.infinity;
+    for (final report in _confirmedRoadReports) {
+      final status = report['status']?.toString();
+      if (status != 'Подтверждено' && status != 'approved') continue;
+      final type = (report['type'] ?? '').toString().toLowerCase();
+      if (!type.contains('камер')) continue;
+      final id = report['id']?.toString() ?? '';
+      if (id.isEmpty || _passedConfirmedCameraIds.contains(id)) continue;
+      final cameraPoint = LatLng(
+        (report['latitude'] as num).toDouble(),
+        (report['longitude'] as num).toDouble(),
+      );
+      final distance = Geolocator.distanceBetween(
+        point.latitude, point.longitude,
+        cameraPoint.latitude, cameraPoint.longitude,
+      );
+      final previousDistance = id == _activeConfirmedCameraId
+          ? _activeConfirmedCameraDistance
+          : null;
+      if (previousDistance != null &&
+          previousDistance <= 50 &&
+          distance > previousDistance + 3) {
+        _passedConfirmedCameraIds.add(id);
+        continue;
+      }
+      if (distance < 15) {
+        _passedConfirmedCameraIds.add(id);
+        continue;
+      }
+      if (distance > 300 || distance >= nearestDistance) continue;
+      if (heading != null) {
+        final bearing = Geolocator.bearingBetween(
+          point.latitude, point.longitude,
+          cameraPoint.latitude, cameraPoint.longitude,
+        );
+        if (_bearingDifference(heading, bearing) > 70) continue;
+      }
+      nearest = report;
+      nearestDistance = distance;
+    }
+
+    final nextId = nearest?['id']?.toString();
+    if (nextId == null) {
+      _activeConfirmedCameraId = null;
+      _activeConfirmedCameraDistance = null;
+      return;
+    }
+
+    final stage = nearestDistance <= 50 ? 3 : nearestDistance <= 100 ? 2 : 1;
+    final previousStage = _confirmedCameraStages[nextId] ?? 0;
+    if (stage > previousStage) {
+      _confirmedCameraStages[nextId] = stage;
+      if (_voiceMode > 0) {
+        final spoken = stage == 1
+            ? 'Впереди камера'
+            : stage == 2
+                ? 'Камера через 100 метров'
+                : 'Камера через 50 метров';
+        unawaited(_speakText(_localized(
+          spoken,
+          stage == 1 ? 'Алда камера' : stage == 2 ? '100 метрден кейін камера' : '50 метрден кейін камера',
+          stage == 1 ? 'Camera ahead' : stage == 2 ? 'Camera in 100 meters' : 'Camera in 50 meters',
+        )));
+      }
+    }
+    _activeConfirmedCameraId = nextId;
+    _activeConfirmedCameraDistance = nearestDistance;
+  }
+
+  bool _isTrafficIncidentReport(Map<String, dynamic> report) {
+    final status = report['status']?.toString();
+    if (status != 'Подтверждено' && status != 'approved') return false;
+    final text = [
+      report['type'], report['title'], report['comment'], report['address'],
+    ].whereType<Object>().join(' ').toLowerCase();
+    return RegExp(r'пробк|дтп|авари|перекры|закрыт|ремонт|опасн|затрудн|свободн').hasMatch(text);
+  }
+
+  List<Map<String, dynamic>> get _trafficReports =>
+      _confirmedRoadReports.where(_isTrafficIncidentReport).toList();
+
+  Color _trafficReportColor(Map<String, dynamic> report) {
+    final text = [
+      report['type'], report['title'], report['comment'],
+    ].whereType<Object>().join(' ').toLowerCase();
+    if (RegExp(r'перекры|закрыт|ремонт|авари|дтп').hasMatch(text)) {
+      return const Color(0xFFE53935);
+    }
+    if (RegExp(r'свободн|без пробк').hasMatch(text)) {
+      return const Color(0xFF2EAD63);
+    }
+    return const Color(0xFFFFB300);
+  }
+
+  List<bool> _laneGuidanceForCurrentManeuver() {
+    if (_instructionIndex >= _instructions.length) {
+      return const <bool>[false, true, false];
+    }
+    final instruction = _instructions[_instructionIndex];
+    if (instruction.laneGuidance.isNotEmpty) {
+      final lanes = List<bool>.filled(3, false);
+      final source = instruction.laneGuidance;
+      final start = source.length > 3 ? source.length - 3 : 0;
+      final visible = source.skip(start).take(3).toList();
+      for (var i = 0; i < visible.length; i++) {
+        lanes[i] = visible[i];
+      }
+      if (lanes.every((value) => !value)) lanes[1] = true;
+      return lanes;
+    }
+    final modifier = instruction.maneuverModifier.toLowerCase();
+    if (modifier.contains('left')) return const <bool>[true, false, false];
+    if (modifier.contains('right')) return const <bool>[false, false, true];
+    return const <bool>[false, true, false];
+  }
+
+  Widget _buildManeuverDistanceCue() {
+    final distance = _distanceToNextManeuverMeters;
+    if (distance == null) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFF169B55), width: 1.5),
+        boxShadow: const [BoxShadow(color: Color(0x44000000), blurRadius: 5)],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            _maneuverIcon(_instructionIndex < _instructions.length
+                ? _instructions[_instructionIndex]
+                : null),
+            size: 17,
+            color: const Color(0xFF169B55),
+          ),
+          const SizedBox(width: 4),
+          Text('${distance.round()} м',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+        ],
+      ),
     );
   }
 
@@ -3405,6 +3712,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
       if (!mounted) return;
       setState(() => _speedLimitKmh = foundLimit);
+      _checkSpeedingWarning();
     } catch (_) {
       // Keep the last known value when road data is temporarily unavailable.
     } finally {
@@ -3499,8 +3807,37 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _appInForeground = true;
+      _lastCameraUpdateAt = null;
+      _lastMapAnnotationUpdateAt = null;
+      _roadReportRetryTimer ??= Timer.periodic(
+        const Duration(seconds: 45),
+        (_) => unawaited(_retryPendingRoadReports()),
+      );
       unawaited(_retryPendingRoadReports());
       unawaited(_loadConfirmedRoadReports());
+      if (_positionSubscription == null) {
+        unawaited(_startLiveLocationUpdates(
+          backgroundNavigation: _navigationActive,
+        ));
+      }
+      return;
+    }
+
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _appInForeground = false;
+      _headingUpResumeTimer?.cancel();
+      _headingUpResumeTimer = null;
+      _roadReportRetryTimer?.cancel();
+      _roadReportRetryTimer = null;
+      if (!_navigationActive) {
+        final previous = _positionSubscription;
+        _positionSubscription = null;
+        unawaited(previous?.cancel());
+      }
     }
   }
 
@@ -3813,6 +4150,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           _navigationActive = false;
           _routeActionDismissed = true;
           _message = AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.');
+          _searchController.clear();
         });
         if (_voiceMode >= 1) {
           _speakText(AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.'));
@@ -6323,9 +6661,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             ),
           ),
         ),
-      if (_currentLocation != null && _navigationActive)
-        Marker(point: _offsetAlongRoute(_currentLocation!, _routeBearingAt(_currentLocation!), 65), width: 112, height: 42, alignment: Alignment.centerLeft,
-          child: Transform.translate(offset: const Offset(14, -34), child: _buildRouteDirectionCue()),
+      if (_currentLocation != null &&
+          _navigationActive &&
+          _routePoints.length > 1 &&
+          _distanceToNextManeuverMeters != null &&
+          _distanceToNextManeuverMeters! <= 150)
+        Marker(
+          point: _offsetAlongRoute(
+            _currentLocation!, _routeBearingAt(_currentLocation!), 35,
+          ),
+          width: 96,
+          height: 38,
+          alignment: Alignment.centerLeft,
+          child: Transform.translate(
+            offset: const Offset(12, -26),
+            child: _buildManeuverDistanceCue(),
+          ),
         ),
       if (_currentLocation != null)
         Marker(
@@ -6362,6 +6713,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         height: 28,
         child: _buildConfirmedRoadReportMarker(report),
       )),
+      if (_trafficLayerEnabled)
+        ..._trafficReports.map((report) => Marker(
+          point: LatLng(
+            (report['latitude'] as num).toDouble(),
+            (report['longitude'] as num).toDouble(),
+          ),
+          width: 38,
+          height: 38,
+          child: Container(
+            decoration: BoxDecoration(
+              color: _trafficReportColor(report).withOpacity(0.28),
+              shape: BoxShape.circle,
+              border: Border.all(color: _trafficReportColor(report), width: 3),
+            ),
+          ),
+        )),
       ..._routeStops.asMap().entries.map((entry) => Marker(
         point: entry.value,
         width: 38,
@@ -6413,6 +6780,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 zoom: 13,
                 tilt: _is3DMap ? 40 : 0,
               ),
+              // Liberty's hosted style supplies the OpenFreeMap glyph endpoint
+              // (tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf) and sprite atlas.
               styleString: 'https://tiles.openfreemap.org/styles/liberty',
               onMapCreated: _onMapLibreCreated,
               onStyleLoadedCallback: _onMapLibreStyleLoaded,
@@ -6462,6 +6831,38 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 ),
               ],
             ),
+          Positioned(
+            top: 190,
+            right: 14,
+            child: SafeArea(
+              bottom: false,
+              child: Material(
+                color: _trafficLayerEnabled ? const Color(0xFFE8F5E9) : Colors.white,
+                elevation: 5,
+                shape: const CircleBorder(),
+                child: IconButton(
+                  tooltip: 'Подтверждённые дорожные события',
+                  onPressed: () {
+                    setState(() => _trafficLayerEnabled = !_trafficLayerEnabled);
+                    if (_trafficLayerEnabled && _trafficReports.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Подтверждённых отметок о пробках или перекрытиях пока нет.'),
+                        duration: Duration(seconds: 2),
+                        behavior: SnackBarBehavior.floating,
+                      ));
+                    }
+                    unawaited(_syncMapLibreAnnotations());
+                  },
+                  icon: Icon(
+                    Icons.traffic,
+                    color: _trafficLayerEnabled
+                        ? const Color(0xFF169B55)
+                        : const Color(0xFF555B63),
+                  ),
+                ),
+              ),
+            ),
+          ),
           Positioned(
             top: 142,
             right: 14,
@@ -6542,14 +6943,44 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                           width: 42,
                           height: 42,
                           decoration: BoxDecoration(
-                            color: Colors.white,
-                            border: Border.all(color: const Color(0xFF202020), width: 2.2),
+                            color: _isSpeeding ? const Color(0xFFFFE2E2) : Colors.white,
+                            border: Border.all(
+                              color: _isSpeeding ? const Color(0xFFE53935) : const Color(0xFF202020),
+                              width: 2.2,
+                            ),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           alignment: Alignment.center,
-                          child: Text(_currentSpeedKmh.round().toString(), style: const TextStyle(fontSize: 25, height: 1, fontWeight: FontWeight.w900, color: Color(0xFF202020))),
+                          child: Text(
+                            _currentSpeedKmh.round().toString(),
+                            style: TextStyle(
+                              fontSize: 25, height: 1, fontWeight: FontWeight.w900,
+                              color: _isSpeeding ? const Color(0xFFE53935) : const Color(0xFF202020),
+                            ),
+                          ),
                         ),
-                        const Text('км/ч', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Color(0xFF343434))),
+                        Text('км/ч', style: TextStyle(
+                          fontSize: 9, fontWeight: FontWeight.w700,
+                          color: _isSpeeding ? const Color(0xFFE53935) : const Color(0xFF343434),
+                        )),
+                        const SizedBox(height: 4),
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: const Color(0xFFE53935), width: 3),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            _effectiveSpeedLimitKmh.toString(),
+                            style: TextStyle(
+                              fontSize: 17, fontWeight: FontWeight.w900,
+                              color: _isSpeeding ? const Color(0xFFE53935) : const Color(0xFF202020),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -6637,6 +7068,38 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               ),
             ),
 
+          if (_navigationActive && _activeConfirmedCameraId != null)
+            Positioned(
+              top: 82,
+              left: 68,
+              right: 88,
+              child: SafeArea(
+                bottom: false,
+                child: Material(
+                  color: const Color(0xFFFFF4E5),
+                  elevation: 5,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.camera_alt, color: Color(0xFFB42318), size: 22),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text('ВПЕРЕДИ КАМЕРА',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+                        ),
+                        Text(
+                          '${(_activeConfirmedCameraDistance ?? 0).round()} м',
+                          style: const TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFFB42318)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (_navigationActive)
             Positioned(
               top: 0,
@@ -6676,6 +7139,25 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                                 Text(
                                   _distanceToNextManeuverMeters == null ? '—' : (_distanceToNextManeuverMeters! >= 1000 ? '${(_distanceToNextManeuverMeters! / 1000).toStringAsFixed(1)} км' : '${_distanceToNextManeuverMeters!.round()} м'),
                                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF626A73)),
+                                ),
+                                const SizedBox(height: 3),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: List.generate(3, (index) {
+                                    final lanes = _laneGuidanceForCurrentManeuver();
+                                    return Padding(
+                                      padding: const EdgeInsets.only(right: 5),
+                                      child: Icon(
+                                        _maneuverIcon(_instructionIndex < _instructions.length
+                                            ? _instructions[_instructionIndex]
+                                            : null),
+                                        size: 18,
+                                        color: lanes[index]
+                                            ? const Color(0xFF169B55)
+                                            : const Color(0xFFB8BEC5),
+                                      ),
+                                    );
+                                  }),
                                 ),
                               ],
                             ),
