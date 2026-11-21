@@ -771,6 +771,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _mapLibreStyleReady = false;
   bool _onlineLabelStylePatchStarted = false;
   bool _onlineLabelStylePatched = false;
+  int _mapLibreStyleGeneration = 0;
   bool _offlineStreetLabelsVisible = false;
   bool _is3DMap = true;
   bool _isSatelliteMap = false;
@@ -1380,13 +1381,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   void _onMapLibreCreated(ml.MapLibreMapController controller) {
+    // A settings round-trip creates a fresh native map/style. Never reuse the
+    // previous controller's patched/loaded flags for the new map instance.
+    _mapLibreStyleGeneration++;
     _mapLibreStyleReady = false;
+    _onlineLabelStylePatchStarted = false;
+    _onlineLabelStylePatched = false;
     _mapLibreController = controller;
   }
 
   Future<void> _patchOnlineMapStyleLabels() async {
     if (_onlineLabelStylePatchStarted || _onlineLabelStylePatched) return;
     _onlineLabelStylePatchStarted = true;
+    final generation = _mapLibreStyleGeneration;
+    final controller = _mapLibreController;
+    if (controller == null) {
+      _onlineLabelStylePatchStarted = false;
+      return;
+    }
     try {
       final response = await http.get(
         Uri.parse('https://tiles.openfreemap.org/styles/liberty'),
@@ -1449,8 +1461,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         throw StateError('Liberty style has no OpenMapTiles vector source');
       }
 
-      style['glyphs'] =
-          'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf';
+      // Keep Liberty's own glyph endpoint. Its fontstack and sprite metadata
+      // are paired with the hosted style; replacing either can break style reloads.
+      final originalGlyphs = style['glyphs'];
+      if (originalGlyphs is! String || originalGlyphs.isEmpty) {
+        throw StateError('Liberty style has no valid glyphs endpoint');
+      }
       const textField = [
         'coalesce',
         ['get', 'name:ru'],
@@ -1459,7 +1475,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         ['get', 'name_ru'],
         ['get', 'name_kk'],
       ];
-      const textFont = ['Noto Sans Regular'];
+      final textFont = layers
+          .map((layer) => (layer['layout'] as Map?)?['text-font'])
+          .whereType<List>()
+          .map((fonts) => fonts.whereType<String>().toList())
+          .firstWhere((fonts) => fonts.isNotEmpty, orElse: () => <String>['Open Sans Regular']);
       const labelPaint = {
         'text-color': '#111111',
         'text-halo-color': '#FFFFFF',
@@ -1531,48 +1551,94 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
 
       style['layers'] = layers;
-      _onlineLabelStylePatched = true;
-      final controller = _mapLibreController;
-      if (controller == null) throw StateError('MapLibre controller is unavailable');
-      await controller.setStyle(jsonEncode(style));
-    } catch (error) {
-      _onlineLabelStylePatched = true;
-      debugPrint('BAKE online street-label style patch failed: $error');
-      _finishMapLibreStyleLoaded();
+      // Validate the complete document before asking the native renderer to
+      // replace its currently working style.
+      final encodedStyle = jsonEncode(style);
+      final decodedStyle = jsonDecode(encodedStyle);
+      if (decodedStyle is! Map || decodedStyle['sources'] is! Map || decodedStyle['layers'] is! List) {
+        throw const FormatException('Patched Liberty style has an invalid structure');
+      }
+      if (generation != _mapLibreStyleGeneration || !identical(controller, _mapLibreController)) return;
+      await controller.setStyle(encodedStyle);
+      if (generation == _mapLibreStyleGeneration && identical(controller, _mapLibreController)) {
+        _onlineLabelStylePatched = true;
+      }
+    } catch (error, stackTrace) {
+      debugPrint('BAKE online street-label style patch failed; keeping base Liberty style: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (generation == _mapLibreStyleGeneration && identical(controller, _mapLibreController)) {
+        _onlineLabelStylePatched = true;
+        await _finishMapLibreStyleLoaded();
+      }
     } finally {
-      _onlineLabelStylePatchStarted = false;
+      if (generation == _mapLibreStyleGeneration) _onlineLabelStylePatchStarted = false;
     }
   }
 
-  void _finishMapLibreStyleLoaded() {
-    unawaited(_ensureMapLibreLabelLayers());
-    unawaited(_syncMapLibreAnnotations(updateRoute: true));
-    final currentLocation = _currentLocation;
-    if (currentLocation != null) {
-      _moveMapCamera(currentLocation, 16);
+  Future<void> _finishMapLibreStyleLoaded() async {
+    if (!mounted || !_mapLibreStyleReady || _isOfflineMapActive) return;
+    try {
+      await _ensureMapLibreLabelLayers();
+    } catch (error, stackTrace) {
+      debugPrint('BAKE label-layer recovery failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
-    if (_routePoints.length > 1) _fitMapCamera(_routePoints);
-    _applyMapViewMode();
-    unawaited(_configure3DMapLayers());
+    try {
+      await _syncMapLibreAnnotations(updateRoute: true);
+    } catch (error, stackTrace) {
+      debugPrint('BAKE map annotations recovery failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+    try {
+      final currentLocation = _currentLocation;
+      if (currentLocation != null) _moveMapCamera(currentLocation, 16);
+      if (_routePoints.length > 1) _fitMapCamera(_routePoints);
+      _applyMapViewMode();
+    } catch (error, stackTrace) {
+      debugPrint('BAKE map camera restore failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+    try {
+      await _configure3DMapLayers();
+    } catch (error, stackTrace) {
+      debugPrint('BAKE optional 3D map layers unavailable: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   void _onMapLibreStyleLoaded() {
-    _mapLibreStyleReady = true;
-    if (!_onlineLabelStylePatched) {
-      if (!_onlineLabelStylePatchStarted) {
-        unawaited(_patchOnlineMapStyleLabels());
+    try {
+      if (!mounted || _isOfflineMapActive) return;
+      _mapLibreStyleReady = true;
+      if (!_onlineLabelStylePatched) {
+        if (!_onlineLabelStylePatchStarted) unawaited(_patchOnlineMapStyleLabels());
+        return;
       }
-      return;
+      unawaited(_finishMapLibreStyleLoaded());
+    } catch (error, stackTrace) {
+      debugPrint('BAKE MapLibre style-loaded callback failed safely: $error');
+      debugPrintStack(stackTrace: stackTrace);
     }
-    _finishMapLibreStyleLoaded();
   }
 
   Future<void> _configure3DMapLayers() async {
-    // Add imagery first, then style the building overlays. Keeping this
-    // sequence avoids two concurrent style mutations during map startup.
-    await _ensure3DSatelliteLayer();
-    await _ensure3DBuildingsLayer();
-    await _apply3DLayerVisibility();
+    // Each optional style mutation is isolated: satellite/building failures
+    // must never bubble into the widget tree or stop the base road map.
+    try {
+      await _ensure3DSatelliteLayer();
+    } catch (error) {
+      debugPrint('BAKE satellite layer setup skipped: $error');
+    }
+    try {
+      await _ensure3DBuildingsLayer();
+    } catch (error) {
+      debugPrint('BAKE 3D building layer setup skipped: $error');
+    }
+    try {
+      await _apply3DLayerVisibility();
+    } catch (error) {
+      debugPrint('BAKE 3D layer visibility update skipped: $error');
+    }
   }
 
   // Diagnostic build: verify the satellite toggle and Esri raster tiles on device.
