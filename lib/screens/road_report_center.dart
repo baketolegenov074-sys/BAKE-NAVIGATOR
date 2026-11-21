@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/road_report_sync_service.dart';
 
 /// Local-first road reports. Reports remain unverified until an administrator
-/// reviews them. No server endpoint is configured in this app yet.
+/// reviews them. Supabase sync is enabled when build-time credentials are provided.
 class RoadReportCenter extends StatelessWidget {
   const RoadReportCenter({super.key});
 
