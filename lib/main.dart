@@ -1662,13 +1662,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final prefs = await SharedPreferences.getInstance();
     final savedPath = prefs.getString('valhalla_tile_extract_path');
     File? archiveFile;
-    var downloadedNow = false;
+    var isManagedArchive = false;
 
     try {
       if (savedPath != null && savedPath.isNotEmpty) {
         final savedFile = File(savedPath);
         if (await savedFile.exists() && await savedFile.length() > 100000) {
           archiveFile = savedFile;
+          isManagedArchive = savedFile.path.endsWith('/shymkent-valhalla.tar');
         }
       }
 
@@ -1678,6 +1679,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         }
         final directory = await getApplicationSupportDirectory();
         archiveFile = File('${directory.path}/shymkent-valhalla.tar');
+        isManagedArchive = true;
         if (!await archiveFile.exists() || await archiveFile.length() < 100000) {
           final temporary = File('${archiveFile.path}.download');
           final response = await http
@@ -1691,7 +1693,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           await temporary.writeAsBytes(response.bodyBytes, flush: true);
           if (await archiveFile.exists()) await archiveFile.delete();
           await temporary.rename(archiveFile.path);
-          downloadedNow = true;
         }
       }
 
@@ -1746,8 +1747,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       return true;
     } catch (error) {
       _valhallaReady = false;
-      if (downloadedNow && archiveFile != null && await archiveFile.exists()) {
-        await archiveFile.delete();
+      if (isManagedArchive && archiveFile != null) {
+        if (await archiveFile.exists()) await archiveFile.delete();
+        await prefs.remove('valhalla_tile_extract_path');
       }
       if (mounted) {
         setState(() {
