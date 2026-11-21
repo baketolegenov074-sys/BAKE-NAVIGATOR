@@ -32,8 +32,10 @@ class RoadReportCenter extends StatelessWidget {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6F8),
       appBar: AppBar(title: const Text('Дорожные отметки')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: SafeArea(
+        top: false,
+        child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
           const Text('Что хотите отметить?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
           const SizedBox(height: 6),
@@ -61,8 +63,8 @@ class RoadReportCenter extends StatelessWidget {
                       children: [
                         Icon(item.icon, size: 30, color: const Color(0xFF303943)),
                         const SizedBox(height: 7),
-                        Text(item.title, textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                        Text(item.title, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 10, height: 1.1, fontWeight: FontWeight.w700)),
                       ],
                     ),
                   ),
@@ -77,6 +79,7 @@ class RoadReportCenter extends StatelessWidget {
             label: const Text('Мои дорожные отметки'),
           ),
         ],
+        ),
       ),
     );
   }
@@ -251,10 +254,12 @@ class _MyRoadMarksPageState extends State<MyRoadMarksPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Мои дорожные отметки')),
-    body: _records.isEmpty
-      ? const Center(child: Text('Пока нет сохранённых отметок.'))
-      : ListView.builder(
-          padding: const EdgeInsets.all(12), itemCount: _records.length,
+    body: SafeArea(
+      top: false,
+      child: _records.isEmpty
+        ? const Center(child: Text('Пока нет сохранённых отметок.'))
+        : ListView.builder(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 24), itemCount: _records.length,
           itemBuilder: (context, index) {
             final r = _records[index];
             final date = DateTime.tryParse(r['createdAt']?.toString() ?? '')?.toLocal();
@@ -267,6 +272,7 @@ class _MyRoadMarksPageState extends State<MyRoadMarksPage> {
             ));
           },
         ),
+    ),
   );
 }
 
@@ -698,7 +704,9 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
           ],
         ),
       ),
-      body: Column(children: [
+      body: SafeArea(
+        top: false,
+        child: Column(children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
           child: Card(
@@ -762,6 +770,7 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
           _buildReportList(null),
         ])),
       ]),
+      ),
     ),
   );
 }
