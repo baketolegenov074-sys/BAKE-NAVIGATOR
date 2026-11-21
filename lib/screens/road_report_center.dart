@@ -359,9 +359,28 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
   List<Map<String, dynamic>> _records = [];
   bool _loading = true;
   String? _error;
+  int _localPendingCount = 0;
 
   @override
-  void initState() { super.initState(); _loadReports(); }
+  void initState() {
+    super.initState();
+    _loadReports();
+    _loadLocalPendingCount();
+  }
+
+  Future<void> _loadLocalPendingCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rows = prefs.getStringList('bake_road_reports_v1') ?? <String>[];
+    final pending = rows.where((raw) {
+      try {
+        final row = jsonDecode(raw) as Map<String, dynamic>;
+        return row['syncStatus'] != 'Синхронизировано';
+      } catch (_) {
+        return false;
+      }
+    }).length;
+    if (mounted) setState(() => _localPendingCount = pending);
+  }
 
   @override
 
@@ -507,6 +526,25 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
                 ],
                 const SizedBox(height: 4),
                 Text('Всего в общей базе: ${_records.length}'),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(
+                    child: Text(
+                      'На этом телефоне не отправлено: $_localPendingCount',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const MyRoadMarksPage()),
+                      );
+                      _loadLocalPendingCount();
+                    },
+                    icon: const Icon(Icons.phone_android, size: 18),
+                    label: const Text('Локальные'),
+                  ),
+                ]),
               ]),
             ),
           ),
