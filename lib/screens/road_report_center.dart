@@ -150,9 +150,12 @@ class RoadReportCenter extends StatelessWidget {
           debugPrint('BAKE road report upload failed: ${error.runtimeType}');
         }
       }
+      final configurationProblem = RoadReportSyncService.configurationProblem;
       notify(SnackBar(content: Text(uploaded
           ? 'Отметка «${type.title}» отправлена на общую проверку.'
-          : 'Отметка «${type.title}» сохранена на телефоне и ждёт связи с сервером.')));
+          : configurationProblem != null
+              ? 'Отметка сохранена на телефоне. Настройка сервера: $configurationProblem'
+              : 'Отметка «${type.title}» сохранена на телефоне и ждёт связи с сервером.')));
     } catch (error) {
       notify(SnackBar(content: Text('Не удалось получить GPS или сохранить отметку: $error')));
     }
