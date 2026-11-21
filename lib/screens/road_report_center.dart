@@ -123,6 +123,7 @@ class RoadReportCenter extends StatelessWidget {
       }
       final record = <String, dynamic>{
         'id': now.microsecondsSinceEpoch.toString(),
+        'deviceId': await RoadReportSyncService.getDeviceId(),
         'type': type.title,
         'latitude': position.latitude,
         'longitude': position.longitude,
@@ -350,64 +351,14 @@ class RoadAdminPage extends StatefulWidget {
 }
 
 class _RoadAdminPageState extends State<RoadAdminPage> {
-  final _email = TextEditingController();
-  final _password = TextEditingController();
   List<Map<String, dynamic>> _records = [];
   bool _loading = true;
-  bool _signedIn = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _restoreAdminSession();
-  }
-
-  @override
-  void dispose() {
-    _email.dispose();
-    _password.dispose();
-    super.dispose();
-  }
-
-  Future<void> _restoreAdminSession() async {
-    if (!RoadReportSyncService.isInitialized) {
-      if (mounted) setState(() {
-        _loading = false;
-        _error = 'Облачный сервер не подключён к этой сборке приложения.';
-      });
-      return;
-    }
-    try {
-      final isAdmin = await RoadReportSyncService.hasAdminAccess();
-      if (isAdmin) {
-        await _loadReports();
-      } else if (mounted) {
-        setState(() => _loading = false);
-      }
-    } catch (error) {
-      if (mounted) setState(() {
-        _loading = false;
-        _error = 'Не удалось проверить доступ администратора: $error';
-      });
-    }
-  }
-
-  Future<void> _login() async {
-    if (_email.text.trim().isEmpty || _password.text.isEmpty) {
-      setState(() => _error = 'Введите email и пароль администратора.');
-      return;
-    }
-    setState(() { _loading = true; _error = null; });
-    try {
-      await RoadReportSyncService.signInAdmin(_email.text, _password.text);
-      await _loadReports();
-    } catch (error) {
-      if (mounted) setState(() {
-        _loading = false;
-        _error = error.toString().replaceFirst('Exception: ', '');
-      });
-    }
+    _loadReports();
   }
 
   Future<void> _loadReports() async {
@@ -416,135 +367,56 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
       if (!mounted) return;
       setState(() {
         _records = rows;
-        _signedIn = true;
         _loading = false;
         _error = null;
       });
     } catch (error) {
-      if (mounted) setState(() {
+      if (!mounted) return;
+      setState(() {
         _loading = false;
-        _error = 'Нет доступа к списку отметок: $error';
+        _error = 'Не удалось загрузить отметки: $error';
       });
     }
-  }
-
-  Future<void> _setStatus(Map<String, dynamic> record, String status) async {
-    try {
-      await RoadReportSyncService.setReportStatus(record['id'].toString(), status);
-      await _loadReports();
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось изменить статус: $error')),
-        );
-      }
-    }
-  }
-
-  Future<void> _logout() async {
-    await RoadReportSyncService.signOutAdmin();
-    if (!mounted) return;
-    setState(() {
-      _signedIn = false;
-      _records = [];
-      _password.clear();
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Кабинет администратора'),
+        title: const Text('Дорожные отметки'),
         actions: [
-          if (_signedIn)
-            IconButton(
-              tooltip: 'Выйти',
-              onPressed: _logout,
-              icon: const Icon(Icons.logout),
-            ),
+          IconButton(
+            tooltip: 'Обновить',
+            onPressed: _loading ? null : _loadReports,
+            icon: const Icon(Icons.refresh),
+          ),
         ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : !_signedIn
-              ? ListView(
+          : _error != null
+              ? Center(child: Padding(
                   padding: const EdgeInsets.all(20),
-                  children: [
-                    const Icon(Icons.admin_panel_settings_outlined, size: 52),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Вход администратора BAKE',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 18),
-                    TextField(
-                      controller: _email,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        labelText: 'Email администратора',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _password,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Пароль',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      Text(_error!, style: const TextStyle(color: Colors.red)),
-                    ],
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: _login,
-                      child: const Text('Войти'),
-                    ),
-                  ],
-                )
+                  child: Text(_error!, textAlign: TextAlign.center),
+                ))
               : _records.isEmpty
-                  ? const Center(child: Text('Дорожных отметок пока нет.'))
+                  ? const Center(child: Text('Общих отметок пока нет.'))
                   : ListView(
                       padding: const EdgeInsets.all(12),
                       children: [
                         Text('Всего отметок: ${_records.length}'),
                         const SizedBox(height: 8),
-                        ..._records.map((r) => Card(
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      r['type']?.toString() ?? 'Объект',
-                                      style: const TextStyle(fontWeight: FontWeight.w800),
-                                    ),
-                                    Text('${r['latitude']}, ${r['longitude']} · ±${r['accuracyMeters']} м'),
-                                    Text('Статус: ${r['status']}'),
-                                    Wrap(
-                                      spacing: 8,
-                                      children: [
-                                        TextButton(
-                                          onPressed: () => _setStatus(r, 'Подтверждено'),
-                                          child: const Text('Подтвердить'),
-                                        ),
-                                        TextButton(
-                                          onPressed: () => _setStatus(r, 'Отклонено'),
-                                          child: const Text('Отклонить'),
-                                        ),
-                                        TextButton(
-                                          onPressed: () => _setStatus(r, 'На проверке'),
-                                          child: const Text('Вернуть на проверку'),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
+                        ..._records.map((record) => Card(
+                              child: ListTile(
+                                leading: const Icon(Icons.location_on_outlined),
+                                title: Text(record['type']?.toString() ?? 'Объект'),
+                                subtitle: Text(
+                                  '${record['latitude']}, ${record['longitude']}'
+                                  ' · ±${record['accuracyMeters']} м'
+                                  '\nСтатус: ${record['status']}'
+                                  '\nУстройство: ${record['deviceId'] ?? '—'}',
                                 ),
+                                isThreeLine: true,
                               ),
                             )),
                       ],
