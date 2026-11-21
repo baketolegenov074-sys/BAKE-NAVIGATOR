@@ -7,8 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/road_report_sync_service.dart';
 
-/// Local-first road reports. Reports remain unverified until an administrator
-/// reviews them. Supabase sync is enabled when build-time credentials are provided.
+/// Road reports are stored locally first and synchronized with the shared Supabase table.
 class RoadReportCenter extends StatelessWidget {
   const RoadReportCenter({super.key});
 
@@ -192,7 +191,7 @@ class RoadToolsMenu extends StatelessWidget {
       Card(child: ListTile(
         leading: const Icon(Icons.admin_panel_settings_outlined),
         title: const Text('Кабинет администратора'),
-        subtitle: const Text('Локальный просмотр отметок на этом устройстве'),
+        subtitle: const Text('Модерация отметок в общей базе Supabase'),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RoadAdminPage())),
       )),
