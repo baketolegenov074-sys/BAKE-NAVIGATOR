@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../services/road_report_sync_service.dart';
 
 /// Road reports are stored locally first and synchronized with the shared Supabase table.
@@ -269,6 +270,81 @@ class _MyRoadMarksPageState extends State<MyRoadMarksPage> {
   );
 }
 
+
+class MapPointPickerPage extends StatefulWidget {
+  const MapPointPickerPage({super.key, required this.initialPoint});
+  final LatLng initialPoint;
+  static Future<LatLng?> pick(BuildContext context, {required LatLng initialPoint}) =>
+      Navigator.of(context).push<LatLng>(MaterialPageRoute(builder: (_) => MapPointPickerPage(initialPoint: initialPoint)));
+  @override State<MapPointPickerPage> createState() => _MapPointPickerPageState();
+}
+class _MapPointPickerPageState extends State<MapPointPickerPage> {
+  late LatLng _center = widget.initialPoint;
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Уточнить точку на карте')),
+    body: Stack(children: [
+      FlutterMap(options: MapOptions(initialCenter: widget.initialPoint, initialZoom: 17,
+        onPositionChanged: (camera, hasGesture) { if (hasGesture && mounted) setState(() => _center = camera.center); }),
+        children: [
+          TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.bake.navigator'),
+          const RichAttributionWidget(attributions: [TextSourceAttribution('© OpenStreetMap contributors')]),
+        ]),
+      const IgnorePointer(child: Center(child: Icon(Icons.location_pin, size: 48, color: Colors.red))),
+      Positioned(left: 16, right: 16, bottom: 18, child: SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Card(child: Padding(padding: const EdgeInsets.all(10), child: Text(
+          '${_center.latitude.toStringAsFixed(6)}, ${_center.longitude.toStringAsFixed(6)}', textAlign: TextAlign.center))),
+        SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: () => Navigator.pop(context, _center),
+          icon: const Icon(Icons.check), label: const Text('Готово'))),
+      ]))),
+    ]),
+  );
+}
+
+class VoiceTextField extends StatefulWidget {
+  const VoiceTextField({super.key, required this.controller, required this.decoration,
+    this.autofocus = false, this.textInputAction, this.onChanged, this.onSubmitted, this.minLines = 1, this.maxLines = 1});
+  final TextEditingController controller; final InputDecoration decoration; final bool autofocus;
+  final TextInputAction? textInputAction; final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted; final int minLines; final int? maxLines;
+  @override State<VoiceTextField> createState() => _VoiceTextFieldState();
+}
+class _VoiceTextFieldState extends State<VoiceTextField> {
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _available = false, _listening = false, _initializing = false;
+  Future<void> _toggleVoice() async {
+    if (_listening) { await _speech.stop(); if (mounted) setState(() => _listening = false); return; }
+    if (!_available && !_initializing) {
+      _initializing = true;
+      _available = await _speech.initialize(
+        onStatus: (status) { if (mounted) setState(() => _listening = status == 'listening'); },
+        onError: (error) { if (mounted) { setState(() => _listening = false);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Голосовой ввод: ${error.errorMsg}'))); } },
+      );
+      _initializing = false;
+    }
+    if (!_available) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Распознавание речи недоступно. Проверьте микрофон и русский языковой пакет.')));
+      return;
+    }
+    await _speech.listen(localeId: 'ru_RU', onResult: (result) {
+      final text = result.recognizedWords;
+      widget.controller.value = TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+      widget.onChanged?.call(text);
+    });
+    if (mounted) setState(() => _listening = true);
+  }
+  @override void dispose() { _speech.cancel(); super.dispose(); }
+  @override Widget build(BuildContext context) => Row(children: [
+    Expanded(child: TextField(controller: widget.controller, autofocus: widget.autofocus,
+      textInputAction: widget.textInputAction, onChanged: widget.onChanged, onSubmitted: widget.onSubmitted,
+      minLines: widget.minLines, maxLines: widget.maxLines, decoration: widget.decoration)),
+    IconButton(tooltip: _listening ? 'Остановить диктовку' : 'Надиктовать по-русски',
+      onPressed: _toggleVoice, icon: Icon(_listening ? Icons.mic : Icons.mic_none, color: _listening ? Colors.red : null)),
+  ]);
+}
+
 class AddressCorrectionPage extends StatefulWidget {
   const AddressCorrectionPage({super.key});
   @override
@@ -279,6 +355,7 @@ class _AddressCorrectionPageState extends State<AddressCorrectionPage> {
   final _addressController = TextEditingController();
   final _detailsController = TextEditingController();
   bool _saving = false;
+  LatLng? _selectedPoint;
 
   @override
   void dispose() {
@@ -294,24 +371,32 @@ class _AddressCorrectionPageState extends State<AddressCorrectionPage> {
     }
     setState(() => _saving = true);
     try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever || !await Geolocator.isLocationServiceEnabled()) {
-        throw Exception('Для привязки исправления включите GPS и разрешите доступ к местоположению.');
+      double latitude;
+      double longitude;
+      double accuracy;
+      if (_selectedPoint != null) {
+        latitude = _selectedPoint!.latitude; longitude = _selectedPoint!.longitude; accuracy = 0;
+      } else {
+        var permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever || !await Geolocator.isLocationServiceEnabled()) {
+          throw Exception('Уточните точку на карте или разрешите GPS.');
+        }
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 15)),
+        );
+        if (position.accuracy > 30) throw Exception('GPS пока неточный (±${position.accuracy.toStringAsFixed(0)} м). Повторите позже.');
+        latitude = position.latitude; longitude = position.longitude; accuracy = position.accuracy;
       }
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 15)),
-      );
-      if (position.accuracy > 30) throw Exception('GPS пока неточный (±${position.accuracy.toStringAsFixed(0)} м). Повторите позже.');
       final prefs = await SharedPreferences.getInstance();
       final rows = prefs.getStringList('bake_address_corrections_v1') ?? <String>[];
       rows.insert(0, jsonEncode({
         'id': DateTime.now().microsecondsSinceEpoch.toString(),
         'address': _addressController.text.trim(),
         'details': _detailsController.text.trim(),
-        'latitude': position.latitude,
-        'longitude': position.longitude,
-        'accuracyMeters': position.accuracy,
+        'latitude': latitude,
+        'longitude': longitude,
+        'accuracyMeters': accuracy,
         'createdAt': DateTime.now().toIso8601String(),
         'status': 'На проверке',
         'syncStatus': 'Ожидает подключения сервера',
@@ -334,9 +419,15 @@ class _AddressCorrectionPageState extends State<AddressCorrectionPage> {
     body: ListView(padding: const EdgeInsets.all(16), children: [
       const Text('Опишите ошибку адреса', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
       const SizedBox(height: 12),
-      TextField(controller: _addressController, decoration: const InputDecoration(labelText: 'Адрес или название места', border: OutlineInputBorder())),
+      VoiceTextField(controller: _addressController, decoration: const InputDecoration(labelText: 'Адрес или название места', border: OutlineInputBorder())),
       const SizedBox(height: 12),
-      TextField(controller: _detailsController, minLines: 3, maxLines: 5, decoration: const InputDecoration(labelText: 'Что нужно исправить (необязательно)', border: OutlineInputBorder())),
+      VoiceTextField(controller: _detailsController, minLines: 3, maxLines: 5, decoration: const InputDecoration(labelText: 'Что нужно исправить (необязательно)', border: OutlineInputBorder())),
+      const SizedBox(height: 12),
+      OutlinedButton.icon(onPressed: _saving ? null : () async {
+        final point = await MapPointPickerPage.pick(context, initialPoint: _selectedPoint ?? const LatLng(42.3154, 69.5869));
+        if (point != null && mounted) setState(() => _selectedPoint = point);
+      }, icon: const Icon(Icons.my_location), label: Text(_selectedPoint == null ? 'Уточнить на карте' :
+        'Точка: ${_selectedPoint!.latitude.toStringAsFixed(6)}, ${_selectedPoint!.longitude.toStringAsFixed(6)}')),
       const SizedBox(height: 16),
       FilledButton.icon(
         onPressed: _saving ? null : _saveCorrection,
@@ -419,6 +510,48 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
     }
   }
 
+
+  Future<void> _editReport(Map<String, dynamic> record) async {
+    final id = record['id']?.toString();
+    final lat = (record['latitude'] as num?)?.toDouble();
+    final lon = (record['longitude'] as num?)?.toDouble();
+    if (id == null || lat == null || lon == null) return;
+    final title = TextEditingController(text: (record['title'] ?? record['type'] ?? '').toString());
+    final address = TextEditingController(text: (record['address'] ?? '').toString());
+    final comment = TextEditingController(text: (record['comment'] ?? '').toString());
+    var point = LatLng(lat, lon);
+    final save = await showDialog<bool>(context: context, builder: (dialogContext) =>
+      StatefulBuilder(builder: (context, refresh) => AlertDialog(
+        title: const Text('Редактировать точку'),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          VoiceTextField(controller: title, decoration: const InputDecoration(labelText: 'Название')),
+          const SizedBox(height: 8),
+          VoiceTextField(controller: address, decoration: const InputDecoration(labelText: 'Адрес')),
+          const SizedBox(height: 8),
+          VoiceTextField(controller: comment, minLines: 2, maxLines: 4, decoration: const InputDecoration(labelText: 'Комментарий')),
+          OutlinedButton.icon(onPressed: () async {
+            final p = await MapPointPickerPage.pick(context, initialPoint: point);
+            if (p != null) refresh(() => point = p);
+          }, icon: const Icon(Icons.my_location), label: const Text('Уточнить на карте')),
+          Text('${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Сохранить')),
+        ],
+      )));
+    if (save == true && mounted) {
+      try {
+        await RoadReportSyncService.updateReportDetails(id: id, title: title.text.trim(),
+          address: address.text.trim(), comment: comment.text.trim(), latitude: point.latitude, longitude: point.longitude);
+        await _loadReports();
+      } catch (error) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Не удалось сохранить изменения: $error')));
+      }
+    }
+    title.dispose(); address.dispose(); comment.dispose();
+  }
+
   Future<void> _deleteReport(Map<String, dynamic> record) async {
     final id = record['id']?.toString();
     if (id == null || id.isEmpty || _busyRecordIds.contains(id)) return;
@@ -498,6 +631,10 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
                 if (date != null) Text('Добавлено: ' + date.toString()),
                 const SizedBox(height: 10),
                 Wrap(spacing: 8, runSpacing: 8, children: [
+                  OutlinedButton.icon(
+                    onPressed: _busyRecordIds.contains(record['id']?.toString()) ? null : () => _editReport(record),
+                    icon: const Icon(Icons.edit_outlined), label: const Text('Редактировать'),
+                  ),
                   OutlinedButton.icon(
                     onPressed: latitude == null || longitude == null ? null : () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => RoadReportMapPage(

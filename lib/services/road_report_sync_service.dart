@@ -83,6 +83,9 @@ class RoadReportSyncService {
       'id': report['id'].toString(),
       'device_id': report['deviceId'].toString(),
       'type': report['type'].toString(),
+      if (report['title'] != null) 'title': report['title'],
+      if (report['address'] != null) 'address': report['address'],
+      if (report['comment'] != null) 'comment': report['comment'],
       'latitude': (report['latitude'] as num).toDouble(),
       'longitude': (report['longitude'] as num).toDouble(),
       'accuracy_meters': (report['accuracyMeters'] as num?)?.toDouble(),
@@ -100,6 +103,9 @@ class RoadReportSyncService {
         'id': row['id'],
         'deviceId': row['device_id'],
         'type': row['type'],
+        'title': row['title'],
+        'address': row['address'],
+        'comment': row['comment'],
         'latitude': row['latitude'],
         'longitude': row['longitude'],
         'accuracyMeters': row['accuracy_meters'],
@@ -130,12 +136,31 @@ class RoadReportSyncService {
 
   static Future<List<Map<String, dynamic>>> fetchConfirmedReports() async {
     if (!_initialized) return <Map<String, dynamic>>[];
-    final rows = await _client
-        .from('road_reports')
-        .select()
-        .eq('status', 'Подтверждено')
+    final rows = await _client.from('road_reports').select()
+        .inFilter('status', ['approved', 'Подтверждено'])
         .order('created_at', ascending: false);
     return rows.map((row) => _fromDatabase(row)).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> searchConfirmedReports(String query) async {
+    if (!_initialized || query.trim().isEmpty) return <Map<String, dynamic>>[];
+    final rows = await _client.from('road_reports').select()
+        .inFilter('status', ['approved', 'Подтверждено'])
+        .order('created_at', ascending: false).limit(500);
+    final needle = query.trim().toLowerCase();
+    return rows.where((row) => [row['title'], row['address'], row['comment'], row['type']]
+        .whereType<Object>().any((value) => value.toString().toLowerCase().contains(needle)))
+        .map((row) => _fromDatabase(row)).toList();
+  }
+
+  static Future<void> updateReportDetails({
+    required String id, required String title, required String address,
+    required String comment, required double latitude, required double longitude,
+  }) async {
+    await _client.from('road_reports').update({
+      'title': title, 'address': address, 'comment': comment,
+      'latitude': latitude, 'longitude': longitude,
+    }).eq('id', id);
   }
 
   /// Public moderation requests use the project's publishable/anon key.

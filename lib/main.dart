@@ -2570,26 +2570,54 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return merged.take(20).toList();
   }
 
-  Future<List<Map<String, dynamic>>> _fetchAddressFeatures(
-    String query, {
-    LatLng? near,
-  }) async {
-    final localResults = await _offlineAddressSearch.search(
-      query,
-      near: near ?? _currentLocation ?? _shymkent,
-    );
-    // The built-in Shymkent directory and bundled OSM index are authoritative
-    // for local offline searches. Use Photon only when they have no match.
-    if (localResults.isNotEmpty) return localResults;
-
-    try {
-      return await _fetchPhotonFeatures(query).timeout(
-        const Duration(seconds: 8),
-      );
-    } catch (error) {
-      debugPrint('BAKE Photon address search unavailable: $error');
-      return <Map<String, dynamic>>[];
+  Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near}) async {
+    final needle = query.trim().toLowerCase();
+    final reportFeatures = <Map<String, dynamic>>[];
+    final seenReports = <String>{};
+    Map<String, dynamic> toFeature(Map<String, dynamic> report) {
+      final lat = (report['latitude'] as num).toDouble();
+      final lon = (report['longitude'] as num).toDouble();
+      final title = (report['title'] ?? report['type'] ?? 'Дорожная отметка').toString();
+      final address = (report['address'] ?? '').toString();
+      return <String, dynamic>{
+        'type': 'Feature', '_roadReport': true,
+        'properties': {'name': title, 'display_label': address.isEmpty ? title : '$title · $address',
+          'address': address, 'comment': report['comment'] ?? '', 'source': 'road_reports',
+          'report_id': report['id']?.toString()},
+        'geometry': {'type': 'Point', 'coordinates': <double>[lon, lat]},
+      };
     }
+    bool matches(Map<String, dynamic> row) {
+      final status = row['status']?.toString();
+      if (status != 'Подтверждено' && status != 'approved') return false;
+      return [row['title'], row['address'], row['comment'], row['type']]
+          .whereType<Object>().any((value) => value.toString().toLowerCase().contains(needle));
+    }
+    for (final row in _confirmedRoadReports) {
+      final id = row['id']?.toString() ?? '';
+      if (matches(row) && seenReports.add(id)) reportFeatures.add(toFeature(row));
+    }
+    if (RoadReportSyncService.isInitialized) {
+      try {
+        for (final row in await RoadReportSyncService.searchConfirmedReports(query)) {
+          final id = row['id']?.toString() ?? '';
+          if (matches(row) && seenReports.add(id)) reportFeatures.add(toFeature(row));
+        }
+      } catch (error) {
+        debugPrint('BAKE confirmed address search from Supabase unavailable: $error');
+      }
+    }
+    final localResults = await _offlineAddressSearch.search(query, near: near ?? _currentLocation ?? _shymkent);
+    var otherResults = localResults;
+    if (otherResults.isEmpty) {
+      try {
+        otherResults = await _fetchPhotonFeatures(query).timeout(const Duration(seconds: 8));
+      } catch (error) {
+        debugPrint('BAKE Photon address search unavailable: $error');
+        otherResults = <Map<String, dynamic>>[];
+      }
+    }
+    return <Map<String, dynamic>>[...reportFeatures, ...otherResults];
   }
 
   Future<void> _searchAddress({bool selectAsOrigin = false}) async {
@@ -4213,7 +4241,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        TextField(
+                        VoiceTextField(
                           controller: _searchController,
                           autofocus: true,
                           textInputAction: TextInputAction.search,
@@ -4292,11 +4320,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                                 final label = _photonFeatureAddress(feature);
                                 return ListTile(
                                   dense: true,
-                                  leading: const Icon(Icons.location_on_outlined, size: 20),
+                                  leading: Icon(feature['_roadReport'] == true ? Icons.push_pin : Icons.location_on_outlined, size: 20, color: feature['_roadReport'] == true ? const Color(0xFF16834A) : null),
                                   title: Text(label.isEmpty ? 'Адрес' : label, maxLines: 2, overflow: TextOverflow.ellipsis),
-                                  subtitle: feature['_offline'] == true
-                                      ? const Text('Офлайн-база Шымкента')
-                                      : null,
+                                  subtitle: feature['_roadReport'] == true ? const Text('Подтверждённая точка из базы BAKE') : feature['_offline'] == true ? const Text('Офлайн-база Шымкента') : null,
                                   onTap: () {
                                     photonDebounce?.cancel();
                                     final geometry = feature['geometry'];
@@ -5045,6 +5071,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     var home = prefs.getString('my_place_home') ?? '';
     var work = prefs.getString('my_place_work') ?? '';
     var customPlaces = prefs.getStringList('my_custom_places') ?? <String>[];
+    var customPlacePoints = prefs.getStringList('my_custom_place_points_v1') ?? <String>[];
     if (!mounted) return;
 
     Future<void> editAddress({
@@ -5162,19 +5189,25 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                       leading: const Icon(Icons.favorite_outline, color: Color(0xFFE45D52)),
                       title: Text(name),
                       subtitle: Text(address),
-                      onTap: address.isEmpty
-                          ? null
-                          : () {
-                              Navigator.pop(pageContext);
-                              _searchController.text = address;
-                              _searchAddress();
-                            },
+                      onTap: address.isEmpty ? null : () {
+                        final savedPoint = index < customPlacePoints.length ? customPlacePoints[index] : '';
+                        final coords = savedPoint.split(',');
+                        final lat = coords.length == 2 ? double.tryParse(coords[0]) : null;
+                        final lon = coords.length == 2 ? double.tryParse(coords[1]) : null;
+                        Navigator.pop(pageContext);
+                        if (lat != null && lon != null) {
+                          final point = LatLng(lat, lon); _selectDestination(point); _moveMapCamera(point, 16);
+                          setState(() => _message = name); unawaited(_buildRoute());
+                        } else { _searchController.text = address; _searchAddress(); }
+                      },
                       trailing: IconButton(
                         tooltip: AppLocale.tr('Удалить место'),
                         icon: const Icon(Icons.delete_outline),
                         onPressed: () async {
                           customPlaces.removeAt(index);
+                          if (index < customPlacePoints.length) customPlacePoints.removeAt(index);
                           await prefs.setStringList('my_custom_places', customPlaces);
+                          await prefs.setStringList('my_custom_place_points_v1', customPlacePoints);
                           refresh(() {});
                         },
                       ),
@@ -5185,14 +5218,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                   onPressed: () async {
                     final nameController = TextEditingController();
                     final addressController = TextEditingController();
+                    LatLng? selectedPlacePoint;
                     final accepted = await showDialog<bool>(
                       context: pageContext,
-                      builder: (dialogContext) => AlertDialog(
+                      builder: (dialogContext) => StatefulBuilder(builder: (dialogContext, refreshDialog) => AlertDialog(
                         title: Text(AppLocale.tr('Добавить место')),
                         content: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            TextField(
+                            VoiceTextField(
                               controller: nameController,
                               decoration: InputDecoration(
                                 labelText: AppLocale.tr('Название'),
@@ -5200,13 +5234,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                               ),
                             ),
                             const SizedBox(height: 10),
-                            TextField(
+                            VoiceTextField(
                               controller: addressController,
                               decoration: InputDecoration(
                                 labelText: AppLocale.tr('Адрес'),
                                 hintText: AppLocale.tr('Улица, дом или место'),
                               ),
                             ),
+                            const SizedBox(height: 8),
+                            OutlinedButton.icon(onPressed: () async {
+                              final point = await MapPointPickerPage.pick(dialogContext,
+                                initialPoint: selectedPlacePoint ?? const LatLng(42.3154, 69.5869));
+                              if (point != null) refreshDialog(() => selectedPlacePoint = point);
+                            }, icon: const Icon(Icons.my_location), label: Text(selectedPlacePoint == null ? 'Уточнить на карте' :
+                              '${selectedPlacePoint!.latitude.toStringAsFixed(6)}, ${selectedPlacePoint!.longitude.toStringAsFixed(6)}')),
                           ],
                         ),
                         actions: [
@@ -5223,7 +5264,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                             child: Text(AppLocale.tr('Сохранить')),
                           ),
                         ],
-                      ),
+                      )),
                     );
                     final name = nameController.text.trim();
                     final address = addressController.text.trim();
@@ -5231,7 +5272,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     addressController.dispose();
                     if (accepted != true || name.isEmpty || address.isEmpty) return;
                     customPlaces = [...customPlaces, '$name|$address'];
+                    customPlacePoints = [...customPlacePoints, selectedPlacePoint == null ? '' : '${selectedPlacePoint!.latitude},${selectedPlacePoint!.longitude}'];
                     await prefs.setStringList('my_custom_places', customPlaces);
+                    await prefs.setStringList('my_custom_place_points_v1', customPlacePoints);
                     refresh(() {});
                   },
                   icon: const Icon(Icons.add),

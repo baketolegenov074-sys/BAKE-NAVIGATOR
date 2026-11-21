@@ -5,13 +5,16 @@ create table if not exists public.road_reports (
   id text primary key,
   device_id text not null default 'legacy',
   type text not null,
+  title text,
+  address text,
+  comment text,
   latitude double precision not null check (latitude between -90 and 90),
   longitude double precision not null check (longitude between -180 and 180),
   accuracy_meters double precision,
   heading_degrees double precision,
   created_at timestamptz not null default now(),
   status text not null default 'На проверке'
-    check (status in ('На проверке', 'Подтверждено', 'Отклонено')),
+    check (status in ('На проверке', 'Подтверждено', 'Отклонено', 'approved')),
   camera_operational_status text,
   valid_until timestamptz,
   submitted_by uuid references auth.users(id),
@@ -21,7 +24,10 @@ create table if not exists public.road_reports (
 
 -- Upgrade an existing table created by the previous authenticated version.
 alter table public.road_reports
-  add column if not exists device_id text;
+  add column if not exists device_id text,
+  add column if not exists title text,
+  add column if not exists address text,
+  add column if not exists comment text;
 update public.road_reports
   set device_id = 'legacy'
   where device_id is null;
