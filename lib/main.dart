@@ -618,6 +618,56 @@ String _valhallaErrorForUser(Object error, {bool duringImport = false}) {
         );
 }
 
+Map<String, dynamic> _decodeValhallaRouteResponseInBackground(String raw) {
+  final decoded = jsonDecode(raw);
+  if (decoded is! Map) {
+    throw const FormatException('Valhalla returned a non-object response.');
+  }
+  final data = Map<String, dynamic>.from(decoded);
+  final rawRoutes = data['routes'];
+  if (rawRoutes is! List) return data;
+
+  data['routes'] = rawRoutes.map((rawRoute) {
+    if (rawRoute is! Map) return rawRoute;
+    final route = Map<String, dynamic>.from(rawRoute);
+    final rawGeometry = route['geometry'];
+    if (rawGeometry is! Map) return route;
+    final geometry = Map<String, dynamic>.from(rawGeometry);
+    final rawCoordinates = geometry['coordinates'];
+    if (rawCoordinates is List) {
+      final decodedCoordinates = <List<double>>[];
+      for (final coordinate in rawCoordinates) {
+        if (coordinate is! List || coordinate.length < 2 ||
+            coordinate[0] is! num || coordinate[1] is! num) {
+          continue;
+        }
+        decodedCoordinates.add(<double>[
+          (coordinate[0] as num).toDouble(),
+          (coordinate[1] as num).toDouble(),
+        ]);
+      }
+      // Keep GeoJSON intact for the existing route/alternative renderer,
+      // while caching validated points produced on the background isolate.
+      route['_bakeDecodedCoordinates'] = decodedCoordinates;
+    }
+    return route;
+  }).toList(growable: false);
+  return data;
+}
+
+List<LatLng> _routePointsFromDecodedRoute(Map<String, dynamic> route) {
+  final cached = route['_bakeDecodedCoordinates'];
+  final geometry = route['geometry'];
+  final coordinates = cached is List
+      ? cached
+      : (geometry is Map ? geometry['coordinates'] : null);
+  if (coordinates is! List) return <LatLng>[];
+  return coordinates.whereType<List>().where((pair) => pair.length >= 2 &&
+      pair[0] is num && pair[1] is num).map((pair) {
+    return LatLng((pair[1] as num).toDouble(), (pair[0] as num).toDouble());
+  }).toList(growable: false);
+}
+
 class NavigatorScreen extends StatefulWidget {
   const NavigatorScreen({super.key});
 
@@ -1858,7 +1908,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       if (diagnosticRaw == null || diagnosticRaw.isEmpty) {
         throw Exception('Пустой ответ на контрольный офлайн-маршрут.');
       }
-      final diagnosticData = jsonDecode(diagnosticRaw) as Map<String, dynamic>;
+      final diagnosticData = await compute(
+        _decodeValhallaRouteResponseInBackground,
+        diagnosticRaw,
+      );
       final routes = (diagnosticData['routes'] as List?) ?? const [];
       final route = routes.isNotEmpty ? routes.first : null;
       final geometry = route is Map<String, dynamic> ? route['geometry'] : null;
@@ -4373,7 +4426,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             if (raw == null || raw.isEmpty) {
               throw Exception('Пустой ответ офлайн-маршрутизатора.');
             }
-            final localData = jsonDecode(raw) as Map<String, dynamic>;
+            // Native Valhalla routing already runs on its dedicated Kotlin
+            // worker. Decode the potentially large GeoJSON response off the UI
+            // isolate as well, so map gestures and GPS rendering stay responsive.
+            final localData = await compute(
+              _decodeValhallaRouteResponseInBackground,
+              raw,
+            );
             final localRoutes = (localData['routes'] as List?) ?? const [];
             // The shared route renderer expects OSRM-compatible GeoJSON geometry.
             // Reject malformed Valhalla responses here so the online fallback runs
@@ -4458,12 +4517,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
 
       final first = validRoutes.first;
-      final geometry = first['geometry'] as Map<String, dynamic>;
-      final coordinatesList = geometry['coordinates'] as List<dynamic>;
-      final points = coordinatesList.map((coordinate) {
-        final pair = coordinate as List<dynamic>;
-        return LatLng((pair[1] as num).toDouble(), (pair[0] as num).toDouble());
-      }).toList();
+      final points = _routePointsFromDecodedRoute(first);
       final instructions = _readInstructions(first);
       final distance = (first['distance'] as num).toDouble();
       final duration = (first['duration'] as num).toDouble();
@@ -4567,12 +4621,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   void _selectRouteAlternative(int index) {
     if (index < 0 || index >= _routeAlternatives.length) return;
     final route = _routeAlternatives[index];
-    final geometry = route['geometry'] as Map<String, dynamic>;
-    final coordinates = geometry['coordinates'] as List<dynamic>;
-    final points = coordinates.map((coordinate) {
-      final pair = coordinate as List<dynamic>;
-      return LatLng((pair[1] as num).toDouble(), (pair[0] as num).toDouble());
-    }).toList();
+    final points = _routePointsFromDecodedRoute(route);
     final instructions = _readInstructions(route);
     setState(() {
       _selectedRouteIndex = index;
