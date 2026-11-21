@@ -361,13 +361,11 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
   final Set<String> _busyIds = <String>{};
   bool _loading = true;
   String? _error;
-  String? _adminPin;
 
   @override
   void initState() { super.initState(); _loadReports(); }
 
   @override
-  void dispose() { _adminPin = null; super.dispose(); }
 
   Future<void> _loadReports() async {
     if (mounted) setState(() { _loading = true; _error = null; });
@@ -381,32 +379,6 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
     }
   }
 
-  Future<String?> _requestPin() async {
-    if (_adminPin != null && _adminPin!.isNotEmpty) return _adminPin;
-    final controller = TextEditingController();
-    final pin = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('PIN администратора'),
-        content: TextField(
-          controller: controller, autofocus: true, obscureText: true,
-          autocorrect: false, enableSuggestions: false,
-          decoration: const InputDecoration(labelText: 'Введите PIN', border: OutlineInputBorder()),
-          onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Продолжить')),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (pin == null || pin.isEmpty) return null;
-    _adminPin = pin;
-    return pin;
-  }
-
   Future<void> _moderate(Map<String, dynamic> record, String action) async {
     final id = record['id']?.toString() ?? '';
     if (id.isEmpty || _busyIds.contains(id)) return;
@@ -415,7 +387,7 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('Удалить отметку?'),
-          content: const Text('Запись будет удалена из общей базы Supabase без возможности восстановления.'),
+          content: const Text('Запись будет удалена из общей базы Supabase.'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
             FilledButton(
@@ -428,20 +400,19 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
       );
       if (confirmed != true || !mounted) return;
     }
-    final pin = await _requestPin();
-    if (pin == null || !mounted) return;
     setState(() => _busyIds.add(id));
     try {
-      await RoadReportSyncService.moderateReport(reportId: id, action: action, pin: pin);
+      await RoadReportSyncService.moderateReport(reportId: id, action: action);
       await _loadReports();
       if (!mounted) return;
       final message = action == 'approve' ? 'Отметка подтверждена'
           : action == 'reject' ? 'Отметка отклонена' : 'Отметка удалена';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     } catch (error) {
-      _adminPin = null;
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка модерации: ' + error.toString())));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка модерации: ' + error.toString())),
+      );
     } finally {
       if (mounted) setState(() => _busyIds.remove(id));
     }
