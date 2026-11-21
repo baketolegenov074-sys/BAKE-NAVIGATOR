@@ -10,7 +10,7 @@ on:
   workflow_call:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: shymkent-valhalla-tiles
@@ -170,3 +170,16 @@ jobs:
             output/sample-route.json
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish stable public download for automatic app setup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="shymkent-valhalla-latest"
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" \
+              --title "BAKE Navigator — Shymkent offline routing data" \
+              --notes "Automatically downloaded by BAKE Navigator on first launch. OpenStreetMap contributors; ODbL." \
+              --prerelease
+          gh release upload "$TAG" output/shymkent-valhalla.tar --clobber
