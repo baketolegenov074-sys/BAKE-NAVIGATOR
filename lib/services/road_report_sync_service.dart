@@ -1,24 +1,27 @@
+import 'dart:math';
+
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Optional cloud sync for community road reports.
-/// Configure with --dart-define=SUPABASE_URL=... and SUPABASE_ANON_KEY=...
+/// Local-first road reports with public Supabase REST access.
+/// SUPABASE_ANON_KEY may contain the project's Supabase Publishable key.
 class RoadReportSyncService {
   RoadReportSyncService._();
 
   static const String _url = String.fromEnvironment('SUPABASE_URL');
-  static const String _anonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+  static const String _publishableKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
   static bool _initialized = false;
   static RealtimeChannel? _reportsChannel;
 
-  static bool get isConfigured => _url.isNotEmpty && _anonKey.isNotEmpty;
+  static bool get isConfigured =>
+      _url.isNotEmpty && _publishableKey.isNotEmpty;
   static bool get isInitialized => _initialized;
 
   static Future<void> initialize() async {
     if (!isConfigured || _initialized) return;
-    await Supabase.initialize(url: _url, anonKey: _anonKey);
+    await Supabase.initialize(url: _url, anonKey: _publishableKey);
     _initialized = true;
-    await ensureSession();
   }
 
   static SupabaseClient get _client {
@@ -28,17 +31,29 @@ class RoadReportSyncService {
     return Supabase.instance.client;
   }
 
-  static Future<void> ensureSession() async {
-    if (!_initialized) return;
-    if (_client.auth.currentSession == null) {
-      await _client.auth.signInAnonymously();
-    }
+  /// Stable random identifier stored only on this device.
+  static Future<String> getDeviceId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getString('bake_road_device_id_v1');
+    if (existing != null && existing.isNotEmpty) return existing;
+
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();
+    final id = '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
+    await prefs.setString('bake_road_device_id_v1', id);
+    return id;
   }
 
   static Map<String, dynamic> _toDatabase(Map<String, dynamic> report) {
     final createdAt = DateTime.tryParse(report['createdAt']?.toString() ?? '');
     return <String, dynamic>{
       'id': report['id'].toString(),
+      'device_id': report['deviceId'].toString(),
       'type': report['type'].toString(),
       'latitude': (report['latitude'] as num).toDouble(),
       'longitude': (report['longitude'] as num).toDouble(),
@@ -55,6 +70,7 @@ class RoadReportSyncService {
   static Map<String, dynamic> _fromDatabase(Map<String, dynamic> row) =>
       <String, dynamic>{
         'id': row['id'],
+        'deviceId': row['device_id'],
         'type': row['type'],
         'latitude': row['latitude'],
         'longitude': row['longitude'],
@@ -68,19 +84,22 @@ class RoadReportSyncService {
         'syncStatus': 'Синхронизировано',
       };
 
+  /// Inserts only; public clients are deliberately not granted UPDATE access.
   static Future<void> uploadReport(Map<String, dynamic> report) async {
     if (!_initialized) return;
-    await ensureSession();
-    await _client.from('road_reports').upsert(
-      _toDatabase(report),
-      onConflict: 'id',
-      ignoreDuplicates: true,
-    );
+    final payload = Map<String, dynamic>.from(report);
+    payload['deviceId'] ??= await getDeviceId();
+    try {
+      await _client.from('road_reports').insert(_toDatabase(payload));
+    } on PostgrestException catch (error) {
+      // A retry of an already uploaded local report is considered successful.
+      if (error.code == '23505') return;
+      rethrow;
+    }
   }
 
   static Future<List<Map<String, dynamic>>> fetchConfirmedReports() async {
     if (!_initialized) return <Map<String, dynamic>>[];
-    await ensureSession();
     final rows = await _client
         .from('road_reports')
         .select()
@@ -89,6 +108,8 @@ class RoadReportSyncService {
     return rows.map((row) => _fromDatabase(row)).toList();
   }
 
+  /// Read-only list for the local admin screen; moderation is not exposed
+  /// through the public client because that would let any device approve data.
   static Future<List<Map<String, dynamic>>> fetchAllReportsForAdmin() async {
     if (!_initialized) throw StateError('Облачная синхронизация не настроена.');
     final rows = await _client
@@ -96,43 +117,6 @@ class RoadReportSyncService {
         .select()
         .order('created_at', ascending: false);
     return rows.map((row) => _fromDatabase(row)).toList();
-  }
-
-  static Future<bool> hasAdminAccess() async {
-    if (!_initialized || _client.auth.currentUser == null) return false;
-    final userId = _client.auth.currentUser!.id;
-    final row = await _client
-        .from('road_admins')
-        .select('user_id')
-        .eq('user_id', userId)
-        .maybeSingle();
-    return row != null;
-  }
-
-  static Future<void> signInAdmin(String email, String password) async {
-    if (!_initialized) throw StateError('Сервер не настроен в этой версии приложения.');
-    await _client.auth.signInWithPassword(email: email.trim(), password: password);
-    if (!await hasAdminAccess()) {
-      await _client.auth.signOut();
-      await ensureSession();
-      throw StateError('У этой учётной записи нет прав администратора BAKE.');
-    }
-  }
-
-  static Future<void> signOutAdmin() async {
-    if (!_initialized) return;
-    await _client.auth.signOut();
-    await ensureSession();
-  }
-
-  static Future<void> setReportStatus(String id, String status) async {
-    if (!_initialized) throw StateError('Сервер не настроен.');
-    final userId = _client.auth.currentUser?.id;
-    await _client.from('road_reports').update({
-      'status': status,
-      'reviewed_at': DateTime.now().toUtc().toIso8601String(),
-      'reviewed_by': userId,
-    }).eq('id', id);
   }
 
   static void subscribeToChanges(void Function() onChanged) {
