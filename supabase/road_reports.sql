@@ -1,6 +1,5 @@
 -- BAKE Navigator: local-first road reports with public anonymous REST access.
--- Safe for ordinary app users: INSERT and SELECT only. No Auth login is required.
--- Public clients cannot approve, edit, or delete reports.
+-- The app has no Supabase Auth login. Moderation uses the public anon/publishable key.
 
 create table if not exists public.road_reports (
   id text primary key,
@@ -34,8 +33,7 @@ alter table public.road_reports
 
 alter table public.road_reports enable row level security;
 
-grant select, insert on public.road_reports to anon, authenticated;
-revoke update, delete on public.road_reports from anon, authenticated;
+grant select, insert, update, delete on public.road_reports to anon, authenticated;
 
 drop policy if exists "read confirmed reports or all as admin" on public.road_reports;
 drop policy if exists "submit own pending reports" on public.road_reports;
@@ -68,20 +66,19 @@ begin
 end $$;
 
 
--- Administrator moderation for road_reports.
--- Only authenticated users listed in road_admins can moderate reports.
-grant select, insert, update, delete on public.road_reports to authenticated;
-grant select, insert on public.road_reports to anon;
-revoke update, delete on public.road_reports from anon;
+-- Public moderation through the Supabase anon/publishable key; no Auth session.
+grant select, insert, update, delete on public.road_reports to anon, authenticated;
 
 drop policy if exists "admins moderate road reports" on public.road_reports;
 drop policy if exists "admins delete road reports" on public.road_reports;
+drop policy if exists "public can moderate road reports" on public.road_reports;
+drop policy if exists "public can delete road reports" on public.road_reports;
 
-create policy "admins moderate road reports"
-on public.road_reports for update to authenticated
-using (exists (select 1 from public.road_admins ra where ra.user_id = (select auth.uid())))
-with check (exists (select 1 from public.road_admins ra where ra.user_id = (select auth.uid())));
+create policy "public can moderate road reports"
+on public.road_reports for update to anon, authenticated
+using (true)
+with check (true);
 
-create policy "admins delete road reports"
-on public.road_reports for delete to authenticated
-using (exists (select 1 from public.road_admins ra where ra.user_id = (select auth.uid())));
+create policy "public can delete road reports"
+on public.road_reports for delete to anon, authenticated
+using (true);
