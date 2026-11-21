@@ -7,6 +7,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:piper_phonemize/piper_phonemize.dart' as piper;
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 
 const String _kazakhModelName = 'vits-piper-kk_KZ-issai-high';
@@ -131,6 +132,8 @@ class KazakhVoiceService {
   Completer<void>? _ready;
   Future<void>? _starting;
   int _requestId = 0;
+  String _phonemizerVoice = 'kk';
+  bool _phonemizerInitialized = false;
 
   Future<String> _modelDirectory() async {
     final support = await getApplicationSupportDirectory();
@@ -317,6 +320,13 @@ class KazakhVoiceService {
   }) async {
     final modelDir = await _downloadAndExtractModel(onProgress: onProgress, onStage: onStage);
     onStage?.call('initializing');
+    // sherpa-onnx 2.x no longer embeds eSpeak/Piper phonemization.
+    if (!_phonemizerInitialized) {
+      await piper.initBindingsAsync();
+      final result = piper.PiperPhonemize.initialize('$modelDir/espeak-ng-data');
+      if (result < 0) throw Exception('Не удалось инициализировать казахский фонетизатор eSpeak-NG.');
+      _phonemizerInitialized = true;
+    }
     final receivePort = ReceivePort();
     _receivePort = receivePort;
     _ready = Completer<void>();
@@ -330,6 +340,8 @@ class KazakhVoiceService {
       if (message is! Map) return;
       final type = message['type'];
       if (type == 'ready') {
+        final modelVoice = message['lang']?.toString().trim() ?? '';
+        _phonemizerVoice = modelVoice.isEmpty ? 'kk' : modelVoice;
         if (!(_ready?.isCompleted ?? true)) _ready!.complete();
       } else if (type == 'error') {
         final error = Exception(message['message']?.toString() ?? 'Ошибка голосового движка.');
@@ -388,6 +400,13 @@ class KazakhVoiceService {
       throw Exception('Казахский голосовой движок не запустился: нет связи с аудиомодулем.');
     }
 
+    final normalizedText = _normalizeKazakhSpeechText(text);
+    if (normalizedText.isEmpty) throw Exception('После очистки текста не осталось слов для озвучивания.');
+    final phonemeCodepoints = piper.PiperPhonemize
+        .phonemize(normalizedText, voice: _phonemizerVoice)
+        .where((sentence) => sentence.isNotEmpty)
+        .toList(growable: false);
+    if (phonemeCodepoints.isEmpty) throw Exception('Фонетизатор не создал фонемы для казахского текста.');
     final id = _requestId++;
     final temp = await getTemporaryDirectory();
     final wavPath = '${temp.path}/bake_kazakh_voice_$id.wav';
@@ -398,7 +417,8 @@ class KazakhVoiceService {
       worker.send({
         'command': 'speak',
         'id': id,
-        'text': text,
+        'text': normalizedText,
+        'phonemeCodepoints': phonemeCodepoints,
         'speakerId': speakerId.clamp(0, 5).toInt(),
         'speed': speed,
         'wavPath': wavPath,
@@ -453,6 +473,14 @@ class KazakhVoiceService {
   }
 }
 
+String _normalizeKazakhSpeechText(String input) {
+  var text = input.replaceAll('\u00A0', ' ').replaceAll('№', ' нөмір ')
+      .replaceAll(RegExp(r'[\r\n\t]+'), ' ');
+  text = text.replaceAll(RegExp(r"[^A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі0-9\s.,!?;:()\-–—%']"), ' ');
+  text = text.replaceAll(RegExp(r'([,;:.!?])\1+'), r'$1');
+  return text.replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
 void _kazakhTtsWorker(SendPort mainPort) {
   final receivePort = ReceivePort();
   mainPort.send(receivePort.sendPort);
@@ -471,7 +499,6 @@ void _kazakhTtsWorker(SendPort mainPort) {
             vits: sherpa.OfflineTtsVitsModelConfig(
               model: '$dir/kk_KZ-issai-high.onnx',
               tokens: '$dir/tokens.txt',
-              dataDir: '$dir/espeak-ng-data',
             ),
             numThreads: 2,
             debug: false,
@@ -479,20 +506,28 @@ void _kazakhTtsWorker(SendPort mainPort) {
           maxNumSentences: 2,
         );
         engine = sherpa.OfflineTts(config);
-        mainPort.send({'type': 'ready', 'speakers': engine!.numSpeakers});
+        mainPort.send({'type': 'ready', 'speakers': engine!.numSpeakers, 'lang': engine!.lang});
       } catch (error) {
         mainPort.send({'type': 'error', 'message': error.toString()});
       }
     } else if (command == 'speak' && engine != null) {
       final id = message['id'] as int;
       try {
-        // Use the simple, documented VITS generation API. It passes speaker ID
-        // and speed directly and avoids the advanced config FFI path.
-        final audio = engine!.generate(
-          text: message['text'] as String,
-          sid: message['speakerId'] as int,
+        final rawSentences = message['phonemeCodepoints'];
+        if (rawSentences is! List) throw Exception('Не переданы фонемы в Sherpa-ONNX.');
+        final sentences = rawSentences
+            .map((sentence) => (sentence as List).map((value) => (value as num).toInt()).toList(growable: false))
+            .where((sentence) => sentence.isNotEmpty)
+            .toList(growable: false);
+        if (sentences.isEmpty) throw Exception('Фонетизатор вернул пустой список фонем.');
+        final sid = (message['speakerId'] as int).clamp(0, engine!.numSpeakers - 1).toInt();
+        final generationConfig = sherpa.OfflineTtsGenerationConfig(
+          sid: sid,
           speed: (message['speed'] as num).toDouble(),
+          silenceScale: 0.2,
+          phonemeCodepoints: sentences,
         );
+        final audio = engine!.generateWithConfig(text: '', config: generationConfig);
         final samples = audio.samples;
         final sampleRate = audio.sampleRate;
         final speakerCount = engine!.numSpeakers;

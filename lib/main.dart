@@ -33,6 +33,20 @@ import 'services/valhalla_archive_validator.dart';
 // glyph URLs are not used by vector_tile_renderer.
 vtr.Theme _buildBakeOfflineVectorTheme() {
   final base = vtr.ProvidedThemes.lightTheme();
+  final roads = vtr.ThemeReader().read({
+    'id': 'bake-shymkent-road-widths', 'metadata': {'version': '1'},
+    'sources': {'openmaptiles': {'type': 'vector'}},
+    'layers': [
+      {'id': 'bake_transportation_casing', 'type': 'line', 'source': 'openmaptiles', 'source-layer': 'transportation', 'minzoom': 13,
+       'filter': ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'residential', 'unclassified', 'service', 'living_street'],
+       'layout': {'line-cap': 'round', 'line-join': 'round'},
+       'paint': {'line-color': '#FFFFFF', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 4.8, 14, 5.8, 15, 7.4, 16, 9.0, 17, 11.0, 18, 13.0]}},
+      {'id': 'bake_transportation_wide', 'type': 'line', 'source': 'openmaptiles', 'source-layer': 'transportation', 'minzoom': 13,
+       'filter': ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'residential', 'unclassified', 'service', 'living_street'],
+       'layout': {'line-cap': 'round', 'line-join': 'round'},
+       'paint': {'line-color': '#F4D18A', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 2.4, 14, 3.2, 15, 4.4, 16, 5.8, 17, 7.5, 18, 9.0]}},
+    ],
+  });
   final labels = vtr.ThemeReader().read({
     'id': 'bake-shymkent-offline-labels',
     'metadata': {'version': '1'},
@@ -155,6 +169,7 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
     version: '1',
     layers: [
       ...base.layers.where((layer) => layer.id != 'road_label'),
+      ...roads.layers,
       ...labels.layers,
     ],
   );
@@ -1383,9 +1398,37 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         jsonDecode(utf8.decode(response.bodyBytes)) as Map,
       );
       final sources = Map<String, dynamic>.from(style['sources'] as Map);
-      final layers = (style['layers'] as List)
+      var layers = (style['layers'] as List)
           .map((item) => Map<String, dynamic>.from(item as Map))
           .toList();
+
+      final widenedRoadLayers = <Map<String, dynamic>>[];
+      final existingLayerIds = layers.map((layer) => layer['id']?.toString()).toSet();
+      for (final layer in layers) {
+        final id = layer['id']?.toString() ?? '';
+        final sourceLayer = layer['source-layer']?.toString() ?? '';
+        final isRoadLine = layer['type'] == 'line' && (sourceLayer == 'transportation' || RegExp(r'^(road|transportation|bridge|tunnel)').hasMatch(id));
+        final isCasing = RegExp(r'(casing|outline|border)', caseSensitive: false).hasMatch(id);
+        if (isRoadLine && !isCasing) {
+          final paint = Map<String, dynamic>.from((layer['paint'] as Map?) ?? <String, dynamic>{});
+          final width = paint['line-width'];
+          if (width != null) {
+            final wide = ['*', width, 2.25];
+            final casingId = '$id-bake-casing';
+            if (!existingLayerIds.contains(casingId)) {
+              final casing = Map<String, dynamic>.from(layer);
+              casing['id'] = casingId;
+              casing['paint'] = {'line-color': '#FFFFFF', 'line-width': ['+', wide, 2.4], 'line-opacity': paint['line-opacity'] ?? 1};
+              widenedRoadLayers.add(casing);
+              existingLayerIds.add(casingId);
+            }
+            paint['line-width'] = wide;
+            layer['paint'] = paint;
+          }
+        }
+        widenedRoadLayers.add(layer);
+      }
+      layers = widenedRoadLayers;
 
       String? vectorSourceId;
       for (final layer in layers) {
@@ -2521,6 +2564,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           final selectedExists = voices.any((v) => '${v['name']}|${v['locale']}' == selectedKey);
           return SafeArea(
             top: true,
+            bottom: true,
+            minimum: const EdgeInsets.only(bottom: 24),
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(18, 16, 18, 24),
               child: Column(
@@ -7650,26 +7695,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                         ],
                       ),
                     ),
-                  ),
-                ),
-              ),
-            ),
-          if (_navigationActive)
-            Positioned(
-              left: 14,
-              bottom: 225,
-              child: Material(
-                color: Colors.white,
-                elevation: 4,
-                borderRadius: BorderRadius.circular(12),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(_currentSpeedKmh.round().toString(), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                      const Text('км/ч', style: TextStyle(fontSize: 10)),
-                    ],
                   ),
                 ),
               ),
