@@ -407,7 +407,7 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
       await _loadReports();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(status == 'approved' ? 'Объект подтверждён.' : 'Объект отклонён.'),
+          content: Text(status == 'Подтверждено' ? 'Объект подтверждён.' : 'Объект отклонён.'),
         ));
       }
     } catch (error) {
@@ -507,14 +507,14 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
                     ),
                     icon: const Icon(Icons.map_outlined), label: const Text('На карте'),
                   ),
-                  if (record['status']?.toString() != 'approved')
+                  if (record['status']?.toString() != 'Подтверждено')
                     FilledButton.icon(
-                      onPressed: _busyRecordIds.contains(record['id']?.toString()) ? null : () => _moderateReport(record, 'approved'),
+                      onPressed: _busyRecordIds.contains(record['id']?.toString()) ? null : () => _moderateReport(record, 'Подтверждено'),
                       icon: const Icon(Icons.check_circle_outline), label: const Text('Подтвердить'),
                     ),
-                  if (record['status']?.toString() != 'rejected')
+                  if (record['status']?.toString() != 'Отклонено')
                     OutlinedButton.icon(
-                      onPressed: _busyRecordIds.contains(record['id']?.toString()) ? null : () => _moderateReport(record, 'rejected'),
+                      onPressed: _busyRecordIds.contains(record['id']?.toString()) ? null : () => _moderateReport(record, 'Отклонено'),
                       icon: const Icon(Icons.cancel_outlined), label: const Text('Отклонить'),
                     ),
                   OutlinedButton.icon(
@@ -531,11 +531,11 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
   }
 
   Widget _statusChip(String status) {
-    final color = status == 'approved' || status == 'Подтверждено' ? Colors.green
-        : status == 'rejected' || status == 'Отклонено' ? Colors.red : Colors.orange;
+    final color = status == 'Подтверждено' ? Colors.green
+        : status == 'Отклонено' ? Colors.red : Colors.orange;
     return Chip(
       visualDensity: VisualDensity.compact,
-      label: Text(status == 'approved' ? 'Одобрено' : status == 'rejected' ? 'Отклонено' : status, style: const TextStyle(fontSize: 11)),
+      label: Text(status, style: const TextStyle(fontSize: 11)),
       backgroundColor: color.withValues(alpha: 0.12),
       side: BorderSide(color: color.withValues(alpha: 0.35)),
       padding: EdgeInsets.zero,
@@ -618,7 +618,7 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
         ),
         Expanded(child: TabBarView(children: [
           _buildReportList('На проверке'),
-          _buildReportList('approved'),
+          _buildReportList('Подтверждено'),
           _buildReportList(null),
         ])),
       ]),
