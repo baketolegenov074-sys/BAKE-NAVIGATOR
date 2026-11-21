@@ -641,6 +641,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   final OfflineAddressSearch _offlineAddressSearch = OfflineAddressSearch();
   List<RoadAlert> _roadAlerts = <RoadAlert>[];
   List<RoadAlert> _bundledRoadAlerts = <RoadAlert>[];
+  List<Map<String, dynamic>> _confirmedRoadReports = <Map<String, dynamic>>[];
   final Map<String, int> _announcedRoadAlertStages = <String, int>{};
   DateTime? _lastRoadAlertLookup;
   LatLng? _lastRoadAlertLookupPoint;
@@ -705,6 +706,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     super.initState();
     _configureVoice();
     unawaited(_loadBundledRoadAlerts());
+    unawaited(_loadConfirmedRoadReports());
     unawaited(_offlineAddressSearch.initialize());
     _loadSavedOfflineMap();
     _loadSavedRoutePoints();
@@ -1518,6 +1520,28 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       // symbols when they collide with road labels or other annotations;
       // the circle keeps every camera position visible in both 2D and 3D.
       // The pictogram is an additional label, not the only visible marker.
+      for (final report in _confirmedRoadReports) {
+        final point = ml.LatLng(
+          (report['latitude'] as num).toDouble(),
+          (report['longitude'] as num).toDouble(),
+        );
+        await controller.addCircle(ml.CircleOptions(
+          geometry: point,
+          circleRadius: 11,
+          circleColor: '#FFD54F',
+          circleOpacity: 1,
+          circleStrokeColor: '#202020',
+          circleStrokeWidth: 2.5,
+        ));
+        await controller.addSymbol(ml.SymbolOptions(
+          geometry: point,
+          textField: _roadReportGlyph(report),
+          textSize: 17,
+          textColor: '#202020',
+          textHaloColor: '#FFFFFF',
+          textHaloWidth: 1.5,
+        ));
+      }
       for (final alert in _roadAlertsVisibleOnMap()) {
         await controller.addCircle(ml.CircleOptions(
           geometry: _toMapLibrePoint(alert.location),
@@ -3329,6 +3353,63 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _loadConfirmedRoadReports() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rows = prefs.getStringList('bake_road_reports_v1') ?? <String>[];
+      final reports = <Map<String, dynamic>>[];
+      for (final raw in rows) {
+        try {
+          final record = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+          if (record['status']?.toString() != 'Подтверждено') continue;
+          final lat = (record['latitude'] as num?)?.toDouble();
+          final lon = (record['longitude'] as num?)?.toDouble();
+          if (lat == null || lon == null || !lat.isFinite || !lon.isFinite) continue;
+          if (lat < -90 || lat > 90 || lon < -180 || lon > 180) continue;
+          reports.add(record);
+        } catch (_) { /* Ignore malformed local records. */ }
+      }
+      if (!mounted) return;
+      setState(() => _confirmedRoadReports = reports);
+      unawaited(_syncMapLibreAnnotations());
+    } catch (error) {
+      debugPrint('Не удалось загрузить подтверждённые дорожные отметки: $error');
+    }
+  }
+
+  String _roadReportGlyph(Map<String, dynamic> report) {
+    final type = report['type']?.toString() ?? '';
+    if (type.contains('Камера')) return '📷';
+    if (type.contains('знак')) return '🚸';
+    if (type.contains('Светофор')) return '🚦';
+    if (type.contains('переход')) return '🚶';
+    if (type.contains('полицейский') || type.contains('Опасный')) return '⚠';
+    if (type.contains('переезд')) return '🚆';
+    if (type.contains('поворот')) return '↩';
+    if (type.contains('Односторон')) return '➡';
+    if (type.contains('Ремонт')) return '🚧';
+    if (type.contains('Школа')) return '🏫';
+    return '📍';
+  }
+
+  Widget _buildConfirmedRoadReportMarker(Map<String, dynamic> report) {
+    final type = report['type']?.toString() ?? 'Дорожный объект';
+    final date = report['createdAt']?.toString() ?? '';
+    return Tooltip(
+      message: '$type\\nПодтверждено${date.isNotEmpty ? '\\n$date' : ''}',
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFD54F),
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0xFF202020), width: 2),
+          boxShadow: const [BoxShadow(color: Color(0x44000000), blurRadius: 5, offset: Offset(0, 2))],
+        ),
+        alignment: Alignment.center,
+        child: Text(_roadReportGlyph(report), style: const TextStyle(fontSize: 22)),
       ),
     );
   }
@@ -5989,6 +6070,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         height: 46,
         child: _buildRoadAlertMapMarker(alert),
       )),
+      ..._confirmedRoadReports.map((report) => Marker(
+        point: LatLng((report['latitude'] as num).toDouble(), (report['longitude'] as num).toDouble()),
+        width: 44,
+        height: 44,
+        child: _buildConfirmedRoadReportMarker(report),
+      )),
       ..._routeStops.asMap().entries.map((entry) => Marker(
         point: entry.value,
         width: 38,
@@ -6203,9 +6290,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                   shape: const CircleBorder(),
                   child: IconButton(
                     tooltip: 'Дорожные отметки',
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const RoadToolsMenu()),
-                    ),
+                    onPressed: () async {
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const RoadToolsMenu()),
+                      );
+                      await _loadConfirmedRoadReports();
+                    },
                     icon: const Icon(Icons.menu, color: Color(0xFF343434)),
                   ),
                 ),
