@@ -1133,8 +1133,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   void _restoreHeadingUpCamera() {
-    if (!mounted || _northUpLocked) return;
     _headingUpGestureActive = false;
+    if (!mounted || _northUpLocked) return;
     final point = _currentLocation;
     if (point == null) return;
     final heading = _gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0;
@@ -1748,7 +1748,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     try {
       if (savedPath != null && savedPath.isNotEmpty) {
         final savedFile = File(savedPath);
-        if (await savedFile.exists() && await savedFile.length() > 100000) {
+        final savedExists = await savedFile.exists().timeout(
+          const Duration(seconds: 2), onTimeout: () => false,
+        );
+        final savedLength = savedExists
+            ? await savedFile.length().timeout(
+                const Duration(seconds: 2), onTimeout: () => 0,
+              )
+            : 0;
+        if (savedExists && savedLength > 100000) {
           archiveFile = savedFile;
           isManagedArchive = savedFile.path.endsWith('/shymkent-valhalla.tar');
         }
@@ -1761,7 +1769,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final directory = await getApplicationSupportDirectory();
         archiveFile = File('${directory.path}/shymkent-valhalla.tar');
         isManagedArchive = true;
-        if (!await archiveFile.exists() || await archiveFile.length() < 100000) {
+        final managedExists = await archiveFile.exists().timeout(
+          const Duration(seconds: 2), onTimeout: () => false,
+        );
+        final managedLength = managedExists
+            ? await archiveFile.length().timeout(
+                const Duration(seconds: 2), onTimeout: () => 0,
+              )
+            : 0;
+        if (!managedExists || managedLength < 100000) {
           final temporary = File('${archiveFile.path}.download');
           final response = await http
               .get(Uri.parse(
@@ -4075,7 +4091,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           '?overview=full&geometries=geojson&steps=true&alternatives=true',
         );
         // Public OSRM demo endpoint is for testing, not production traffic.
-        final response = await http.get(uri).timeout(const Duration(seconds: 25));
+        final response = await http.get(uri).timeout(const Duration(seconds: 5));
         if (response.statusCode != 200) throw Exception(AppLocale.pick('Сервис маршрутов временно недоступен.', 'Маршрут қызметі уақытша қолжетімсіз.', 'Route service is temporarily unavailable.'));
         routeData = jsonDecode(response.body) as Map<String, dynamic>;
       }
