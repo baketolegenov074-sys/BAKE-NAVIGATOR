@@ -386,6 +386,7 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
 
   Future<void> _loadReports() async {
     if (mounted) setState(() { _loading = true; _error = null; });
+    await _loadLocalPendingCount();
     try {
       final rows = await RoadReportSyncService.fetchAllReportsForAdmin();
       if (!mounted) return;
