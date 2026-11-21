@@ -684,16 +684,19 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
     length: 3,
     child: Scaffold(
       appBar: AppBar(
-        title: const Text('Кабинет администратора'),
+        title: const Text('Админ-кабинет', maxLines: 1, overflow: TextOverflow.visible),
         actions: [IconButton(
           tooltip: 'Обновить', onPressed: _loading ? null : _loadReports,
           icon: const Icon(Icons.refresh),
         )],
-        bottom: const TabBar(tabs: [
-          Tab(text: 'Новые'),
-          Tab(text: 'Одобрено'),
-          Tab(text: 'Все'),
-        ]),
+        bottom: const TabBar(
+          labelPadding: EdgeInsets.symmetric(horizontal: 12),
+          tabs: [
+            Tab(text: 'Новые'),
+            Tab(text: 'Одобрено'),
+            Tab(text: 'Все'),
+          ],
+        ),
       ),
       body: Column(children: [
         Padding(

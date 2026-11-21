@@ -711,7 +711,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   int _offRouteSamples = 0;
   DateTime? _lastAutomaticReroute;
   DateTime? _plannedDeparture;
-  String _message = AppLocale.pick('Нажмите «Моё местоположение» или удерживайте точку на карте', '«Менің орналасқан жерім» түймесін басыңыз немесе картадағы нүктені басып тұрыңыз', 'Tap “My location” or long-press a point on the map');
+  String _message = '';
 
   @override
   void initState() {
@@ -1540,14 +1540,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       // symbols when they collide with road labels or other annotations;
       // the circle keeps every camera position visible in both 2D and 3D.
       // The pictogram is an additional label, not the only visible marker.
-      for (final report in _confirmedRoadReports) {
+      for (final report in _confirmedRoadReports.where((r) => !_isAddressOnlyRoadReport(r))) {
         final point = ml.LatLng(
           (report['latitude'] as num).toDouble(),
           (report['longitude'] as num).toDouble(),
         );
         await controller.addCircle(ml.CircleOptions(
           geometry: point,
-          circleRadius: 11,
+          circleRadius: 7,
           circleColor: '#FFD54F',
           circleOpacity: 1,
           circleStrokeColor: '#202020',
@@ -1556,7 +1556,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         await controller.addSymbol(ml.SymbolOptions(
           geometry: point,
           textField: _roadReportGlyph(report),
-          textSize: 17,
+          textSize: 12,
           textColor: '#202020',
           textHaloColor: '#FFFFFF',
           textHaloWidth: 1.5,
@@ -1565,7 +1565,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       for (final alert in _roadAlertsVisibleOnMap()) {
         await controller.addCircle(ml.CircleOptions(
           geometry: _toMapLibrePoint(alert.location),
-          circleRadius: 10,
+          circleRadius: 7,
           circleColor: switch (alert.kind) {
             RoadAlertKind.speedCamera => '#B42318',
             RoadAlertKind.trafficSignalCamera => '#B54708',
@@ -1581,7 +1581,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         await controller.addSymbol(ml.SymbolOptions(
           geometry: _toMapLibrePoint(alert.location),
           textField: glyph,
-          textSize: 18,
+          textSize: 13,
           textColor: '#FFFFFF',
           textHaloColor: '#17324D',
           textHaloWidth: 1.5,
@@ -2266,8 +2266,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (position.speed >= 0.8 && position.heading.isFinite) {
           _gpsHeadingDegrees = position.heading;
         }
-        _message = AppLocale.pick('GPS определён. Положение будет обновляться в реальном времени.', 'GPS анықталды. Орналасқан жер нақты уақытта жаңартылып отырады.', 'GPS located. Your position will update in real time.');
+        _message = '';
       });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(AppLocale.pick('GPS определён.', 'GPS анықталды.', 'GPS located.')),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ));
       // Refresh the live position without interrupting the active navigation stream.
       // In particular, keep the Android foreground GPS subscription alive while
       // navigating; replacing it with a foreground-only stream can break tracking.
@@ -3365,15 +3370,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return Tooltip(
       message: details,
       child: SizedBox(
-        width: 42,
-        height: 46,
+        width: 28,
+        height: 30,
         child: Stack(
           clipBehavior: Clip.none,
           alignment: Alignment.center,
           children: [
             Container(
-              width: 38,
-              height: 38,
+              width: 26,
+              height: 26,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(11),
@@ -3513,6 +3518,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
+  bool _isAddressOnlyRoadReport(Map<String, dynamic> report) {
+    final type = (report['type'] ?? '').toString().trim().toLowerCase();
+    return type.contains('адрес') || type.contains('улиц') ||
+        type.contains('подъезд') || type.contains('ворот');
+  }
+
   String _roadReportGlyph(Map<String, dynamic> report) {
     final type = report['type']?.toString() ?? '';
     if (type.contains('Камера')) return '📷';
@@ -3541,7 +3552,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           boxShadow: const [BoxShadow(color: Color(0x44000000), blurRadius: 5, offset: Offset(0, 2))],
         ),
         alignment: Alignment.center,
-        child: Text(_roadReportGlyph(report), style: const TextStyle(fontSize: 22)),
+        child: Text(_roadReportGlyph(report), style: const TextStyle(fontSize: 14)),
       ),
     );
   }
@@ -4304,7 +4315,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                           ),
                         if (photonSuggestions.isNotEmpty)
                           Container(
-                            constraints: const BoxConstraints(maxHeight: 260),
+                            constraints: const BoxConstraints(maxHeight: 320),
                             margin: const EdgeInsets.only(top: 6),
                             decoration: BoxDecoration(
                               color: Colors.white,
@@ -4322,7 +4333,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                                   dense: true,
                                   leading: Icon(feature['_roadReport'] == true ? Icons.push_pin : Icons.location_on_outlined, size: 20, color: feature['_roadReport'] == true ? const Color(0xFF16834A) : null),
                                   title: Text(label.isEmpty ? 'Адрес' : label, maxLines: 2, overflow: TextOverflow.ellipsis),
-                                  subtitle: feature['_roadReport'] == true ? const Text('Подтверждённая точка из базы BAKE') : feature['_offline'] == true ? const Text('Офлайн-база Шымкента') : null,
+                                  subtitle: feature['_roadReport'] == true ? const Text('✓ Проверено', style: TextStyle(color: Color(0xFF16834A), fontWeight: FontWeight.w700)) : null,
                                   onTap: () {
                                     photonDebounce?.cancel();
                                     final geometry = feature['geometry'];
@@ -4911,6 +4922,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _openPointMenu(LatLng point) async {
     if (!mounted) return;
+    await HapticFeedback.lightImpact();
     await showModalBottomSheet<void>(
       context: context,
       builder: (sheetContext) => SafeArea(
@@ -6150,7 +6162,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 Icon(icon, size: 23, color: color),
                 const SizedBox(height: 3),
                 Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w800 : FontWeight.w500, color: color)),
+                  style: TextStyle(fontSize: 9, fontWeight: selected ? FontWeight.w800 : FontWeight.w500, color: color)),
               ],
             ),
           ),
@@ -6191,8 +6203,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       if (_currentLocation != null)
         Marker(
           point: _currentLocation!,
-          width: 56,
-          height: 56,
+          width: 40,
+          height: 40,
           child: Transform.rotate(
             angle: (_gpsHeadingDegrees ??
               (_routePoints.length > 1 ? _routeBearingAt(_currentLocation!) : 0.0)) *
@@ -6207,20 +6219,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 ],
               ),
               alignment: Alignment.center,
-              child: const Icon(Icons.navigation, color: Color(0xFFFFB800), size: 40),
+              child: const Icon(Icons.navigation, color: Color(0xFFFFB800), size: 30),
             ),
           ),
         ),
       ...visibleRoadAlerts.map((alert) => Marker(
         point: alert.location,
-        width: 42,
-        height: 46,
+        width: 28,
+        height: 30,
         child: _buildRoadAlertMapMarker(alert),
       )),
-      ..._confirmedRoadReports.map((report) => Marker(
+      ..._confirmedRoadReports.where((r) => !_isAddressOnlyRoadReport(r)).map((report) => Marker(
         point: LatLng((report['latitude'] as num).toDouble(), (report['longitude'] as num).toDouble()),
-        width: 44,
-        height: 44,
+        width: 28,
+        height: 28,
         child: _buildConfirmedRoadReportMarker(report),
       )),
       ..._routeStops.asMap().entries.map((entry) => Marker(
@@ -6270,7 +6282,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               styleString: 'https://tiles.openfreemap.org/styles/liberty',
               onMapCreated: _onMapLibreCreated,
               onStyleLoadedCallback: _onMapLibreStyleLoaded,
-              onMapClick: (_, point) => _selectMapDestination(LatLng(point.latitude, point.longitude)),
+              onMapClick: (_, __) {},
               onMapLongClick: (_, point) => _openPointMenu(LatLng(point.latitude, point.longitude)),
               compassEnabled: false,
               trackCameraPosition: true,
@@ -6286,7 +6298,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               options: MapOptions(
                 initialCenter: _shymkent,
                 initialZoom: 13,
-                onTap: (_, point) => _selectMapDestination(point),
+                onTap: (_, __) {},
                 onLongPress: (_, point) => _openPointMenu(point),
               ),
               children: [
@@ -6320,31 +6332,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               child: Material(
                 color: Colors.white,
                 elevation: 5,
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: _toggleOfflineMapFromMap,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _isOfflineMapActive ? Icons.cloud_outlined : Icons.download_for_offline_outlined,
-                          size: 18,
-                          color: const Color(0xFF202020),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          _isOfflineMapActive ? 'Онлайн' : 'Офлайн',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF202020),
-                          ),
-                        ),
-                      ],
-                    ),
+                shape: const CircleBorder(),
+                child: IconButton(
+                  tooltip: _isOfflineMapActive ? 'Офлайн-карта' : 'Онлайн-карта',
+                  onPressed: _toggleOfflineMapFromMap,
+                  icon: Icon(
+                    _isOfflineMapActive ? Icons.cloud_off_outlined : Icons.cloud_done_outlined,
+                    size: 21,
+                    color: _isOfflineMapActive ? const Color(0xFF8A929B) : const Color(0xFF169B55),
                   ),
                 ),
               ),
@@ -6822,7 +6817,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             Positioned(
               left: 12,
               right: 12,
-              bottom: -10,
+              bottom: 0,
               child: SafeArea(
                 top: false,
                 child: Material(
