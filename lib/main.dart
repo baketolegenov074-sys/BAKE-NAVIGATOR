@@ -24,6 +24,7 @@ import 'kazakh_voice_service.dart';
 import 'services/road_alert_service.dart';
 import 'services/offline_address_search.dart';
 import 'screens/road_report_center.dart';
+import 'services/valhalla_archive_validator.dart';
 
 
 // Offline label layers for the OpenMapTiles schema in shymkent.mbtiles.
@@ -1694,6 +1695,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
           if (await archiveFile.exists()) await archiveFile.delete();
           await temporary.rename(archiveFile.path);
         }
+      }
+
+      if (!await hasValidShymkentValhallaSha256(archiveFile)) {
+        throw Exception(
+          'Контрольная сумма дорожного графа Шымкента не совпадает. Архив отклонён.',
+        );
       }
 
       if (mounted) {
