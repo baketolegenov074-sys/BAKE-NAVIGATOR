@@ -69,7 +69,7 @@ end $$;
 
 
 -- Administrator moderation for road_reports.
--- Only authenticated accounts with trusted app_metadata.role = 'admin' can mutate rows.
+-- Only authenticated users listed in road_admins can moderate reports.
 grant select, insert, update, delete on public.road_reports to authenticated;
 grant select, insert on public.road_reports to anon;
 revoke update, delete on public.road_reports from anon;
@@ -79,9 +79,9 @@ drop policy if exists "admins delete road reports" on public.road_reports;
 
 create policy "admins moderate road reports"
 on public.road_reports for update to authenticated
-using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
-with check ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+using (exists (select 1 from public.road_admins ra where ra.user_id = (select auth.uid())))
+with check (exists (select 1 from public.road_admins ra where ra.user_id = (select auth.uid())));
 
 create policy "admins delete road reports"
 on public.road_reports for delete to authenticated
-using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+using (exists (select 1 from public.road_admins ra where ra.user_id = (select auth.uid())));
