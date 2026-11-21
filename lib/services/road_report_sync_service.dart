@@ -138,31 +138,19 @@ class RoadReportSyncService {
     return rows.map((row) => _fromDatabase(row)).toList();
   }
 
-  static Future<void> _requireAdmin() async {
-    final user = _client.auth.currentUser;
-    if (user == null) {
-      throw StateError('Войдите в учётную запись администратора Supabase.');
-    }
-    final adminRecord = await _client
-        .from('road_admins')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-    if (adminRecord == null) {
-      throw StateError('У этой учётной записи нет прав администратора.');
-    }
-  }
-
+  /// Public moderation requests use the project's publishable/anon key.
+  /// No Supabase Auth session or administrator account is used by this app.
   static Future<void> updateReportStatus(String id, String status) async {
     if (status != 'Подтверждено' && status != 'Отклонено') {
       throw ArgumentError.value(status, 'status', 'Недопустимый статус');
     }
-    await _requireAdmin();
-    await _client.from('road_reports').update({'status': status, 'reviewed_at': DateTime.now().toUtc().toIso8601String(), 'reviewed_by': _client.auth.currentUser!.id}).eq('id', id);
+    await _client.from('road_reports').update({
+      'status': status,
+      'reviewed_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', id);
   }
 
   static Future<void> deleteReport(String id) async {
-    _requireAdmin();
     await _client.from('road_reports').delete().eq('id', id);
   }
 
