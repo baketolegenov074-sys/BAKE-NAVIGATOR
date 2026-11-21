@@ -133,13 +133,32 @@ class RoadReportSyncService {
     final rows = await _client
         .from('road_reports')
         .select()
-        .eq('status', 'Подтверждено')
+        .eq('status', 'approved')
         .order('created_at', ascending: false);
     return rows.map((row) => _fromDatabase(row)).toList();
   }
 
-  /// Read-only list for the local admin screen; moderation is not exposed
-  /// through the public client because that would let any device approve data.
+  static void _requireAdmin() {
+    final user = _client.auth.currentUser;
+    if (user == null || user.appMetadata['role'] != 'admin') {
+      throw StateError('Вход администратора не выполнен. Нужна учётная запись Supabase Auth с app_metadata.role = admin.');
+    }
+  }
+
+  static Future<void> updateReportStatus(String id, String status) async {
+    if (status != 'approved' && status != 'rejected') {
+      throw ArgumentError.value(status, 'status', 'Недопустимый статус');
+    }
+    _requireAdmin();
+    await _client.from('road_reports').update({'status': status}).eq('id', id);
+  }
+
+  static Future<void> deleteReport(String id) async {
+    _requireAdmin();
+    await _client.from('road_reports').delete().eq('id', id);
+  }
+
+  /// List road reports for the admin screen.
   static Future<List<Map<String, dynamic>>> fetchAllReportsForAdmin() async {
     if (!_initialized) throw StateError('Облачная синхронизация не настроена.');
     final rows = await _client
