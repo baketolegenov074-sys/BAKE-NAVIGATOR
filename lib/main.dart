@@ -194,23 +194,39 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
     ],
   });
 
-  // Keep the built-in OpenMapTiles symbol layers (especially road_label).
-  // Draw wider BAKE road strokes before symbol layers so they cannot cover
-  // street names. Explicit labels remain last for regional name:* fallbacks.
-  final firstSymbolIndex = base.layers.indexWhere(
+  // Remove the default light-theme road strokes: they are drawn above
+  // BAKE's custom strokes and contain the orange casing/fill colors.
+  // Keep railways, one-way arrows, shields, buildings and symbol layers.
+  final baseWithoutDefaultRoadStrokes = base.layers.where((layer) {
+    final isRoadLine = layer.type == vtr.ThemeLayerType.line &&
+        (layer.id.startsWith('road_') ||
+            layer.id.startsWith('bridge_') ||
+            layer.id.startsWith('tunnel_'));
+    final isRailOrArrow = layer.id.contains('rail') ||
+        layer.id.contains('one_way_arrow');
+    return !isRoadLine || isRailOrArrow;
+  }).toList(growable: false);
+
+  // Built-in road labels and BAKE's regional name:* fallback labels stay
+  // above all road geometry.
+  final firstSymbolIndex = baseWithoutDefaultRoadStrokes.indexWhere(
     (layer) => layer.type == vtr.ThemeLayerType.symbol,
   );
   final orderedLayers = firstSymbolIndex < 0
-      ? <vtr.ThemeLayer>[...base.layers, ...roads.layers, ...labels.layers]
-      : <vtr.ThemeLayer>[
-          ...base.layers.take(firstSymbolIndex),
+      ? <vtr.ThemeLayer>[
+          ...baseWithoutDefaultRoadStrokes,
           ...roads.layers,
-          ...base.layers.skip(firstSymbolIndex),
+          ...labels.layers,
+        ]
+      : <vtr.ThemeLayer>[
+          ...baseWithoutDefaultRoadStrokes.take(firstSymbolIndex),
+          ...roads.layers,
+          ...baseWithoutDefaultRoadStrokes.skip(firstSymbolIndex),
           ...labels.layers,
         ];
   return vtr.Theme(
     id: 'bake-shymkent-offline',
-    version: '2',
+    version: '3',
     layers: orderedLayers,
   );
 }
