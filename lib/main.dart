@@ -93,7 +93,6 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         // transportation instead of transportation_name.
         'source-layer': 'transportation',
         'minzoom': 12,
-        'filter': ['has', 'name'],
         'layout': {
           'symbol-placement': 'line',
           'text-anchor': 'center',
@@ -1209,7 +1208,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       final volume = prefs.getDouble('voice_volume') ?? 1.0;
       final rate = prefs.getDouble('voice_rate') ?? 0.48;
       _voiceMode = prefs.getInt('voice_mode') ?? 3;
-      _navigationLanguage = prefs.getString('navigation_language') ?? 'kk-KZ';
+      _navigationLanguage = _normalizeNavigationLanguage(prefs.getString('navigation_language') ?? 'kk-KZ');
       _selectedVoiceName = prefs.getString('voice_name');
       _selectedVoiceLocale = prefs.getString('voice_locale');
       _kazakhVoiceId = (prefs.getInt('kazakh_voice_sid') ?? 0).clamp(0, 5).toInt();
@@ -1315,10 +1314,34 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
+  String _normalizeNavigationLanguage(String value) {
+    final code = value.toLowerCase().replaceAll('_', '-');
+    if (code == 'kk' || code.startsWith('kk-')) return 'kk-KZ';
+    if (code == 'en' || code.startsWith('en-')) return 'en-US';
+    return 'ru-RU';
+  }
+
   String _localized(String ru, String kk, String en) {
-    if (_navigationLanguage == 'kk-KZ') return kk;
-    if (_navigationLanguage == 'en-US') return en;
+    final code = _normalizeNavigationLanguage(_navigationLanguage);
+    if (code == 'kk-KZ') return kk;
+    if (code == 'en-US') return en;
     return ru;
+  }
+
+  String _localizedStepRoadName(Map<String, dynamic> step) {
+    final keys = _normalizeNavigationLanguage(_navigationLanguage) == 'kk-KZ'
+        ? const ['name:kk', 'name_kk', 'name:kk-KZ', 'name_kk_KZ', 'street_name:kk']
+        : _normalizeNavigationLanguage(_navigationLanguage) == 'en-US'
+            ? const ['name:en', 'name_en', 'street_name:en']
+            : const ['name:ru', 'name_ru', 'street_name:ru'];
+    for (final key in keys) {
+      final value = step[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    // A generic OSM "name" is not language-tagged. In Kazakh mode it may
+    // contain Russian-only text, so omit it rather than mixing languages.
+    if (_normalizeNavigationLanguage(_navigationLanguage) == 'kk-KZ') return '';
+    return (step['name']?.toString() ?? '').trim();
   }
 
   ml.LatLng _toMapLibrePoint(LatLng point) => ml.LatLng(point.latitude, point.longitude);
@@ -3789,7 +3812,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final maneuver = step['maneuver'] as Map<String, dynamic>? ?? {};
     final type = maneuver['type']?.toString() ?? '';
     final modifier = maneuver['modifier']?.toString() ?? '';
-    final name = (step['name']?.toString() ?? '').trim();
+    final name = _localizedStepRoadName(step);
     final road = name.isEmpty
         ? ''
         : _localized(' на $name', ' $name жолымен', ' on $name');
@@ -4789,7 +4812,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           _searchController.clear();
         });
         if (_voiceMode >= 1) {
-          _speakText(AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.'));
+          _speakText(_localized('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.'));
         }
         unawaited(_startLiveLocationUpdates());
         return;
@@ -5135,12 +5158,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         }
       }
       if (automaticReroute && resumeNavigation) {
-        if (_voiceMode >= 1) await _speakText(AppLocale.pick('Вы отклонились от маршрута. Маршрут перестроен.', 'Бағыттан ауытқыдыңыз. Маршрут қайта құрылды.', 'You left the route. The route has been recalculated.'));
+        if (_voiceMode >= 1) await _speakText(_localized('Вы отклонились от маршрута. Маршрут перестроен.', 'Бағыттан ауытқыдыңыз. Маршрут қайта құрылды.', 'You left the route. The route has been recalculated.'));
         await _speakCurrentInstruction();
       } else {
         final distanceKm = (distance / 1000).toStringAsFixed(1);
         final minutes = (duration / 60).round();
-        if (_voiceMode >= 3) await _speakText(AppLocale.pick('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.', 'Маршрут құрылды. Қашықтық $distanceKm километр. Жол уақыты шамамен $minutes минут.', 'Route built. Distance $distanceKm kilometers. Estimated travel time $minutes minutes.'));
+        if (_voiceMode >= 3) await _speakText(_localized('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.', 'Маршрут құрылды. Қашықтық $distanceKm километр. Жол уақыты шамамен $minutes минут.', 'Route built. Distance $distanceKm kilometers. Estimated travel time $minutes minutes.'));
         // Keep the map's persistent «Поехали» control unchanged.
       }
       // Present the available options immediately after a manual route search.
