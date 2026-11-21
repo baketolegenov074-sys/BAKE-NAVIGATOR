@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/road_report_sync_service.dart';
 
 /// Local-first road reports. Reports remain unverified until an administrator
 /// reviews them. No server endpoint is configured in this app yet.
@@ -135,7 +136,21 @@ class RoadReportCenter extends StatelessWidget {
       };
       rows.insert(0, jsonEncode(record));
       await prefs.setStringList('bake_road_reports_v1', rows);
-      notify(SnackBar(content: Text('Отметка «${type.title}» сохранена на телефоне.')));
+      var uploaded = false;
+      if (RoadReportSyncService.isInitialized) {
+        try {
+          await RoadReportSyncService.uploadReport(record);
+          record['syncStatus'] = 'Синхронизировано';
+          rows[0] = jsonEncode(record);
+          await prefs.setStringList('bake_road_reports_v1', rows);
+          uploaded = true;
+        } catch (_) {
+          // Keep the report locally; the navigator retries it on next launch.
+        }
+      }
+      notify(SnackBar(content: Text(uploaded
+          ? 'Отметка «${type.title}» отправлена на общую проверку.'
+          : 'Отметка «${type.title}» сохранена на телефоне и ждёт связи с сервером.')));
     } catch (error) {
       notify(SnackBar(content: Text('Не удалось получить GPS или сохранить отметку: $error')));
     }
@@ -335,42 +350,205 @@ class RoadAdminPage extends StatefulWidget {
 }
 
 class _RoadAdminPageState extends State<RoadAdminPage> {
+  final _email = TextEditingController();
+  final _password = TextEditingController();
   List<Map<String, dynamic>> _records = [];
+  bool _loading = true;
+  bool _signedIn = false;
+  String? _error;
+
   @override
-  void initState() { super.initState(); _load(); }
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final rows = prefs.getStringList('bake_road_reports_v1') ?? [];
-    if (!mounted) return;
-    setState(() => _records = rows.map((e) {
-      try { return Map<String, dynamic>.from(jsonDecode(e) as Map); } catch (_) { return <String, dynamic>{}; }
-    }).where((e) => e.isNotEmpty).toList());
+  void initState() {
+    super.initState();
+    _restoreAdminSession();
   }
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _restoreAdminSession() async {
+    if (!RoadReportSyncService.isInitialized) {
+      if (mounted) setState(() {
+        _loading = false;
+        _error = 'Облачный сервер не подключён к этой сборке приложения.';
+      });
+      return;
+    }
+    try {
+      final isAdmin = await RoadReportSyncService.hasAdminAccess();
+      if (isAdmin) {
+        await _loadReports();
+      } else if (mounted) {
+        setState(() => _loading = false);
+      }
+    } catch (error) {
+      if (mounted) setState(() {
+        _loading = false;
+        _error = 'Не удалось проверить доступ администратора: $error';
+      });
+    }
+  }
+
+  Future<void> _login() async {
+    if (_email.text.trim().isEmpty || _password.text.isEmpty) {
+      setState(() => _error = 'Введите email и пароль администратора.');
+      return;
+    }
+    setState(() { _loading = true; _error = null; });
+    try {
+      await RoadReportSyncService.signInAdmin(_email.text, _password.text);
+      await _loadReports();
+    } catch (error) {
+      if (mounted) setState(() {
+        _loading = false;
+        _error = error.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  Future<void> _loadReports() async {
+    try {
+      final rows = await RoadReportSyncService.fetchAllReportsForAdmin();
+      if (!mounted) return;
+      setState(() {
+        _records = rows;
+        _signedIn = true;
+        _loading = false;
+        _error = null;
+      });
+    } catch (error) {
+      if (mounted) setState(() {
+        _loading = false;
+        _error = 'Нет доступа к списку отметок: $error';
+      });
+    }
+  }
+
   Future<void> _setStatus(Map<String, dynamic> record, String status) async {
-    final prefs = await SharedPreferences.getInstance();
-    record['status'] = status;
-    await prefs.setStringList('bake_road_reports_v1', _records.map(jsonEncode).toList());
-    if (mounted) setState(() {});
+    try {
+      await RoadReportSyncService.setReportStatus(record['id'].toString(), status);
+      await _loadReports();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось изменить статус: $error')),
+        );
+      }
+    }
   }
+
+  Future<void> _logout() async {
+    await RoadReportSyncService.signOutAdmin();
+    if (!mounted) return;
+    setState(() {
+      _signedIn = false;
+      _records = [];
+      _password.clear();
+    });
+  }
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Кабинет администратора')),
-    body: ListView(padding: const EdgeInsets.all(12), children: [
-      const Card(child: Padding(padding: EdgeInsets.all(12), child: Text('Локальный просмотр на этом телефоне. Защищённый вход и общий сервер модерации ещё не подключены. Не используйте этот экран как удалённую админ-панель.'))),
-      if (_records.isEmpty) const Padding(padding: EdgeInsets.all(20), child: Text('Новых отметок нет.')),
-      ..._records.map((r) => Card(child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(r['type']?.toString() ?? 'Объект', style: const TextStyle(fontWeight: FontWeight.w800)),
-          Text('${r['latitude']}, ${r['longitude']} · ±${r['accuracyMeters']} м'),
-          Text('Текущий статус: ${r['status']}'),
-          Wrap(spacing: 8, children: [
-            TextButton(onPressed: () => _setStatus(r, 'Подтверждено'), child: const Text('Подтвердить')),
-            TextButton(onPressed: () => _setStatus(r, 'Отклонено'), child: const Text('Отклонить')),
-            TextButton(onPressed: () => _setStatus(r, 'На проверке'), child: const Text('На проверке')),
-          ]),
-        ]),
-      ))),
-    ]),
-  );
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Кабинет администратора'),
+        actions: [
+          if (_signedIn)
+            IconButton(
+              tooltip: 'Выйти',
+              onPressed: _logout,
+              icon: const Icon(Icons.logout),
+            ),
+        ],
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : !_signedIn
+              ? ListView(
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    const Icon(Icons.admin_panel_settings_outlined, size: 52),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Вход администратора BAKE',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 18),
+                    TextField(
+                      controller: _email,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        labelText: 'Email администратора',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _password,
+                      obscureText: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Пароль',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 12),
+                      Text(_error!, style: const TextStyle(color: Colors.red)),
+                    ],
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: _login,
+                      child: const Text('Войти'),
+                    ),
+                  ],
+                )
+              : _records.isEmpty
+                  ? const Center(child: Text('Дорожных отметок пока нет.'))
+                  : ListView(
+                      padding: const EdgeInsets.all(12),
+                      children: [
+                        Text('Всего отметок: ${_records.length}'),
+                        const SizedBox(height: 8),
+                        ..._records.map((r) => Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      r['type']?.toString() ?? 'Объект',
+                                      style: const TextStyle(fontWeight: FontWeight.w800),
+                                    ),
+                                    Text('${r['latitude']}, ${r['longitude']} · ±${r['accuracyMeters']} м'),
+                                    Text('Статус: ${r['status']}'),
+                                    Wrap(
+                                      spacing: 8,
+                                      children: [
+                                        TextButton(
+                                          onPressed: () => _setStatus(r, 'Подтверждено'),
+                                          child: const Text('Подтвердить'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => _setStatus(r, 'Отклонено'),
+                                          child: const Text('Отклонить'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () => _setStatus(r, 'На проверке'),
+                                          child: const Text('Вернуть на проверку'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )),
+                      ],
+                    ),
+    );
+  }
 }
