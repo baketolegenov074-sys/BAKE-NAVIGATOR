@@ -66,3 +66,22 @@ begin
     alter publication supabase_realtime add table public.road_reports;
   end if;
 end $$;
+
+
+-- Administrator moderation for road_reports.
+-- Only authenticated accounts with trusted app_metadata.role = 'admin' can mutate rows.
+grant select, insert, update, delete on public.road_reports to authenticated;
+grant select, insert on public.road_reports to anon;
+revoke update, delete on public.road_reports from anon;
+
+drop policy if exists "road_reports_admin_update" on public.road_reports;
+drop policy if exists "road_reports_admin_delete" on public.road_reports;
+
+create policy "road_reports_admin_update"
+on public.road_reports for update to authenticated
+using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
+with check ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+
+create policy "road_reports_admin_delete"
+on public.road_reports for delete to authenticated
+using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
