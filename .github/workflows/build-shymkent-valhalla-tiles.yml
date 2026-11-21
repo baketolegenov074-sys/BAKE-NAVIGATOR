@@ -25,16 +25,43 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y osmium-tool jq
 
-      - name: Download current Kazakhstan OSM data
+      - name: Download current Kazakhstan OSM data (with mirror fallback)
         shell: bash
         run: |
           set -euo pipefail
-          URL="https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf"
-          curl --fail --location --retry 5 --retry-all-errors \
-            --retry-delay 10 --connect-timeout 30 \
-            "$URL" -o kazakhstan-latest.osm.pbf
-          test -s kazakhstan-latest.osm.pbf
-          osmium fileinfo kazakhstan-latest.osm.pbf
+          OUTPUT="kazakhstan-latest.osm.pbf"
+          TEMP="${OUTPUT}.download"
+          URLS=(
+            "https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf"
+            "https://data.bbbike.org/osm/pbf/region/asia/kazakhstan.osm.pbf"
+          )
+
+          rm -f "$TEMP" "$OUTPUT"
+          downloaded=false
+
+          for URL in "${URLS[@]}"; do
+            echo "Trying OSM source: $URL"
+            if curl --fail --location --silent --show-error \
+              --retry 2 --retry-all-errors --retry-delay 5 \
+              --connect-timeout 30 --max-time 1800 \
+              "$URL" -o "$TEMP"; then
+              if test -s "$TEMP" && osmium fileinfo "$TEMP"; then
+                mv "$TEMP" "$OUTPUT"
+                downloaded=true
+                echo "Validated OSM PBF downloaded successfully."
+                break
+              fi
+              echo "Downloaded file failed validation; trying the next source."
+            else
+              echo "Source unavailable; trying the next source."
+            fi
+            rm -f "$TEMP"
+          done
+
+          if [ "$downloaded" != true ]; then
+            echo "::error::Could not download a valid Kazakhstan OSM PBF from any configured source."
+            exit 1
+          fi
 
       - name: Extract Shymkent with a routing buffer
         shell: bash
@@ -116,7 +143,7 @@ jobs:
 
           Файл: shymkent-valhalla.tar
           Формат: Valhalla tile extract (не MBTiles).
-          Источник дорожных данных: OpenStreetMap / Geofabrik Kazakhstan.
+          Источник дорожных данных: OpenStreetMap (Geofabrik; резервный источник BBBike).
           Область: 69.35,42.12 — 69.90,42.53 (Шымкент с буфером).
           Назначение: автомобильная офлайн-маршрутизация Valhalla.
           Проверка: архив содержит index и graph tiles; тестовый маршрут
