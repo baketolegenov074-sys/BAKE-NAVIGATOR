@@ -66,20 +66,3 @@ begin
     alter publication supabase_realtime add table public.road_reports;
   end if;
 end $$;
-
--- Direct moderation requested for the owner-operated admin panel.
--- WARNING: these policies allow any anon/authenticated client with the public
--- project key to update or delete any road report.
-grant update, delete on public.road_reports to anon, authenticated;
-
-drop policy if exists "admin_update_reports" on public.road_reports;
-drop policy if exists "admin_delete_reports" on public.road_reports;
-
-create policy "admin_update_reports"
-on public.road_reports for update to anon, authenticated
-using (true)
-with check (true);
-
-create policy "admin_delete_reports"
-on public.road_reports for delete to anon, authenticated
-using (true);
