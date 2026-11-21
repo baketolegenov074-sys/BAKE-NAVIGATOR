@@ -100,6 +100,10 @@ Future<void> main() async {
     await RoadReportSyncService.initialize();
   } catch (error) {
     debugPrint('BAKE road report cloud sync is unavailable: $error');
+    debugPrint(
+      'BAKE Supabase config: ${RoadReportSyncService.configurationSummary}; '
+      'problem=${RoadReportSyncService.configurationProblem ?? 'none'}',
+    );
   }
   final prefs = await SharedPreferences.getInstance();
   // One-time migration: make Kazakh the default app and navigation language.
