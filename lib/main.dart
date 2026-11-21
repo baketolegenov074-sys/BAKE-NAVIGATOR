@@ -792,6 +792,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
 
   final MapController _mapController = MapController();
+  // flutter_map controllers are unusable until MapOptions.onMapReady fires.
+  bool _offlineMapReady = false;
   ml.MapLibreMapController? _mapLibreController;
   bool _mapLibreStyleReady = false;
   bool _onlineLabelStylePatchStarted = false;
@@ -834,6 +836,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _offlineTileProvider != null || _offlineVectorTileProvider != null;
 
   void _disposeOfflineMap() {
+    _offlineMapReady = false;
     _offlineTileProvider?.dispose();
     _offlineTileProvider = null;
     _offlineVectorMbtiles?.dispose();
@@ -1290,13 +1293,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   ml.LatLng _toMapLibrePoint(LatLng point) => ml.LatLng(point.latitude, point.longitude);
 
   LatLng get _mapCameraCenter {
-    if (_isOfflineMapActive) return _mapController.camera.center;
+    if (_isOfflineMapActive) {
+      return _offlineMapReady ? _mapController.camera.center : (_currentLocation ?? _shymkent);
+    }
     final target = _mapLibreController?.cameraPosition?.target;
     return target == null ? (_currentLocation ?? _shymkent) : LatLng(target.latitude, target.longitude);
   }
 
   double get _mapCameraZoom => _isOfflineMapActive
-      ? _mapController.camera.zoom
+      ? (_offlineMapReady ? _mapController.camera.zoom : 13)
       : (_mapLibreController?.cameraPosition?.zoom ?? 13);
 
   void _scheduleHeadingUpReturn() {
@@ -1320,6 +1325,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   void _moveMapCamera(LatLng point, double zoom) {
     if (_isOfflineMapActive) {
+      if (!_offlineMapReady) return;
       _mapController.move(point, zoom);
       return;
     }
@@ -1334,6 +1340,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _lastCameraHeadingDegrees = heading;
     if (!_appInForeground) return;
     if (_isOfflineMapActive) {
+      if (!_offlineMapReady) return;
       _mapController.move(point, zoom);
       _mapController.rotate(-heading);
       return;
@@ -1357,6 +1364,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   void _rotateMapCamera(double rotation) {
     if (_isOfflineMapActive) {
+      if (!_offlineMapReady) return;
       _mapController.rotate(rotation);
       return;
     }
@@ -1376,6 +1384,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   void _fitMapCamera(List<LatLng> points) {
     if (points.isEmpty) return;
     if (_isOfflineMapActive) {
+      if (!_offlineMapReady) return;
       _mapController.fitCamera(CameraFit.coordinates(
         coordinates: points,
         padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
@@ -1403,6 +1412,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   void _zoomMapBy(double delta) {
     _moveMapCamera(_mapCameraCenter, (_mapCameraZoom + delta).clamp(3.0, 20.0).toDouble());
+  }
+
+  void _onOfflineMapReady() {
+    if (!mounted || !_isOfflineMapActive) return;
+    _offlineMapReady = true;
+    final point = _currentLocation;
+    if (point == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_offlineMapReady || !_isOfflineMapActive) return;
+      _updateNavigationCamera(
+        point,
+        math.max(_mapCameraZoom, _navigationActive ? 16.0 : 13.0).toDouble(),
+        _gpsHeadingDegrees ?? 0.0,
+      );
+    });
   }
 
   void _onMapLibreCreated(ml.MapLibreMapController controller) {
@@ -7406,6 +7430,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             FlutterMap(
               mapController: _mapController,
               options: MapOptions(
+                onMapReady: _onOfflineMapReady,
                 initialCenter: _shymkent,
                 initialZoom: 13,
                 onTap: (_, __) {},
