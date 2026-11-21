@@ -149,22 +149,25 @@ class RoadReportSyncService {
     return rows.map((row) => _fromDatabase(row)).toList();
   }
 
-  /// PIN-validated admin moderation through the restricted Supabase RPC.
+  /// Direct public-client moderation; RLS policies control access.
   static Future<void> moderateReport({
     required String reportId,
     required String action,
-    required String pin,
   }) async {
     if (!_initialized) throw StateError('Supabase не подключён.');
-    if (!const {'approve', 'reject', 'delete'}.contains(action)) {
-      throw ArgumentError.value(action, 'action', 'Недопустимое действие');
-    }
-    final result = await _client.rpc(
-      'bake_admin_moderate_report',
-      params: {'p_report_id': reportId, 'p_action': action, 'p_pin': pin},
-    );
-    if (result is Map && result['ok'] != true) {
-      throw StateError(result['message']?.toString() ?? 'Модерация не выполнена.');
+    final table = _client.from('road_reports');
+    switch (action) {
+      case 'approve':
+        await table.update({'status': 'Подтверждено'}).eq('id', reportId);
+        break;
+      case 'reject':
+        await table.update({'status': 'Отклонено'}).eq('id', reportId);
+        break;
+      case 'delete':
+        await table.delete().eq('id', reportId);
+        break;
+      default:
+        throw ArgumentError.value(action, 'action', 'Недопустимое действие');
     }
   }
 
