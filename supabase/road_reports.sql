@@ -108,10 +108,10 @@ declare
   v_status text;
 begin
   if p_report_id is null or length(trim(p_report_id)) = 0 then
-    raise exception 'Не указан ID отметки' using errcode = '22023';
+    return jsonb_build_object('ok', false, 'message', 'Не указан ID отметки');
   end if;
-  if p_action not in ('approve', 'reject', 'delete') then
-    raise exception 'Недопустимое действие' using errcode = '22023';
+  if p_action is null or p_action not in ('approve', 'reject', 'delete') then
+    return jsonb_build_object('ok', false, 'message', 'Недопустимое действие');
   end if;
 
   select pin_hash into v_pin_hash
@@ -120,7 +120,14 @@ begin
   for update;
 
   if v_pin_hash is null then
-    raise exception 'PIN администратора не настроен';
+    return jsonb_build_object('ok', false, 'message', 'PIN администратора не настроен');
+  end if;
+
+  if exists (
+    select 1 from private.road_admin_pin
+    where singleton = true and locked_until > now()
+  ) then
+    return jsonb_build_object('ok', false, 'message', 'Вход временно заблокирован на 30 минут');
   end if;
 
   if p_pin is null or length(p_pin) < 12
@@ -129,17 +136,10 @@ begin
        set failed_attempts = failed_attempts + 1,
            locked_until = case
              when failed_attempts + 1 >= 5 then now() + interval '30 minutes'
-             else locked_until
+             else null
            end
      where singleton = true;
-    raise exception 'Неверный PIN администратора' using errcode = '42501';
-  end if;
-
-  if exists (
-    select 1 from private.road_admin_pin
-    where singleton = true and locked_until > now()
-  ) then
-    raise exception 'Вход временно заблокирован. Попробуйте позже' using errcode = '42501';
+    return jsonb_build_object('ok', false, 'message', 'Неверный PIN администратора');
   end if;
 
   if p_action = 'delete' then
