@@ -1815,7 +1815,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   Future<void> _openOfflineAndVehicleSettings() async {
     final selectedPath = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const NavigatorSettingsScreen()),
+      MaterialPageRoute(
+        builder: (_) => NavigatorSettingsScreen(onRetryValhalla: _ensureValhallaReady),
+      ),
     );
     if (!mounted || selectedPath == null) return;
     if (selectedPath == '__use_online_map__') {
@@ -6766,7 +6768,9 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
 }
 
 class NavigatorSettingsScreen extends StatefulWidget {
-  const NavigatorSettingsScreen({super.key});
+  const NavigatorSettingsScreen({super.key, required this.onRetryValhalla});
+
+  final Future<bool> Function() onRetryValhalla;
 
   @override
   State<NavigatorSettingsScreen> createState() => _NavigatorSettingsScreenState();
@@ -6782,6 +6786,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   bool _importingOfflineMap = false;
   String? _valhallaExtractPath;
   bool _importingValhallaExtract = false;
+  String _valhallaStatus = 'Офлайн-граф ещё не подключён';
   static const MethodChannel _valhallaChannel =
       MethodChannel('bake.navigator/valhalla');
   double _voiceVolume = 1.0;
@@ -6804,6 +6809,9 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     _vehiclePlate.text = prefs.getString('vehicle_plate') ?? '';
     _offlineMapPath = prefs.getString('offline_map_path');
     _valhallaExtractPath = prefs.getString('valhalla_tile_extract_path');
+    _valhallaStatus = _valhallaExtractPath == null
+        ? 'Офлайн-граф ещё не подключён'
+        : 'Сохранённый граф будет проверен при запросе маршрута';
     _voiceVolume = prefs.getDouble('voice_volume') ?? 1.0;
     _voiceRate = prefs.getDouble('voice_rate') ?? 0.48;
     _avoidTolls = prefs.getBool('avoid_tolls') ?? false;
@@ -6869,9 +6877,16 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     if (_importingValhallaExtract) return;
     setState(() => _importingValhallaExtract = true);
     try {
-      _valhallaReady = false;
-      final ready = await _ensureValhallaReady();
+      final ready = await widget.onRetryValhalla();
+      final prefs = await SharedPreferences.getInstance();
+      final savedPath = prefs.getString('valhalla_tile_extract_path');
       if (!mounted) return;
+      setState(() {
+        _valhallaExtractPath = savedPath;
+        _valhallaStatus = ready
+            ? 'Офлайн-маршрутизация Шымкента готова'
+            : 'Офлайн-граф не подключён; доступен интернет-маршрут';
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(ready
