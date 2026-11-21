@@ -177,6 +177,31 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Release builds normally replace failed widgets with an uninformative grey
+  // screen. Keep the actual exception visible so device-only map failures can
+  // be diagnosed instead of appearing as a blank screen.
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    debugPrint('BAKE RELEASE WIDGET ERROR: ${details.exceptionAsString()}');
+    debugPrintStack(stackTrace: details.stack);
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: ColoredBox(
+        color: const Color(0xFFFFFFFF),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: SelectableText(
+              'BAKE ERROR\\n\\n${details.exceptionAsString()}',
+              style: const TextStyle(
+                color: Color(0xFFB00020),
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  };
   try {
     await RoadReportSyncService.initialize();
   } catch (error) {
