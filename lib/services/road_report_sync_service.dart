@@ -138,10 +138,18 @@ class RoadReportSyncService {
     return rows.map((row) => _fromDatabase(row)).toList();
   }
 
-  static void _requireAdmin() {
+  static Future<void> _requireAdmin() async {
     final user = _client.auth.currentUser;
-    if (user == null || user.appMetadata['role'] != 'admin') {
-      throw StateError('Вход администратора не выполнен. Нужна учётная запись Supabase Auth с app_metadata.role = admin.');
+    if (user == null) {
+      throw StateError('Войдите в учётную запись администратора Supabase.');
+    }
+    final adminRecord = await _client
+        .from('road_admins')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+    if (adminRecord == null) {
+      throw StateError('У этой учётной записи нет прав администратора.');
     }
   }
 
@@ -149,7 +157,7 @@ class RoadReportSyncService {
     if (status != 'Подтверждено' && status != 'Отклонено') {
       throw ArgumentError.value(status, 'status', 'Недопустимый статус');
     }
-    _requireAdmin();
+    await _requireAdmin();
     await _client.from('road_reports').update({'status': status, 'reviewed_at': DateTime.now().toUtc().toIso8601String(), 'reviewed_by': _client.auth.currentUser!.id}).eq('id', id);
   }
 
