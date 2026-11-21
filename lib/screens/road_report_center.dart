@@ -145,8 +145,9 @@ class RoadReportCenter extends StatelessWidget {
           rows[0] = jsonEncode(record);
           await prefs.setStringList('bake_road_reports_v1', rows);
           uploaded = true;
-        } catch (_) {
-          // Keep the report locally; the navigator retries it on next launch.
+        } catch (error) {
+          // Keep the report locally. The navigator retries on resume and periodically.
+          debugPrint('BAKE road report upload failed: ${error.runtimeType}');
         }
       }
       notify(SnackBar(content: Text(uploaded
