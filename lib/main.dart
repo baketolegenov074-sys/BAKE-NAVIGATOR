@@ -51,7 +51,14 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
           'text-anchor': 'center',
           // OpenMapTiles stores the local OSM language in its canonical name
           // field. This offline renderer uses local Flutter fonts, not PBF glyphs.
-          'text-field': '{name}',
+          'text-field': [
+          'coalesce',
+          ['get', 'name:ru'],
+          ['get', 'name'],
+          ['get', 'name:kk'],
+          ['get', 'name_ru'],
+          ['get', 'name_kk'],
+        ],
           'text-font': ['Roboto'],
           'text-size': 14,
           'text-max-width': 12,
@@ -73,7 +80,14 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         'layout': {
           'symbol-placement': 'point',
           'text-anchor': 'center',
-          'text-field': '{name}',
+          'text-field': [
+          'coalesce',
+          ['get', 'name:ru'],
+          ['get', 'name'],
+          ['get', 'name:kk'],
+          ['get', 'name_ru'],
+          ['get', 'name_kk'],
+        ],
           'text-font': ['Roboto'],
           'text-size': 14,
           'text-max-width': 10,
@@ -95,7 +109,14 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         'layout': {
           'symbol-placement': 'line',
           'text-anchor': 'center',
-          'text-field': '{name}',
+          'text-field': [
+          'coalesce',
+          ['get', 'name:ru'],
+          ['get', 'name'],
+          ['get', 'name:kk'],
+          ['get', 'name_ru'],
+          ['get', 'name_kk'],
+        ],
           'text-font': ['Roboto'],
           'text-size': 12,
           'text-max-width': 12,
