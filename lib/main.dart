@@ -1559,10 +1559,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         throw const FormatException('Patched Liberty style has an invalid structure');
       }
       if (generation != _mapLibreStyleGeneration || !identical(controller, _mapLibreController)) return;
+      // Mark before setStyle: native onStyleLoaded may fire before its Future
+      // completes. That callback must finish initialization, not start a loop.
+      _onlineLabelStylePatched = true;
       await controller.setStyle(encodedStyle);
-      if (generation == _mapLibreStyleGeneration && identical(controller, _mapLibreController)) {
-        _onlineLabelStylePatched = true;
-      }
     } catch (error, stackTrace) {
       debugPrint('BAKE online street-label style patch failed; keeping base Liberty style: $error');
       debugPrintStack(stackTrace: stackTrace);
