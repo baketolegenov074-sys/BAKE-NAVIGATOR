@@ -24,6 +24,7 @@ import 'kazakh_voice_service.dart';
 import 'services/road_alert_service.dart';
 import 'services/offline_address_search.dart';
 import 'screens/road_report_center.dart';
+import 'services/road_report_sync_service.dart';
 import 'services/valhalla_archive_validator.dart';
 
 
@@ -95,6 +96,11 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await RoadReportSyncService.initialize();
+  } catch (error) {
+    debugPrint('BAKE road report cloud sync is unavailable: $error');
+  }
   final prefs = await SharedPreferences.getInstance();
   // One-time migration: make Kazakh the default app and navigation language.
   if (!(prefs.getBool('kazakh_primary_language_v1') ?? false)) {
@@ -707,6 +713,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     _configureVoice();
     unawaited(_loadBundledRoadAlerts());
     unawaited(_loadConfirmedRoadReports());
+    RoadReportSyncService.subscribeToChanges(() {
+      if (mounted) unawaited(_loadConfirmedRoadReports());
+    });
     unawaited(_offlineAddressSearch.initialize());
     _loadSavedOfflineMap();
     _loadSavedRoutePoints();
@@ -3361,18 +3370,56 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final rows = prefs.getStringList('bake_road_reports_v1') ?? <String>[];
-      final reports = <Map<String, dynamic>>[];
+      final reportsById = <String, Map<String, dynamic>>{};
+      final updatedLocalRows = <String>[];
+      var localRowsChanged = false;
+
       for (final raw in rows) {
         try {
           final record = Map<String, dynamic>.from(jsonDecode(raw) as Map);
-          if (record['status']?.toString() != 'Подтверждено') continue;
-          final lat = (record['latitude'] as num?)?.toDouble();
-          final lon = (record['longitude'] as num?)?.toDouble();
-          if (lat == null || lon == null || !lat.isFinite || !lon.isFinite) continue;
-          if (lat < -90 || lat > 90 || lon < -180 || lon > 180) continue;
-          reports.add(record);
-        } catch (_) { /* Ignore malformed local records. */ }
+          final status = record['status']?.toString();
+          if (status == 'Подтверждено') {
+            reportsById[record['id']?.toString() ?? raw] = record;
+          } else if (status == 'На проверке' &&
+              RoadReportSyncService.isInitialized &&
+              record['syncStatus']?.toString() != 'Синхронизировано') {
+            try {
+              await RoadReportSyncService.uploadReport(record);
+              record['syncStatus'] = 'Синхронизировано';
+              localRowsChanged = true;
+            } catch (error) {
+              debugPrint('BAKE report upload will retry later: $error');
+            }
+          }
+          updatedLocalRows.add(jsonEncode(record));
+        } catch (_) {
+          updatedLocalRows.add(raw);
+        }
       }
+
+      if (localRowsChanged) {
+        await prefs.setStringList('bake_road_reports_v1', updatedLocalRows);
+      }
+
+      if (RoadReportSyncService.isInitialized) {
+        try {
+          final remoteReports = await RoadReportSyncService.fetchConfirmedReports();
+          for (final report in remoteReports) {
+            reportsById[report['id']?.toString() ?? ''] = report;
+          }
+        } catch (error) {
+          debugPrint('BAKE shared road reports could not be loaded: $error');
+        }
+      }
+
+      final reports = reportsById.values.where((record) {
+        final lat = (record['latitude'] as num?)?.toDouble();
+        final lon = (record['longitude'] as num?)?.toDouble();
+        return lat != null && lon != null &&
+            lat.isFinite && lon.isFinite &&
+            lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+      }).toList();
+
       if (!mounted) return;
       setState(() => _confirmedRoadReports = reports);
       unawaited(_syncMapLibreAnnotations());
