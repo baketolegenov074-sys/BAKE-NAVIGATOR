@@ -400,13 +400,11 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
         itemCount: rows.length,
         itemBuilder: (context, index) {
           final record = rows[index];
-          final id = record['id']?.toString() ?? '';
           final latitude = (record['latitude'] as num?)?.toDouble();
           final longitude = (record['longitude'] as num?)?.toDouble();
           final accuracy = (record['accuracyMeters'] as num?)?.toDouble();
           final date = DateTime.tryParse(record['createdAt']?.toString() ?? '')?.toLocal();
           final currentStatus = record['status']?.toString() ?? '—';
-          final pending = currentStatus == 'На проверке';
           return Card(
             margin: const EdgeInsets.only(bottom: 10),
             clipBehavior: Clip.antiAlias,
