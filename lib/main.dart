@@ -617,7 +617,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   static const MethodChannel _valhallaChannel =
       MethodChannel('bake.navigator/valhalla');
   bool _valhallaReady = false;
+  Future<bool>? _valhallaReadyFuture;
   String? _valhallaExtractPath;
+  String _valhallaStatus = 'Дорожный граф проверяется автоматически';
+
 
   final MapController _mapController = MapController();
   ml.MapLibreMapController? _mapLibreController;
@@ -708,7 +711,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     unawaited(_loadSatelliteMapPreference());
     // Ask for location after the first frame so the permission dialog has a valid context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_locateMe());
+      if (!mounted) return;
+      unawaited(_ensureValhallaReady());
+      unawaited(_locateMe());
     });
   }
 
@@ -1640,25 +1645,116 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     }
   }
 
-  Future<bool> _ensureValhallaReady() async {
+  Future<bool> _ensureValhallaReady() {
+    if (_valhallaReady) return Future<bool>.value(true);
+    final pending = _valhallaReadyFuture;
+    if (pending != null) return pending;
+    final future = _prepareValhallaAutomatically();
+    _valhallaReadyFuture = future;
+    return future.whenComplete(() {
+      if (identical(_valhallaReadyFuture, future)) {
+        _valhallaReadyFuture = null;
+      }
+    });
+  }
+
+  Future<bool> _prepareValhallaAutomatically() async {
     final prefs = await SharedPreferences.getInstance();
-    final path = prefs.getString('valhalla_tile_extract_path');
-    _valhallaExtractPath = path;
-    if (path == null || path.isEmpty || !await File(path).exists()) {
-      _valhallaReady = false;
-      return false;
-    }
-    if (_valhallaReady) return true;
+    final savedPath = prefs.getString('valhalla_tile_extract_path');
+    File? archiveFile;
+    var downloadedNow = false;
+
     try {
-      final result = await _valhallaChannel.invokeMapMethod<String, dynamic>(
+      if (savedPath != null && savedPath.isNotEmpty) {
+        final savedFile = File(savedPath);
+        if (await savedFile.exists() && await savedFile.length() > 100000) {
+          archiveFile = savedFile;
+        }
+      }
+
+      if (archiveFile == null) {
+        if (mounted) {
+          setState(() => _valhallaStatus = 'Загружаем дорожный граф Шымкента…');
+        }
+        final directory = await getApplicationSupportDirectory();
+        archiveFile = File('${directory.path}/shymkent-valhalla.tar');
+        if (!await archiveFile.exists() || await archiveFile.length() < 100000) {
+          final temporary = File('${archiveFile.path}.download');
+          final response = await http
+              .get(Uri.parse(
+                'https://github.com/baketolegenov074-sys/BAKE-NAVIGATOR/releases/download/shymkent-valhalla-latest/shymkent-valhalla.tar',
+              ))
+              .timeout(const Duration(minutes: 5));
+          if (response.statusCode != 200 || response.bodyBytes.length < 100000) {
+            throw Exception('Не удалось скачать дорожный граф Шымкента (HTTP ${response.statusCode}).');
+          }
+          await temporary.writeAsBytes(response.bodyBytes, flush: true);
+          if (await archiveFile.exists()) await archiveFile.delete();
+          await temporary.rename(archiveFile.path);
+          downloadedNow = true;
+        }
+      }
+
+      if (mounted) {
+        setState(() => _valhallaStatus = 'Подключаем офлайн-маршрутизатор…');
+      }
+      final initialized = await _valhallaChannel.invokeMapMethod<String, dynamic>(
         'initialize',
-        <String, dynamic>{'tileExtractPath': path},
+        <String, dynamic>{'tileExtractPath': archiveFile.path},
       );
-      _valhallaReady = result?['ready'] == true;
-      return _valhallaReady;
+      if (initialized?['ready'] != true) {
+        throw Exception('Valhalla не подтвердила готовность дорожного графа.');
+      }
+
+      final diagnosticRaw = await _valhallaChannel.invokeMethod<String>(
+        'route',
+        <String, dynamic>{
+          'startLat': 42.3640,
+          'startLon': 69.4780,
+          'endLat': 42.3154,
+          'endLon': 69.5869,
+        },
+      );
+      if (diagnosticRaw == null || diagnosticRaw.isEmpty) {
+        throw Exception('Пустой ответ на контрольный офлайн-маршрут.');
+      }
+      final diagnosticData = jsonDecode(diagnosticRaw) as Map<String, dynamic>;
+      final routes = (diagnosticData['routes'] as List?) ?? const [];
+      final route = routes.isNotEmpty ? routes.first : null;
+      final geometry = route is Map<String, dynamic> ? route['geometry'] : null;
+      final coordinates = geometry is Map<String, dynamic>
+          ? geometry['coordinates']
+          : null;
+      if (diagnosticData['code'] != 'Ok' ||
+          route is! Map<String, dynamic> ||
+          route['distance'] is! num ||
+          route['duration'] is! num ||
+          coordinates is! List ||
+          coordinates.length < 2) {
+        throw Exception('Контрольный маршрут по графу Шымкента не построен.');
+      }
+
+      await prefs.setString('valhalla_tile_extract_path', archiveFile.path);
+      _valhallaExtractPath = archiveFile.path;
+      _valhallaReady = true;
+      if (mounted) {
+        setState(() {
+          _valhallaStatus = 'Офлайн-маршрутизация Шымкента готова';
+        });
+      }
+      debugPrint('BAKE Valhalla ready: ${archiveFile.path}');
+      return true;
     } catch (error) {
       _valhallaReady = false;
-      debugPrint('BAKE Valhalla initialization failed: $error');
+      if (downloadedNow && archiveFile != null && await archiveFile.exists()) {
+        await archiveFile.delete();
+      }
+      if (mounted) {
+        setState(() {
+          _valhallaStatus = 'Офлайн-граф не подключён; при наличии сети доступен онлайн-маршрут';
+        });
+      }
+      debugPrint('BAKE automatic Valhalla setup failed: $error');
       return false;
     }
   }
@@ -6771,90 +6867,15 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     if (_importingValhallaExtract) return;
     setState(() => _importingValhallaExtract = true);
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['tar'],
-        allowMultiple: false,
-        withData: false,
-      );
-      if (result == null || result.files.isEmpty) return;
-      final sourcePath = result.files.single.path;
-      if (sourcePath == null) {
-        throw Exception('Сначала сохраните Valhalla .tar-файл в память телефона.');
-      }
-      final directory = await getApplicationSupportDirectory();
-      final destination = File(
-        '${directory.path}/bake_valhalla_tiles_${DateTime.now().millisecondsSinceEpoch}.tar',
-      );
-      await File(sourcePath).copy(destination.path);
-
-      // The native engine validates and opens the archive before it is saved
-      // as the active routing dataset. A normal MBTiles map is not accepted.
-      final initialized = await _valhallaChannel.invokeMapMethod<String, dynamic>(
-        'initialize',
-        <String, dynamic>{'tileExtractPath': destination.path},
-      );
-      if (initialized?['ready'] != true) {
-        throw Exception('Valhalla не подтвердил готовность дорожного архива.');
-      }
-
-      // Opening the tile extract is not enough: prove that the Android engine
-      // can calculate a real route before marking this archive as connected.
-      final diagnosticRaw = await _valhallaChannel.invokeMethod<String>(
-        'route',
-        <String, dynamic>{
-          'startLat': 42.3640, // Shymkent Airport area
-          'startLon': 69.4780,
-          'endLat': 42.3154, // Central Shymkent
-          'endLon': 69.5869,
-        },
-      );
-      if (diagnosticRaw == null || diagnosticRaw.isEmpty) {
-        throw Exception('Пустой ответ на тестовый маршрут.');
-      }
-      final diagnosticData = jsonDecode(diagnosticRaw) as Map<String, dynamic>;
-      final diagnosticRoutes = (diagnosticData['routes'] as List?) ?? const [];
-      final diagnosticRoute = diagnosticRoutes.isNotEmpty
-          ? diagnosticRoutes.first
-          : null;
-      final diagnosticGeometry = diagnosticRoute is Map<String, dynamic>
-          ? diagnosticRoute['geometry']
-          : null;
-      final diagnosticCoordinates = diagnosticGeometry is Map<String, dynamic>
-          ? diagnosticGeometry['coordinates']
-          : null;
-      if (diagnosticData['code'] != 'Ok' ||
-          diagnosticRoute is! Map<String, dynamic> ||
-          diagnosticRoute['distance'] is! num ||
-          diagnosticRoute['duration'] is! num ||
-          diagnosticCoordinates is! List ||
-          diagnosticCoordinates.length < 2) {
-        throw Exception('Тестовый маршрут по архиву Valhalla не построен.');
-      }
-      final diagnosticDistanceKm =
-          ((diagnosticRoute['distance'] as num).toDouble() / 1000).toStringAsFixed(2);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('valhalla_tile_extract_path', destination.path);
+      _valhallaReady = false;
+      final ready = await _ensureValhallaReady();
       if (!mounted) return;
-      setState(() {
-        _valhallaExtractPath = destination.path;
-      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            AppLocale.pick(
-              'Офлайн-маршрутизатор проверен: маршрут через Шымкент построен ($diagnosticDistanceKm км).',
-              'Офлайн маршруттау құралы тексерілді: Шымкент арқылы маршрут құрылды ($diagnosticDistanceKm км).',
-              'Offline routing verified: a route across Shymkent was built ($diagnosticDistanceKm km).',
-            ),
-          ),
-          duration: const Duration(seconds: 5),
+          content: Text(ready
+              ? 'Офлайн-маршрутизатор Шымкента готов.'
+              : 'Не удалось подключить граф. Интернет-маршрут останется доступен.'),
         ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
       );
     } finally {
       if (mounted) setState(() => _importingValhallaExtract = false);
@@ -7037,9 +7058,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                           contentPadding: EdgeInsets.zero,
                           leading: const Icon(Icons.alt_route),
                           title: const Text('Дорожный граф Valhalla'),
-                          subtitle: Text(_valhallaExtractPath == null
-                              ? 'Файл дорожного графа ещё не выбран. Это отдельный файл, не MBTiles-карта.'
-                              : 'Архив Valhalla выбран на этом устройстве.'),
+                          subtitle: Text(_valhallaStatus),
                         ),
                         SizedBox(
                           width: double.infinity,
@@ -7050,7 +7069,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                                 : const Icon(Icons.route_outlined),
                             label: Text(_importingValhallaExtract
                                 ? 'Проверяем архив…'
-                                : 'Подключить архив Valhalla (.tar)'),
+                                : 'Повторить автоматическое подключение'),
                           ),
                         ),
                         if (_valhallaExtractPath != null)
@@ -7060,7 +7079,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                             label: const Text('Отключить офлайн-маршрутизатор'),
                           ),
                         const Text(
-                          'Valhalla строит маршруты по отдельному дорожному графу. Обычный MBTiles-файл карты и исходный OSM PBF для этого не подходят. Если офлайн-маршрут не сработает, приложение попробует OSRM через интернет.',
+                          'Дорожный граф Шымкента загружается и подключается автоматически один раз, затем хранится на телефоне. Для других районов и при ошибке офлайн-графа используется интернет-маршрут, если сеть доступна.',
                           style: TextStyle(fontSize: 12, color: Colors.black54),
                         ),
                       ],
