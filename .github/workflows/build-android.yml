@@ -3,6 +3,9 @@ name: Build BAKE Navigator APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - fix/address-gps-route-reset
 
 permissions:
   contents: read
