@@ -25,6 +25,7 @@ dependencies:
   geolocator: 13.0.1
   flutter_tts: 4.2.0
   archive: ^3.6.1
+  crypto: ^3.0.6
   audioplayers: ^5.2.1
   sherpa_onnx: 2.0.1
   http: 1.2.2
