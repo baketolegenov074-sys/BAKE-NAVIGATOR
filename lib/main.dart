@@ -198,13 +198,17 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
   // BAKE's custom strokes and contain the orange casing/fill colors.
   // Keep railways, one-way arrows, shields, buildings and symbol layers.
   final baseWithoutDefaultRoadStrokes = base.layers.where((layer) {
-    final isRoadLine = layer.type == vtr.ThemeLayerType.line &&
-        (layer.id.startsWith('road_') ||
-            layer.id.startsWith('bridge_') ||
-            layer.id.startsWith('tunnel_'));
+    final isDefaultRoadGeometry = layer.id.startsWith('road_') ||
+        layer.id.startsWith('bridge_') ||
+        layer.id.startsWith('tunnel_');
     final isRailOrArrow = layer.id.contains('rail') ||
         layer.id.contains('one_way_arrow');
-    return !isRoadLine || isRailOrArrow;
+    // Remove road line AND fill/casing/pattern layers. The orange
+    // road_area_pattern is a fill layer, not a line layer.
+    // Keep every symbol layer, including road_label and road_shield.
+    return !isDefaultRoadGeometry ||
+        isRailOrArrow ||
+        layer.type == vtr.ThemeLayerType.symbol;
   }).toList(growable: false);
 
   // Built-in road labels and BAKE's regional name:* fallback labels stay
@@ -226,7 +230,7 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         ];
   return vtr.Theme(
     id: 'bake-shymkent-offline',
-    version: '3',
+    version: '4',
     layers: orderedLayers,
   );
 }
