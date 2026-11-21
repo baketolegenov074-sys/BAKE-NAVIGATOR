@@ -14,6 +14,7 @@ class RoadReportSyncService {
   static const String _publishableKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
   static bool _initialized = false;
+  static bool adminModeActive = false;
   static RealtimeChannel? _reportsChannel;
 
   static const String _expectedProjectRef = 'cnyshqvdonqhkkcqgucf';
@@ -129,8 +130,13 @@ class RoadReportSyncService {
       await _client.from('road_reports').insert(_toDatabase(payload));
     } on PostgrestException catch (error) {
       // A retry of an already uploaded local report is considered successful.
-      if (error.code == '23505') return;
-      rethrow;
+      if (error.code != '23505') rethrow;
+    }
+    if (adminModeActive) {
+      await _client.from('road_reports').update({
+        'status': 'approved',
+        'reviewed_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', payload['id'].toString());
     }
   }
 

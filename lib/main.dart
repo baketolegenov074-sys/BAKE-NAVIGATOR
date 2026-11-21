@@ -694,6 +694,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _mapLibreAnnotationSyncInProgress = false;
   bool _mapLibreAnnotationSyncPending = false;
   bool _mapLibreRouteSyncPending = false;
+  static const String _routeGeoJsonSourceId = 'bake-route-geojson';
   LatLng? _lastRouteLineSyncPoint;
   ml.Fill? _routePositionHaloFill;
   ml.Fill? _routePositionFill;
@@ -1460,6 +1461,130 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
+  List<LatLng> _simplifyRouteForDisplay(List<LatLng> points) {
+    if (points.length <= 2) return points;
+    final latitudeRadians = points.first.latitude * math.pi / 180;
+    final xScale = 111320.0 * math.cos(latitudeRadians);
+    const yScale = 110540.0;
+    double distanceToSegment(LatLng point, LatLng start, LatLng end) {
+      final px = point.longitude * xScale;
+      final py = point.latitude * yScale;
+      final ax = start.longitude * xScale;
+      final ay = start.latitude * yScale;
+      final bx = end.longitude * xScale;
+      final by = end.latitude * yScale;
+      final dx = bx - ax;
+      final dy = by - ay;
+      final lengthSquared = dx * dx + dy * dy;
+      final t = lengthSquared == 0
+          ? 0.0
+          : (((px - ax) * dx + (py - ay) * dy) / lengthSquared)
+              .clamp(0.0, 1.0);
+      final nearestX = ax + t * dx;
+      final nearestY = ay + t * dy;
+      return math.sqrt(
+        (px - nearestX) * (px - nearestX) +
+        (py - nearestY) * (py - nearestY),
+      );
+    }
+
+    final keep = List<bool>.filled(points.length, false);
+    keep[0] = true;
+    keep[points.length - 1] = true;
+    final pending = <(int, int)>[(0, points.length - 1)];
+    while (pending.isNotEmpty) {
+      final range = pending.removeLast();
+      final start = range.$1;
+      final end = range.$2;
+      var farthestDistance = 5.0;
+      var farthestIndex = -1;
+      for (var i = start + 1; i < end; i++) {
+        final distance = distanceToSegment(points[i], points[start], points[end]);
+        if (distance > farthestDistance) {
+          farthestDistance = distance;
+          farthestIndex = i;
+        }
+      }
+      if (farthestIndex >= 0) {
+        keep[farthestIndex] = true;
+        pending.add((start, farthestIndex));
+        pending.add((farthestIndex, end));
+      }
+    }
+    return <LatLng>[
+      for (var i = 0; i < points.length; i++)
+        if (keep[i]) points[i],
+    ];
+  }
+
+  Future<void> _setMapLibreRouteGeometry(
+    ml.MapLibreMapController controller,
+    List<LatLng> points,
+  ) async {
+    final sourceIds = await controller.getSourceIds();
+    if (!sourceIds.contains(_routeGeoJsonSourceId)) {
+      await controller.addGeoJsonSource(_routeGeoJsonSourceId, const {
+        'type': 'FeatureCollection',
+        'features': <Object>[],
+      });
+    }
+
+    final layerIds = await controller.getLayerIds();
+    if (!layerIds.contains('bake-route-casing-layer')) {
+      await controller.addLineLayer(
+        _routeGeoJsonSourceId,
+        'bake-route-casing-layer',
+        const ml.LineLayerProperties(
+          lineColor: '#FFD400',
+          lineWidth: 16,
+          lineOpacity: 0.96,
+        ),
+      );
+    }
+    if (!layerIds.contains('bake-route-outline-layer')) {
+      await controller.addLineLayer(
+        _routeGeoJsonSourceId,
+        'bake-route-outline-layer',
+        const ml.LineLayerProperties(
+          lineColor: '#36D9FF',
+          lineWidth: 12,
+          lineOpacity: 0.98,
+        ),
+      );
+    }
+    if (!layerIds.contains('bake-route-line-layer')) {
+      await controller.addLineLayer(
+        _routeGeoJsonSourceId,
+        'bake-route-line-layer',
+        const ml.LineLayerProperties(
+          lineColor: '#0878F9',
+          lineWidth: 7,
+          lineOpacity: 1,
+        ),
+      );
+    }
+
+    final simplified = _simplifyRouteForDisplay(points);
+    final features = simplified.length < 2
+        ? <Object>[]
+        : <Object>[
+            {
+              'type': 'Feature',
+              'properties': const <String, Object>{},
+              'geometry': {
+                'type': 'LineString',
+                'coordinates': simplified
+                    .map((point) => <double>[point.longitude, point.latitude])
+                    .toList(growable: false),
+              },
+            },
+          ];
+    await controller.setGeoJsonSource(_routeGeoJsonSourceId, {
+      'type': 'FeatureCollection',
+      'features': features,
+    });
+  }
+
   Future<void> _syncMapLibreAnnotations({bool updateRoute = false}) async {
     // GPS updates can arrive while the previous annotation update is still
     // clearing and recreating symbols. Serialize those updates and run once
@@ -1482,31 +1607,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         // Only route/style changes are allowed to replace route geometry.
         if (syncRoute) {
           _lastRouteLineSyncPoint = _currentLocation;
-          await controller.clearLines();
-          if (visibleRoutePoints.length > 1) {
-            final routeGeometry =
-                visibleRoutePoints.map(_toMapLibrePoint).toList();
-            // Layered route casing creates a bright, high-contrast navigation
-            // ribbon while keeping the actual route geometry unchanged.
-            await controller.addLine(ml.LineOptions(
-              geometry: routeGeometry,
-              lineColor: '#FFD400',
-              lineWidth: 16,
-              lineOpacity: 0.96,
-            ));
-            await controller.addLine(ml.LineOptions(
-              geometry: routeGeometry,
-              lineColor: '#36D9FF',
-              lineWidth: 12,
-              lineOpacity: 0.98,
-            ));
-            await controller.addLine(ml.LineOptions(
-              geometry: routeGeometry,
-              lineColor: '#0878F9',
-              lineWidth: 7,
-              lineOpacity: 1,
-            ));
-          }
+          // Keep one GeoJSON source and its three style layers for this map
+          // style. Updates replace source data without recreating the layers.
+          await _setMapLibreRouteGeometry(controller, visibleRoutePoints);
         }
         await controller.clearSymbols();
         await controller.clearCircles();
@@ -4542,7 +4645,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             : '');
       });
       if (points.isNotEmpty) {
-        unawaited(_syncMapLibreAnnotations(updateRoute: true));
+        await _syncMapLibreAnnotations(updateRoute: true);
         _fitMapCamera(points);
         if (automaticReroute && resumeNavigation && _currentLocation != null) {
           _moveMapCamera(_currentLocation!, 17);
@@ -7021,7 +7124,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                           decoration: BoxDecoration(
                             color: Colors.white,
                             shape: BoxShape.circle,
-                            border: Border.all(color: const Color(0xFFE53935), width: 3),
+                            border: Border.all(
+                              color: _isSpeeding ? const Color(0xFFE53935) : const Color(0xFF202020),
+                              width: 3,
+                            ),
                           ),
                           alignment: Alignment.center,
                           child: Text(
@@ -7419,29 +7525,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                         ),
                       ),
                     ],
-                  ),
-                ),
-              ),
-            ),
-          if (!_navigationActive && _message.isNotEmpty)
-            Positioned(
-              top: 104,
-              left: 14,
-              right: 14,
-              child: IgnorePointer(
-                child: Material(
-                  color: const Color(0xF2FFFFFF),
-                  elevation: 3,
-                  borderRadius: BorderRadius.circular(10),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    child: Text(
-                      _message,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 11, height: 1.15, fontWeight: FontWeight.w600),
-                    ),
                   ),
                 ),
               ),

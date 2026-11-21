@@ -462,8 +462,15 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
   @override
   void initState() {
     super.initState();
+    RoadReportSyncService.adminModeActive = true;
     _loadReports();
     _loadLocalPendingCount();
+  }
+
+  @override
+  void dispose() {
+    RoadReportSyncService.adminModeActive = false;
+    super.dispose();
   }
 
   Future<void> _loadLocalPendingCount() async {
