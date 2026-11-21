@@ -356,75 +356,255 @@ class RoadAdminPage extends StatefulWidget {
 
 class _RoadAdminPageState extends State<RoadAdminPage> {
   List<Map<String, dynamic>> _records = [];
+  final Set<String> _busyIds = <String>{};
   bool _loading = true;
   String? _error;
+  String? _adminPin;
 
   @override
-  void initState() {
-    super.initState();
-    _loadReports();
-  }
+  void initState() { super.initState(); _loadReports(); }
+
+  @override
+  void dispose() { _adminPin = null; super.dispose(); }
 
   Future<void> _loadReports() async {
+    if (mounted) setState(() { _loading = true; _error = null; });
     try {
       final rows = await RoadReportSyncService.fetchAllReportsForAdmin();
       if (!mounted) return;
-      setState(() {
-        _records = rows;
-        _loading = false;
-        _error = null;
-      });
+      setState(() { _records = rows; _loading = false; });
     } catch (error) {
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = 'Не удалось загрузить отметки: $error';
-      });
+      setState(() { _loading = false; _error = 'Не удалось загрузить отметки: ' + error.toString(); });
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Дорожные отметки'),
+  Future<String?> _requestPin() async {
+    if (_adminPin != null && _adminPin!.isNotEmpty) return _adminPin;
+    final controller = TextEditingController();
+    final pin = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('PIN администратора'),
+        content: TextField(
+          controller: controller, autofocus: true, obscureText: true,
+          autocorrect: false, enableSuggestions: false,
+          decoration: const InputDecoration(labelText: 'Введите PIN', border: OutlineInputBorder()),
+          onSubmitted: (value) => Navigator.pop(dialogContext, value.trim()),
+        ),
         actions: [
-          IconButton(
-            tooltip: 'Обновить',
-            onPressed: _loading ? null : _loadReports,
-            icon: const Icon(Icons.refresh),
-          ),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, controller.text.trim()), child: const Text('Продолжить')),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(_error!, textAlign: TextAlign.center),
-                ))
-              : _records.isEmpty
-                  ? const Center(child: Text('Общих отметок пока нет.'))
-                  : ListView(
-                      padding: const EdgeInsets.all(12),
-                      children: [
-                        Text('Всего отметок: ${_records.length}'),
-                        const SizedBox(height: 8),
-                        ..._records.map((record) => Card(
-                              child: ListTile(
-                                leading: const Icon(Icons.location_on_outlined),
-                                title: Text(record['type']?.toString() ?? 'Объект'),
-                                subtitle: Text(
-                                  '${record['latitude']}, ${record['longitude']}'
-                                  ' · ±${record['accuracyMeters']} м'
-                                  '\nСтатус: ${record['status']}'
-                                  '\nУстройство: ${record['deviceId'] ?? '—'}',
-                                ),
-                                isThreeLine: true,
-                              ),
-                            )),
-                      ],
+    );
+    controller.dispose();
+    if (pin == null || pin.isEmpty) return null;
+    _adminPin = pin;
+    return pin;
+  }
+
+  Future<void> _moderate(Map<String, dynamic> record, String action) async {
+    final id = record['id']?.toString() ?? '';
+    if (id.isEmpty || _busyIds.contains(id)) return;
+    if (action == 'delete') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Удалить отметку?'),
+          content: const Text('Запись будет удалена из общей базы Supabase без возможности восстановления.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Удалить'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    final pin = await _requestPin();
+    if (pin == null || !mounted) return;
+    setState(() => _busyIds.add(id));
+    try {
+      await RoadReportSyncService.moderateReport(reportId: id, action: action, pin: pin);
+      await _loadReports();
+      if (!mounted) return;
+      final message = action == 'approve' ? 'Отметка подтверждена'
+          : action == 'reject' ? 'Отметка отклонена' : 'Отметка удалена';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } catch (error) {
+      _adminPin = null;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Ошибка модерации: ' + error.toString())));
+    } finally {
+      if (mounted) setState(() => _busyIds.remove(id));
+    }
+  }
+
+  Widget _buildReportList(String? status) {
+    final rows = status == null ? _records
+        : _records.where((row) => row['status']?.toString() == status).toList();
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_error != null) {
+      return Center(child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(_error!, textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          FilledButton.icon(onPressed: _loadReports, icon: const Icon(Icons.refresh), label: const Text('Повторить')),
+        ]),
+      ));
+    }
+    if (rows.isEmpty) return Center(child: Text(status == null ? 'Общих отметок пока нет.' : 'В этой вкладке отметок нет.'));
+    return RefreshIndicator(
+      onRefresh: _loadReports,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+        itemCount: rows.length,
+        itemBuilder: (context, index) {
+          final record = rows[index];
+          final id = record['id']?.toString() ?? '';
+          final busy = _busyIds.contains(id);
+          final latitude = (record['latitude'] as num?)?.toDouble();
+          final longitude = (record['longitude'] as num?)?.toDouble();
+          final accuracy = (record['accuracyMeters'] as num?)?.toDouble();
+          final date = DateTime.tryParse(record['createdAt']?.toString() ?? '')?.toLocal();
+          final currentStatus = record['status']?.toString() ?? '—';
+          final pending = currentStatus == 'На проверке';
+          return Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            clipBehavior: Clip.antiAlias,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  const Icon(Icons.location_on_outlined, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(record['type']?.toString() ?? 'Объект',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+                  if (busy)
+                    const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  else
+                    _statusChip(currentStatus),
+                ]),
+                const SizedBox(height: 8),
+                Text('GPS: ' + (latitude?.toStringAsFixed(6) ?? '—') + ', ' + (longitude?.toStringAsFixed(6) ?? '—')),
+                Text('Точность: ' + (accuracy == null ? '—' : '±' + accuracy.toStringAsFixed(1) + ' м')),
+                Text('Устройство: ' + (record['deviceId']?.toString() ?? '—')),
+                if (date != null) Text('Добавлено: ' + date.toString()),
+                const SizedBox(height: 10),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  OutlinedButton.icon(
+                    onPressed: latitude == null || longitude == null ? null : () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => RoadReportMapPage(
+                        latitude: latitude, longitude: longitude,
+                        title: record['type']?.toString() ?? 'Отметка',
+                      )),
                     ),
+                    icon: const Icon(Icons.map_outlined), label: const Text('На карте'),
+                  ),
+                  if (pending) FilledButton.icon(
+                    onPressed: busy ? null : () => _moderate(record, 'approve'),
+                    icon: const Icon(Icons.check), label: const Text('Подтвердить'),
+                  ),
+                  if (pending) OutlinedButton.icon(
+                    onPressed: busy ? null : () => _moderate(record, 'reject'),
+                    icon: const Icon(Icons.close), label: const Text('Отклонить'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: busy ? null : () => _moderate(record, 'delete'),
+                    style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                    icon: const Icon(Icons.delete_outline), label: const Text('Удалить'),
+                  ),
+                ]),
+              ]),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _statusChip(String status) {
+    final color = status == 'Подтверждено' ? Colors.green
+        : status == 'Отклонено' ? Colors.red : Colors.orange;
+    return Chip(
+      visualDensity: VisualDensity.compact,
+      label: Text(status, style: const TextStyle(fontSize: 11)),
+      backgroundColor: color.withValues(alpha: 0.12),
+      side: BorderSide(color: color.withValues(alpha: 0.35)),
+      padding: EdgeInsets.zero,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => DefaultTabController(
+    length: 3,
+    child: Scaffold(
+      appBar: AppBar(
+        title: const Text('Кабинет администратора'),
+        actions: [IconButton(
+          tooltip: 'Обновить', onPressed: _loading ? null : _loadReports,
+          icon: const Icon(Icons.refresh),
+        )],
+        bottom: const TabBar(tabs: [
+          Tab(text: 'На проверке'),
+          Tab(text: 'Подтверждённые'),
+          Tab(text: 'Все'),
+        ]),
+      ),
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Align(alignment: Alignment.centerLeft, child: Text('Всего в общей базе: ' + _records.length.toString())),
+        ),
+        Expanded(child: TabBarView(children: [
+          _buildReportList('На проверке'),
+          _buildReportList('Подтверждено'),
+          _buildReportList(null),
+        ])),
+      ]),
+    ),
+  );
+}
+
+class RoadReportMapPage extends StatelessWidget {
+  const RoadReportMapPage({super.key, required this.latitude, required this.longitude, required this.title});
+  final double latitude;
+  final double longitude;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final point = LatLng(latitude, longitude);
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: FlutterMap(
+        options: MapOptions(initialCenter: point, initialZoom: 17),
+        children: [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.bake.navigator',
+          ),
+          MarkerLayer(markers: [Marker(
+            point: point, width: 54, height: 54,
+            child: const Icon(Icons.location_pin, size: 48, color: Colors.red),
+          )]),
+          const RichAttributionWidget(attributions: [TextSourceAttribution('© OpenStreetMap contributors')]),
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.all(12),
+        child: SelectableText(
+          latitude.toStringAsFixed(6) + ', ' + longitude.toStringAsFixed(6),
+          textAlign: TextAlign.center,
+        ),
+      ),
     );
   }
 }
