@@ -410,9 +410,7 @@ jobs:
           supabase_key="$(clean_define "${SUPABASE_ANON_KEY:-}")"
           printf 'Supabase URL configured: %s\n' "$([ -n "$supabase_url" ] && echo yes || echo no)"
           printf 'Supabase key configured: %s\n' "$([ -n "$supabase_key" ] && echo yes || echo no)"
-          flutter build apk --release --target-platform android-arm64 \
-            "--dart-define=SUPABASE_URL=$supabase_url" \
-            "--dart-define=SUPABASE_ANON_KEY=$supabase_key"
+          flutter build apk --release --target-platform android-arm64 --dart-define=SUPABASE_URL="$supabase_url" --dart-define=SUPABASE_ANON_KEY="$supabase_key"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
