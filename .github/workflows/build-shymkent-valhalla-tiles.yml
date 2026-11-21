@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           OUTPUT="kazakhstan-latest.osm.pbf"
-          TEMP="${OUTPUT}.download"
+          TEMP="kazakhstan-latest.download.osm.pbf"
           URLS=(
             "https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf"
             "https://data.bbbike.org/osm/pbf/region/asia/kazakhstan.osm.pbf"
