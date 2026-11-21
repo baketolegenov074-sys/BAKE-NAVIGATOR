@@ -360,6 +360,7 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
   bool _loading = true;
   String? _error;
   int _localPendingCount = 0;
+  final Set<String> _busyRecordIds = <String>{};
 
   @override
   void initState() {
@@ -394,6 +395,58 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
     } catch (error) {
       if (!mounted) return;
       setState(() { _loading = false; _error = 'Не удалось загрузить отметки: ' + error.toString(); });
+    }
+  }
+
+  Future<void> _moderateReport(Map<String, dynamic> record, String status) async {
+    final id = record['id']?.toString();
+    if (id == null || id.isEmpty || _busyRecordIds.contains(id)) return;
+    setState(() => _busyRecordIds.add(id));
+    try {
+      await RoadReportSyncService.updateReportStatus(id, status);
+      await _loadReports();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(status == 'approved' ? 'Объект подтверждён.' : 'Объект отклонён.'),
+        ));
+      }
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка модерации: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _busyRecordIds.remove(id));
+    }
+  }
+
+  Future<void> _deleteReport(Map<String, dynamic> record) async {
+    final id = record['id']?.toString();
+    if (id == null || id.isEmpty || _busyRecordIds.contains(id)) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить объект из базы?'),
+        content: const Text('Запись будет удалена из Supabase без возможности восстановления.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Удалить')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _busyRecordIds.add(id));
+    try {
+      await RoadReportSyncService.deleteReport(id);
+      await _loadReports();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Объект удалён из Supabase.')),
+      );
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка удаления: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _busyRecordIds.remove(id));
     }
   }
 
@@ -454,7 +507,20 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
                     ),
                     icon: const Icon(Icons.map_outlined), label: const Text('На карте'),
                   ),
-
+                  if (record['status']?.toString() != 'approved')
+                    FilledButton.icon(
+                      onPressed: _busyRecordIds.contains(record['id']?.toString()) ? null : () => _moderateReport(record, 'approved'),
+                      icon: const Icon(Icons.check_circle_outline), label: const Text('Подтвердить'),
+                    ),
+                  if (record['status']?.toString() != 'rejected')
+                    OutlinedButton.icon(
+                      onPressed: _busyRecordIds.contains(record['id']?.toString()) ? null : () => _moderateReport(record, 'rejected'),
+                      icon: const Icon(Icons.cancel_outlined), label: const Text('Отклонить'),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: _busyRecordIds.contains(record['id']?.toString()) ? null : () => _deleteReport(record),
+                    icon: const Icon(Icons.delete_outline), label: const Text('Удалить'),
+                  ),
                 ]),
               ]),
             ),
@@ -465,11 +531,11 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
   }
 
   Widget _statusChip(String status) {
-    final color = status == 'Подтверждено' ? Colors.green
-        : status == 'Отклонено' ? Colors.red : Colors.orange;
+    final color = status == 'approved' || status == 'Подтверждено' ? Colors.green
+        : status == 'rejected' || status == 'Отклонено' ? Colors.red : Colors.orange;
     return Chip(
       visualDensity: VisualDensity.compact,
-      label: Text(status, style: const TextStyle(fontSize: 11)),
+      label: Text(status == 'approved' ? 'Одобрено' : status == 'rejected' ? 'Отклонено' : status, style: const TextStyle(fontSize: 11)),
       backgroundColor: color.withValues(alpha: 0.12),
       side: BorderSide(color: color.withValues(alpha: 0.35)),
       padding: EdgeInsets.zero,
@@ -487,8 +553,8 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
           icon: const Icon(Icons.refresh),
         )],
         bottom: const TabBar(tabs: [
-          Tab(text: 'На проверке'),
-          Tab(text: 'Подтверждённые'),
+          Tab(text: 'Новые'),
+          Tab(text: 'Одобрено'),
           Tab(text: 'Все'),
         ]),
       ),
@@ -552,7 +618,7 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
         ),
         Expanded(child: TabBarView(children: [
           _buildReportList('На проверке'),
-          _buildReportList('Подтверждено'),
+          _buildReportList('approved'),
           _buildReportList(null),
         ])),
       ]),
