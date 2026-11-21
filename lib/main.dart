@@ -3810,6 +3810,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _appInForeground = true;
       _lastCameraUpdateAt = null;
       _lastMapAnnotationUpdateAt = null;
+      _headingUpGestureActive = false;
+      _headingUpResumeTimer?.cancel();
       _roadReportRetryTimer ??= Timer.periodic(
         const Duration(seconds: 45),
         (_) => unawaited(_retryPendingRoadReports()),
@@ -6832,7 +6834,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               ],
             ),
           Positioned(
-            top: 190,
+            top: 238,
             right: 14,
             child: SafeArea(
               bottom: false,
@@ -6886,7 +6888,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           ),
           if (!_isOfflineMapActive)
             Positioned(
-              top: 88,
+              top: 190,
               right: 14,
               child: SafeArea(
                 bottom: false,
