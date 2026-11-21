@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -14,13 +16,39 @@ class RoadReportSyncService {
   static bool _initialized = false;
   static RealtimeChannel? _reportsChannel;
 
-  static bool get isConfigured =>
-      _url.isNotEmpty && _publishableKey.isNotEmpty;
+  static const String _expectedProjectRef = 'cnyshqvdonqhkkcqgucf';
+
+  static String? get configurationProblem {
+    if (_url.trim().isEmpty) return 'SUPABASE_URL is missing from this APK.';
+    if (_publishableKey.trim().isEmpty) {
+      return 'SUPABASE_ANON_KEY is missing from this APK.';
+    }
+    final uri = Uri.tryParse(_url.trim());
+    if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
+      return 'SUPABASE_URL must be a valid HTTPS project URL.';
+    }
+    final expectedHost = '$_expectedProjectRef.supabase.co';
+    if (uri.host.toLowerCase() != expectedHost) {
+      return 'SUPABASE_URL points to ${uri.host}; expected $expectedHost.';
+    }
+    return null;
+  }
+
+  static String get configurationSummary {
+    final uri = Uri.tryParse(_url.trim());
+    final host = uri?.host.isNotEmpty == true ? uri!.host : 'missing-or-invalid';
+    return 'host=$host, publishable_key_present=${_publishableKey.trim().isNotEmpty}';
+  }
+
+  static bool get isConfigured => configurationProblem == null;
   static bool get isInitialized => _initialized;
 
   static Future<void> initialize() async {
-    if (!isConfigured || _initialized) return;
-    await Supabase.initialize(url: _url, anonKey: _publishableKey);
+    if (_initialized) return;
+    final problem = configurationProblem;
+    if (problem != null) throw StateError(problem);
+    debugPrint('BAKE Supabase configuration: $configurationSummary');
+    await Supabase.initialize(url: _url.trim(), anonKey: _publishableKey.trim());
     _initialized = true;
   }
 
@@ -86,7 +114,9 @@ class RoadReportSyncService {
 
   /// Inserts only; public clients are deliberately not granted UPDATE access.
   static Future<void> uploadReport(Map<String, dynamic> report) async {
-    if (!_initialized) return;
+    if (!_initialized) {
+      throw StateError(configurationProblem ?? 'Supabase has not initialized.');
+    }
     final payload = Map<String, dynamic>.from(report);
     payload['deviceId'] ??= await getDeviceId();
     try {
