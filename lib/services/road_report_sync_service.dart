@@ -112,7 +112,7 @@ class RoadReportSyncService {
         'syncStatus': 'Синхронизировано',
       };
 
-  /// Inserts only; public clients are deliberately not granted UPDATE access.
+  /// Submit a new report to the shared Supabase table.
   static Future<void> uploadReport(Map<String, dynamic> report) async {
     if (!_initialized) {
       throw StateError(configurationProblem ?? 'Supabase has not initialized.');
