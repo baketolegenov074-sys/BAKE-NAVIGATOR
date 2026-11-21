@@ -191,7 +191,7 @@ class RoadToolsMenu extends StatelessWidget {
       Card(child: ListTile(
         leading: const Icon(Icons.admin_panel_settings_outlined),
         title: const Text('Кабинет администратора'),
-        subtitle: const Text('Модерация отметок в общей базе Supabase'),
+        subtitle: const Text('Просмотр отметок из общей базы Supabase'),
         trailing: const Icon(Icons.chevron_right),
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RoadAdminPage())),
       )),
@@ -357,7 +357,6 @@ class RoadAdminPage extends StatefulWidget {
 
 class _RoadAdminPageState extends State<RoadAdminPage> {
   List<Map<String, dynamic>> _records = [];
-  final Set<String> _busyIds = <String>{};
   bool _loading = true;
   String? _error;
 
@@ -375,45 +374,6 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
     } catch (error) {
       if (!mounted) return;
       setState(() { _loading = false; _error = 'Не удалось загрузить отметки: ' + error.toString(); });
-    }
-  }
-
-  Future<void> _moderate(Map<String, dynamic> record, String action) async {
-    final id = record['id']?.toString() ?? '';
-    if (id.isEmpty || _busyIds.contains(id)) return;
-    if (action == 'delete') {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Удалить отметку?'),
-          content: const Text('Запись будет удалена из общей базы Supabase.'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Удалить'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true || !mounted) return;
-    }
-    setState(() => _busyIds.add(id));
-    try {
-      await RoadReportSyncService.moderateReport(reportId: id, action: action);
-      await _loadReports();
-      if (!mounted) return;
-      final message = action == 'approve' ? 'Отметка подтверждена'
-          : action == 'reject' ? 'Отметка отклонена' : 'Отметка удалена';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка модерации: ' + error.toString())),
-      );
-    } finally {
-      if (mounted) setState(() => _busyIds.remove(id));
     }
   }
 
@@ -441,7 +401,6 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
         itemBuilder: (context, index) {
           final record = rows[index];
           final id = record['id']?.toString() ?? '';
-          final busy = _busyIds.contains(id);
           final latitude = (record['latitude'] as num?)?.toDouble();
           final longitude = (record['longitude'] as num?)?.toDouble();
           final accuracy = (record['accuracyMeters'] as num?)?.toDouble();
@@ -459,10 +418,7 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
                   const SizedBox(width: 8),
                   Expanded(child: Text(record['type']?.toString() ?? 'Объект',
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
-                  if (busy)
-                    const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  else
-                    _statusChip(currentStatus),
+                  _statusChip(currentStatus),
                 ]),
                 const SizedBox(height: 8),
                 Text('GPS: ' + (latitude?.toStringAsFixed(6) ?? '—') + ', ' + (longitude?.toStringAsFixed(6) ?? '—')),
@@ -480,19 +436,7 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
                     ),
                     icon: const Icon(Icons.map_outlined), label: const Text('На карте'),
                   ),
-                  FilledButton.icon(
-                    onPressed: busy ? null : () => _moderate(record, 'approve'),
-                    icon: const Icon(Icons.check), label: const Text('Подтвердить'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: busy ? null : () => _moderate(record, 'reject'),
-                    icon: const Icon(Icons.close), label: const Text('Отклонить'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: busy ? null : () => _moderate(record, 'delete'),
-                    style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                    icon: const Icon(Icons.delete_outline), label: const Text('Удалить'),
-                  ),
+
                 ]),
               ]),
             ),
@@ -525,9 +469,9 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
           icon: const Icon(Icons.refresh),
         )],
         bottom: const TabBar(tabs: [
-          Tab(text: 'На проверке'),
-          Tab(text: 'Подтверждённые'),
-          Tab(text: 'Все'),
+          Tab(text: 'На проверке (${_records.where((r) => r['status'] == 'На проверке').length})'),
+          Tab(text: 'Подтверждённые (${_records.where((r) => r['status'] == 'Подтверждено').length})'),
+          Tab(text: 'Все (${_records.length})'),
         ]),
       ),
       body: Column(children: [
