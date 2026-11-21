@@ -409,7 +409,8 @@ jobs:
           supabase_url="$(clean_define "${SUPABASE_URL:-}")"
           supabase_key="$(clean_define "${SUPABASE_ANON_KEY:-}")"
           flutter_args=(
-            build apk
+            build
+            apk
             --release
             --target-platform=android-arm64
             "--dart-define=SUPABASE_URL=$supabase_url"
