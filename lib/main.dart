@@ -4068,12 +4068,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             );
             debugPrint('BAKE Valhalla route failed; falling back to OSRM: $error');
           }
-        } else if (_valhallaExtractPath != null) {
-          routingNotice = AppLocale.pick(
-            'Офлайн-карта маршрутов не запустилась — пробуем интернет-маршрутизатор.',
-            'Офлайн маршрут картасы іске қосылмады — интернет маршрутизаторын тексереміз.',
-            'Offline routing data could not be opened — trying the online router.',
-          );
         }
       }
 
