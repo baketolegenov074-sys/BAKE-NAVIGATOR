@@ -1497,8 +1497,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           geometry: [_directionArrowPolygon(
             birdPosition,
             birdBearing,
-            lengthMeters: 36,
-            halfWidthMeters: 14,
+            lengthMeters: 16,
+            halfWidthMeters: 6,
           )],
           fillColor: '#FFFFFF',
           fillOpacity: 1,
@@ -1515,8 +1515,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           geometry: [_directionArrowPolygon(
             birdPosition,
             birdBearing,
-            lengthMeters: 30,
-            halfWidthMeters: 11,
+            lengthMeters: 13,
+            halfWidthMeters: 5,
           )],
           fillColor: '#0878F9',
           fillOpacity: 1,
@@ -1540,7 +1540,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       // symbols when they collide with road labels or other annotations;
       // the circle keeps every camera position visible in both 2D and 3D.
       // The pictogram is an additional label, not the only visible marker.
-      for (final report in _confirmedRoadReports.where((r) => !_isAddressOnlyRoadReport(r))) {
+      for (final report in _confirmedRoadReports.where(_isRoadWarningReport)) {
         final point = ml.LatLng(
           (report['latitude'] as num).toDouble(),
           (report['longitude'] as num).toDouble(),
@@ -3547,10 +3547,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
-  bool _isAddressOnlyRoadReport(Map<String, dynamic> report) {
+  bool _isRoadWarningReport(Map<String, dynamic> report) {
     final type = (report['type'] ?? '').toString().trim().toLowerCase();
-    return type.contains('адрес') || type.contains('улиц') ||
-        type.contains('подъезд') || type.contains('ворот');
+    return type.contains('камера') || type.contains('светофор') ||
+        type.contains('лежач') || type.contains('полиц') ||
+        type.contains('перекрыт') || type.contains('яма') ||
+        type.contains('переход') || type.contains('скорост') ||
+        type.contains('знак') || type.contains('опасн') ||
+        type.contains('переезд') || type.contains('поворот') ||
+        type.contains('односторон') || type.contains('ремонт');
   }
 
   String _roadReportGlyph(Map<String, dynamic> report) {
@@ -3817,6 +3822,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         Icon(Icons.arrow_upward, size: 20, color: (!left && !right) ? active : faded),
         const SizedBox(width: 3),
         Icon(Icons.arrow_right, size: 20, color: right ? active : faded),
+        const SizedBox(width: 5),
+        Text(_distanceToNextManeuverMeters == null ? '—' : (_distanceToNextManeuverMeters! >= 1000 ? '${(_distanceToNextManeuverMeters! / 1000).toStringAsFixed(1)} км' : '${_distanceToNextManeuverMeters!.round()} м'),
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF263238))),
       ]),
     );
   }
@@ -6241,7 +6249,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           ),
         ),
       if (_currentLocation != null && _navigationActive)
-        Marker(point: _currentLocation!, width: 112, height: 42, alignment: Alignment.centerLeft,
+        Marker(point: _offsetAlongRoute(_currentLocation!, _routeBearingAt(_currentLocation!), 65), width: 112, height: 42, alignment: Alignment.centerLeft,
           child: Transform.translate(offset: const Offset(14, -34), child: _buildRouteDirectionCue()),
         ),
       if (_currentLocation != null)
@@ -6273,7 +6281,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         height: 30,
         child: _buildRoadAlertMapMarker(alert),
       )),
-      ..._confirmedRoadReports.where((r) => !_isAddressOnlyRoadReport(r)).map((report) => Marker(
+      ..._confirmedRoadReports.where(_isRoadWarningReport).map((report) => Marker(
         point: LatLng((report['latitude'] as num).toDouble(), (report['longitude'] as num).toDouble()),
         width: 28,
         height: 28,
