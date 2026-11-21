@@ -1,6 +1,11 @@
 name: Build Shymkent Valhalla Routing Tiles
 
 on:
+  push:
+    branches:
+      - fix/address-gps-route-reset
+    paths:
+      - .github/workflows/build-shymkent-valhalla-tiles.yml
   workflow_dispatch:
   workflow_call:
 
