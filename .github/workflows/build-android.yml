@@ -3,11 +3,6 @@ name: Build BAKE Navigator APK
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - fix/address-gps-route-reset
-    paths:
-      - '.github/workflows/build-android.yml'
 
 permissions:
   contents: read
@@ -403,11 +398,26 @@ jobs:
 
       - name: Build release APK
         shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
-          flutter build apk --release --target-platform android-arm64 \
-            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
-            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+          clean_define() {
+            printf '%s' "$1" | tr -d '\r\n'
+          }
+          supabase_url="$(clean_define "${SUPABASE_URL:-}")"
+          supabase_key="$(clean_define "${SUPABASE_ANON_KEY:-}")"
+          flutter_args=(
+            build apk
+            --release
+            --target-platform=android-arm64
+            "--dart-define=SUPABASE_URL=$supabase_url"
+            "--dart-define=SUPABASE_ANON_KEY=$supabase_key"
+          )
+          printf 'Supabase URL configured: %s\n' "$([ -n "$supabase_url" ] && echo yes || echo no)"
+          printf 'Supabase key configured: %s\n' "$([ -n "$supabase_key" ] && echo yes || echo no)"
+          flutter "${flutter_args[@]}"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
