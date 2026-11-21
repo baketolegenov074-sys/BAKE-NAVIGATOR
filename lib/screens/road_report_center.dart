@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/road_report_sync_service.dart';
@@ -508,11 +510,11 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
                     ),
                     icon: const Icon(Icons.map_outlined), label: const Text('На карте'),
                   ),
-                  if (pending) FilledButton.icon(
+                  FilledButton.icon(
                     onPressed: busy ? null : () => _moderate(record, 'approve'),
                     icon: const Icon(Icons.check), label: const Text('Подтвердить'),
                   ),
-                  if (pending) OutlinedButton.icon(
+                  OutlinedButton.icon(
                     onPressed: busy ? null : () => _moderate(record, 'reject'),
                     icon: const Icon(Icons.close), label: const Text('Отклонить'),
                   ),
