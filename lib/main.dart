@@ -45,20 +45,23 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         'type': 'symbol',
         'source': 'openmaptiles',
         'source-layer': 'transportation_name',
-        'minzoom': 8,
+        'minzoom': 11,
         'layout': {
           'symbol-placement': 'line',
           'text-anchor': 'center',
+          // OpenMapTiles stores the local OSM language in its canonical name
+          // field. This offline renderer uses local Flutter fonts, not PBF glyphs.
           'text-field': '{name}',
           'text-font': ['Roboto'],
-          'text-size': 15,
+          'text-size': 14,
           'text-max-width': 12,
           'text-offset': [0, 0.15],
+          'text-allow-overlap': false,
         },
         'paint': {
-          'text-color': '#66594b',
-          'text-halo-color': '#ffffff',
-          'text-halo-width': 2,
+          'text-color': '#111111',
+          'text-halo-color': '#FFFFFF',
+          'text-halo-width': 2.2,
         },
       },
       {
@@ -66,20 +69,21 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         'type': 'symbol',
         'source': 'openmaptiles',
         'source-layer': 'place',
-        'minzoom': 8,
+        'minzoom': 11,
         'layout': {
           'symbol-placement': 'point',
           'text-anchor': 'center',
           'text-field': '{name}',
           'text-font': ['Roboto'],
-          'text-size': 13,
+          'text-size': 14,
           'text-max-width': 10,
           'text-offset': [0, 0.1],
+          'text-allow-overlap': false,
         },
         'paint': {
-          'text-color': '#4d5663',
-          'text-halo-color': '#ffffff',
-          'text-halo-width': 2,
+          'text-color': '#111111',
+          'text-halo-color': '#FFFFFF',
+          'text-halo-width': 2.2,
         },
       },
       {
@@ -729,6 +733,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   final MapController _mapController = MapController();
   ml.MapLibreMapController? _mapLibreController;
   bool _mapLibreStyleReady = false;
+  bool _onlineLabelStylePatchStarted = false;
+  bool _onlineLabelStylePatched = false;
+  bool _offlineStreetLabelsVisible = false;
   bool _is3DMap = true;
   bool _isSatelliteMap = false;
   final Map<String, dynamic> _satelliteOverlayFillOpacities = <String, dynamic>{};
@@ -1341,13 +1348,141 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _mapLibreController = controller;
   }
 
-  void _onMapLibreStyleLoaded() {
-    _mapLibreStyleReady = true;
+  Future<void> _patchOnlineMapStyleLabels() async {
+    if (_onlineLabelStylePatchStarted || _onlineLabelStylePatched) return;
+    _onlineLabelStylePatchStarted = true;
+    try {
+      final response = await http.get(
+        Uri.parse('https://tiles.openfreemap.org/styles/liberty'),
+      ).timeout(const Duration(seconds: 25));
+      if (response.statusCode != 200) {
+        throw HttpException('Liberty style HTTP ${response.statusCode}');
+      }
+      final style = Map<String, dynamic>.from(
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map,
+      );
+      final sources = Map<String, dynamic>.from(style['sources'] as Map);
+      final layers = (style['layers'] as List)
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+
+      String? vectorSourceId;
+      for (final layer in layers) {
+        if (layer['source-layer'] == 'transportation_name' &&
+            layer['source'] is String) {
+          vectorSourceId = layer['source'] as String;
+          break;
+        }
+      }
+      vectorSourceId ??= sources.entries
+          .where((entry) =>
+              entry.value is Map &&
+              (entry.value as Map)['type'] == 'vector')
+          .map((entry) => entry.key)
+          .cast<String?>()
+          .firstWhere((value) => value != null, orElse: () => null);
+      if (vectorSourceId == null) {
+        throw StateError('Liberty style has no OpenMapTiles vector source');
+      }
+
+      style['glyphs'] =
+          'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf';
+      const textField = [
+        'coalesce',
+        ['get', 'name:ru'],
+        ['get', 'name'],
+        ['get', 'name:kk'],
+        ['get', 'name_ru'],
+        ['get', 'name_kk'],
+      ];
+      const textFont = ['Open Sans Semibold'];
+      const labelPaint = {
+        'text-color': '#111111',
+        'text-halo-color': '#FFFFFF',
+        'text-halo-width': 2.2,
+      };
+
+      var roadLayerFound = false;
+      var placeLayerFound = false;
+      for (final layer in layers) {
+        if (layer['type'] != 'symbol') continue;
+        final sourceLayer = layer['source-layer'];
+        if (sourceLayer != 'transportation_name' && sourceLayer != 'place') {
+          continue;
+        }
+        final layout = Map<String, dynamic>.from(
+          (layer['layout'] as Map?) ?? <String, dynamic>{},
+        );
+        layout['symbol-placement'] =
+            sourceLayer == 'transportation_name' ? 'line' : 'point';
+        layout['text-field'] = textField;
+        layout['text-font'] = textFont;
+        layout['text-size'] = 14;
+        layout['text-allow-overlap'] = false;
+        layer['layout'] = layout;
+        layer['paint'] = {
+          ...Map<String, dynamic>.from(
+            (layer['paint'] as Map?) ?? <String, dynamic>{},
+          ),
+          ...labelPaint,
+        };
+        layer['minzoom'] = 11;
+        if (sourceLayer == 'transportation_name') roadLayerFound = true;
+        if (sourceLayer == 'place') placeLayerFound = true;
+      }
+
+      if (!roadLayerFound) {
+        layers.add({
+          'id': 'bake-restored-road-labels',
+          'type': 'symbol',
+          'source': vectorSourceId,
+          'source-layer': 'transportation_name',
+          'minzoom': 11,
+          'layout': {
+            'symbol-placement': 'line',
+            'text-field': textField,
+            'text-font': textFont,
+            'text-size': 14,
+            'text-allow-overlap': false,
+          },
+          'paint': labelPaint,
+        });
+      }
+      if (!placeLayerFound) {
+        layers.add({
+          'id': 'bake-restored-place-labels',
+          'type': 'symbol',
+          'source': vectorSourceId,
+          'source-layer': 'place',
+          'minzoom': 11,
+          'layout': {
+            'symbol-placement': 'point',
+            'text-field': textField,
+            'text-font': textFont,
+            'text-size': 14,
+            'text-allow-overlap': false,
+          },
+          'paint': labelPaint,
+        });
+      }
+
+      style['layers'] = layers;
+      _onlineLabelStylePatched = true;
+      final controller = _mapLibreController;
+      if (controller == null) throw StateError('MapLibre controller is unavailable');
+      await controller.setStyle(jsonEncode(style));
+    } catch (error) {
+      _onlineLabelStylePatched = true;
+      debugPrint('BAKE online street-label style patch failed: $error');
+      _finishMapLibreStyleLoaded();
+    } finally {
+      _onlineLabelStylePatchStarted = false;
+    }
+  }
+
+  void _finishMapLibreStyleLoaded() {
     unawaited(_ensureMapLibreLabelLayers());
     unawaited(_syncMapLibreAnnotations(updateRoute: true));
-    // GPS may finish before MapLibre has created its controller. In that case
-    // the first camera move is ignored, so center the map again when the style
-    // becomes ready to make the live-position arrow visible immediately.
     final currentLocation = _currentLocation;
     if (currentLocation != null) {
       _moveMapCamera(currentLocation, 16);
@@ -1355,6 +1490,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (_routePoints.length > 1) _fitMapCamera(_routePoints);
     _applyMapViewMode();
     unawaited(_configure3DMapLayers());
+  }
+
+  void _onMapLibreStyleLoaded() {
+    _mapLibreStyleReady = true;
+    if (!_onlineLabelStylePatched) {
+      if (!_onlineLabelStylePatchStarted) {
+        unawaited(_patchOnlineMapStyleLabels());
+      }
+      return;
+    }
+    _finishMapLibreStyleLoaded();
   }
 
   Future<void> _configure3DMapLayers() async {
@@ -1847,6 +1993,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           textHaloColor: '#17324D',
           textHaloWidth: 1.5,
         ));
+      }
+      if (_mapCameraZoom >= 14) {
+        for (final report in _confirmedRoadReports.where(_isStreetNameReport)) {
+          final label = _roadReportStreetLabel(report);
+          if (label.isEmpty) continue;
+          await controller.addSymbol(ml.SymbolOptions(
+            geometry: ml.LatLng(
+              (report['latitude'] as num).toDouble(),
+              (report['longitude'] as num).toDouble(),
+            ),
+            textField: label,
+            textSize: 12,
+            textColor: '#111111',
+            textHaloColor: '#FFFFFF',
+            textHaloWidth: 2,
+            textOffset: const Offset(0, 0.9),
+          ));
+        }
       }
       if (_destination != null) {
         // The marker's ground anchor is exactly point B. Red glow rings are
@@ -4193,6 +4357,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         type.contains('знак') || type.contains('опасн') ||
         type.contains('переезд') || type.contains('поворот') ||
         type.contains('односторон') || type.contains('ремонт');
+  }
+
+  bool _isStreetNameReport(Map<String, dynamic> report) {
+    final type = (report['type'] ?? '').toString().trim().toLowerCase();
+    return type.contains('улиц') || type.contains('дорог') ||
+        type.contains('переимен') || type.contains('street') ||
+        type.contains('road');
+  }
+
+  String _roadReportStreetLabel(Map<String, dynamic> report) {
+    for (final key in ['title', 'address']) {
+      final value = report[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return '';
   }
 
   String _roadReportGlyph(Map<String, dynamic> report) {
@@ -6954,6 +7133,34 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         height: 28,
         child: _buildConfirmedRoadReportMarker(report),
       )),
+      if (_mapCameraZoom >= 14)
+        ..._confirmedRoadReports.where(_isStreetNameReport).map((report) => Marker(
+          point: LatLng(
+            (report['latitude'] as num).toDouble(),
+            (report['longitude'] as num).toDouble(),
+          ),
+          width: 168,
+          height: 30,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.94),
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(color: const Color(0xFF777777), width: 0.7),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              _roadReportStreetLabel(report),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF111111),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        )),
       if (_trafficLayerEnabled)
         ..._trafficReports.map((report) => Marker(
           point: LatLng(
@@ -7026,6 +7233,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               styleString: 'https://tiles.openfreemap.org/styles/liberty',
               onMapCreated: _onMapLibreCreated,
               onStyleLoadedCallback: _onMapLibreStyleLoaded,
+              onCameraIdle: () => unawaited(_syncMapLibreAnnotations()),
               onMapClick: (_, __) {},
               onMapLongClick: (_, point) => _openPointMenu(LatLng(point.latitude, point.longitude)),
               compassEnabled: false,
@@ -7045,8 +7253,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 initialZoom: 13,
                 onTap: (_, __) {},
                 onLongPress: (_, point) => _openPointMenu(point),
-                onPositionChanged: (_, hasGesture) {
+                onPositionChanged: (camera, hasGesture) {
                   if (hasGesture) _scheduleHeadingUpReturn();
+                  final showStreetLabels = camera.zoom >= 14;
+                  if (showStreetLabels != _offlineStreetLabelsVisible && mounted) {
+                    setState(() => _offlineStreetLabelsVisible = showStreetLabels);
+                  }
                 },
               ),
               children: [
