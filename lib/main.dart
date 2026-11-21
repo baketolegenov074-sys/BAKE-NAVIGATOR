@@ -82,7 +82,7 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         'paint': {
           'text-color': '#111111',
           'text-halo-color': '#FFFFFF',
-          'text-halo-width': 2.2,
+          'text-halo-width': 2.5,
         },
       },
       {
@@ -111,7 +111,7 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         'paint': {
           'text-color': '#111111',
           'text-halo-color': '#FFFFFF',
-          'text-halo-width': 2.2,
+          'text-halo-width': 2.5,
         },
       },
       {
@@ -1450,7 +1450,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
 
       style['glyphs'] =
-          'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf';
+          'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf';
       const textField = [
         'coalesce',
         ['get', 'name:ru'],
@@ -1459,11 +1459,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         ['get', 'name_ru'],
         ['get', 'name_kk'],
       ];
-      const textFont = ['Open Sans Semibold'];
+      const textFont = ['Noto Sans Regular'];
       const labelPaint = {
         'text-color': '#111111',
         'text-halo-color': '#FFFFFF',
-        'text-halo-width': 2.2,
+        'text-halo-width': 2.5,
       };
 
       var roadLayerFound = false;

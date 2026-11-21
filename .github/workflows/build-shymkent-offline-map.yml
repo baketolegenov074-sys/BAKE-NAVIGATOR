@@ -87,6 +87,21 @@ jobs:
           echo "Tile count: $TILE_COUNT"
           test "$TILE_COUNT" -gt 0
           sqlite3 shymkent.mbtiles "SELECT zoom_level, COUNT(*) FROM tiles GROUP BY zoom_level ORDER BY zoom_level;"
+          META_JSON="$(sqlite3 shymkent.mbtiles "SELECT value FROM metadata WHERE name='json';")"
+          python3 - "$META_JSON" <<'PY'
+          import json
+          import sys
+          metadata = json.loads(sys.argv[1])
+          layers = metadata.get("vector_layers", [])
+          road = next((layer for layer in layers if layer.get("id") == "transportation_name"), None)
+          if road is None:
+              raise SystemExit("MBTiles has no transportation_name vector layer")
+          fields = sorted((road.get("fields") or {}).keys())
+          if "name" not in fields:
+              raise SystemExit(f"transportation_name has no name field; fields={fields}")
+          print("Offline MBTiles source-layer: transportation_name")
+          print("Offline road-label fields: " + ", ".join(fields))
+          PY
           mkdir -p output
           cp shymkent.mbtiles output/shymkent.mbtiles
           cat > output/README_RU.txt <<'EOF'
@@ -97,6 +112,7 @@ jobs:
           Зумы: 10–17.
           Важно: граница задана прямоугольником, не административным полигоном.
           Пакет содержит картографические тайлы, но не граф офлайн-маршрутизации и не поисковый индекс.
+          Слой названий улиц: transportation_name; основное поле: name.
           EOF
 
       - name: Upload workflow artifact

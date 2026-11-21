@@ -77,6 +77,42 @@ jobs:
           gzip -t assets/data/shymkent_search.json.gz
           ls -lh assets/data/shymkent_search.json.gz
 
+      - name: Validate OpenMapTiles source schema and Cyrillic glyphs
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-all-errors \
+            https://tiles.openfreemap.org/styles/liberty \
+            --output /tmp/liberty-style.json
+          SOURCE_URL="$(jq -r '[.sources[] | select(.type == "vector") | .url // empty][0] // empty' /tmp/liberty-style.json)"
+          if [ -z "$SOURCE_URL" ]; then
+            echo "::error::OpenFreeMap Liberty style has no vector TileJSON URL"
+            exit 1
+          fi
+          curl --fail --location --retry 3 --retry-all-errors \
+            "$SOURCE_URL" --output /tmp/openfreemap-tilejson.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          metadata = json.loads(Path("/tmp/openfreemap-tilejson.json").read_text())
+          layers = metadata.get("vector_layers", [])
+          road = next((layer for layer in layers if layer.get("id") == "transportation_name"), None)
+          if road is None:
+              raise SystemExit("OpenFreeMap tiles have no transportation_name vector layer")
+          fields = sorted((road.get("fields") or {}).keys())
+          if "name" not in fields:
+              raise SystemExit(f"transportation_name has no name field; fields={fields}")
+          print("Online source-layer: transportation_name")
+          print("Online road-label fields: " + ", ".join(fields))
+          PY
+          GLYPH_URL='https://fonts.openmaptiles.org/Noto%20Sans%20Regular/1024-1279.pbf'
+          STATUS="$(curl --silent --show-error --location --retry 3 --retry-all-errors \
+            --output /tmp/cyrillic-glyphs.pbf --write-out '%{http_code}' "$GLYPH_URL")"
+          test "$STATUS" = "200"
+          test -s /tmp/cyrillic-glyphs.pbf
+          echo "Cyrillic glyph test: HTTP $STATUS, $(wc -c </tmp/cyrillic-glyphs.pbf) bytes"
+          echo "Glyph template: https://fonts.openmaptiles.org/{fontstack}/{range}.pbf"
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
