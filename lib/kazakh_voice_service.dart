@@ -132,6 +132,7 @@ class KazakhVoiceService {
   Completer<void>? _ready;
   Future<void>? _starting;
   int _requestId = 0;
+  Future<void> _speechQueue = Future<void>.value();
   String _phonemizerVoice = 'kk';
   bool _phonemizerInitialized = false;
 
@@ -388,6 +389,24 @@ class KazakhVoiceService {
   }
 
   Future<void> speak({
+    required String text,
+    required int speakerId,
+    double speed = 1.0,
+    void Function(int received, int total)? onDownloadProgress,
+    void Function(String stage)? onStage,
+  }) {
+    final queued = _speechQueue.catchError((Object _) {}).then((_) => _speakQueued(
+      text: text,
+      speakerId: speakerId,
+      speed: speed,
+      onDownloadProgress: onDownloadProgress,
+      onStage: onStage,
+    ));
+    _speechQueue = queued;
+    return queued;
+  }
+
+  Future<void> _speakQueued({
     required String text,
     required int speakerId,
     double speed = 1.0,
