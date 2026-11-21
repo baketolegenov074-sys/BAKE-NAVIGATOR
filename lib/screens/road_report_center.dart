@@ -467,9 +467,9 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
           icon: const Icon(Icons.refresh),
         )],
         bottom: const TabBar(tabs: [
-          Tab(text: 'На проверке (${_records.where((r) => r['status'] == 'На проверке').length})'),
-          Tab(text: 'Подтверждённые (${_records.where((r) => r['status'] == 'Подтверждено').length})'),
-          Tab(text: 'Все (${_records.length})'),
+          Tab(text: 'На проверке'),
+          Tab(text: 'Подтверждённые'),
+          Tab(text: 'Все'),
         ]),
       ),
       body: Column(children: [
