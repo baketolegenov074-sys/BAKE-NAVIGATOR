@@ -3400,7 +3400,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
     final type = report['type']?.toString() ?? 'Дорожный объект';
     final date = report['createdAt']?.toString() ?? '';
     return Tooltip(
-      message: '$type\\nПодтверждено${date.isNotEmpty ? '\\n$date' : ''}',
+      message: '$type\nПодтверждено${date.isNotEmpty ? '\n$date' : ''}',
       child: Container(
         decoration: BoxDecoration(
           color: const Color(0xFFFFD54F),
