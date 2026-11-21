@@ -59,7 +59,7 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         'type': 'symbol',
         'source': 'openmaptiles',
         'source-layer': 'transportation_name',
-        'minzoom': 11,
+        'minzoom': 10,
         'layout': {
           'symbol-placement': 'line',
           'text-anchor': 'center',
@@ -77,6 +77,37 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
           'text-size': 14,
           'text-max-width': 12,
           'text-offset': [0, 0.15],
+          'text-allow-overlap': false,
+        },
+        'paint': {
+          'text-color': '#111111',
+          'text-halo-color': '#FFFFFF',
+          'text-halo-width': 2.5,
+        },
+      },
+      {
+        'id': 'bake_transportation_fallback_name',
+        'type': 'symbol',
+        'source': 'openmaptiles',
+        // Some regional OpenMapTiles exports keep road names directly in
+        // transportation instead of transportation_name.
+        'source-layer': 'transportation',
+        'minzoom': 12,
+        'filter': ['has', 'name'],
+        'layout': {
+          'symbol-placement': 'line',
+          'text-anchor': 'center',
+          'text-field': [
+            'coalesce',
+            ['get', 'name'],
+            ['get', 'name:ru'],
+            ['get', 'name:kk'],
+            ['get', 'name_ru'],
+            ['get', 'name_kk'],
+          ],
+          'text-font': ['Roboto'],
+          'text-size': 13,
+          'text-max-width': 12,
           'text-allow-overlap': false,
         },
         'paint': {
