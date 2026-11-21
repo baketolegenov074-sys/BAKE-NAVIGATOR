@@ -62,6 +62,47 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         },
       },
       {
+        'id': 'bake_place_labels',
+        'type': 'symbol',
+        'source': 'openmaptiles',
+        'source-layer': 'place',
+        'minzoom': 8,
+        'layout': {
+          'symbol-placement': 'point',
+          'text-anchor': 'center',
+          'text-field': '{name}',
+          'text-font': ['Roboto'],
+          'text-size': 13,
+          'text-max-width': 10,
+          'text-offset': [0, 0.1],
+        },
+        'paint': {
+          'text-color': '#4d5663',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 2,
+        },
+      },
+      {
+        'id': 'bake_boundary_labels',
+        'type': 'symbol',
+        'source': 'openmaptiles',
+        'source-layer': 'boundary',
+        'minzoom': 7,
+        'layout': {
+          'symbol-placement': 'line',
+          'text-anchor': 'center',
+          'text-field': '{name}',
+          'text-font': ['Roboto'],
+          'text-size': 12,
+          'text-max-width': 12,
+        },
+        'paint': {
+          'text-color': '#697386',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 2,
+        },
+      },
+      {
         'id': 'bake_house_numbers',
         'type': 'symbol',
         'source': 'openmaptiles',
@@ -3525,6 +3566,34 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
       await _speakCurrentInstruction();
     }
+  }
+
+  Future<void> _resetRoutePreview() async {
+    if (!mounted) return;
+    setState(() {
+      _routeReady = false;
+      _routeActionDismissed = true;
+      _routeProgressSegmentIndex = 0;
+      _routePoints = <LatLng>[];
+      _routeOrigin = null;
+      _destination = null;
+      _routeStops.clear();
+      _routeAlternatives = <Map<String, dynamic>>[];
+      _selectedRouteIndex = 0;
+      _instructions = <RouteInstruction>[];
+      _instructionIndex = 0;
+      _routeDistanceMeters = null;
+      _routeDurationSeconds = null;
+      _announcedManeuverStage = 0;
+      _offRouteSamples = 0;
+      _message = '';
+      _searchController.clear();
+    });
+    await _tts.stop();
+    await _kazakhVoiceService.stop();
+    await _removeSavedRoutePoint(_savedRouteDestinationKey);
+    // Clear the rendered MapLibre route and destination annotation immediately.
+    await _syncMapLibreAnnotations(updateRoute: true);
   }
 
   Future<void> _finishNavigation() async {
@@ -7555,19 +7624,39 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     ),
                     SizedBox(
                       height: 38,
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFFFFCC00),
-                          foregroundColor: const Color(0xFF171717),
-                          elevation: 5,
-                          padding: const EdgeInsets.symmetric(horizontal: 28),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-                        ),
-                        onPressed: _startNavigation,
-                        child: Text(
-                          AppLocale.tr('Поехали'),
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                        ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFCC00),
+                              foregroundColor: const Color(0xFF171717),
+                              elevation: 5,
+                              padding: const EdgeInsets.symmetric(horizontal: 28),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                            ),
+                            onPressed: _startNavigation,
+                            child: Text(
+                              AppLocale.tr('Поехали'),
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFFB42318),
+                              side: const BorderSide(color: Color(0xFFB42318)),
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                            ),
+                            onPressed: _resetRoutePreview,
+                            icon: const Icon(Icons.close, size: 16),
+                            label: Text(
+                              AppLocale.tr('Сбросить'),
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
