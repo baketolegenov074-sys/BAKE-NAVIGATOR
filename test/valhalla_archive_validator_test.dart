@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:bake_navigator/services/valhalla_archive_validator.dart';
 
@@ -17,15 +18,19 @@ void main() {
       }
     });
 
-    test('accepts the archive matching the published SHA-256', () async {
+    test('accepts bytes matching their SHA-256 digest', () async {
+      final bytes = 'Shymkent Valhalla archive'.codeUnits;
       final archive = File('${tempDirectory.path}/shymkent-valhalla.tar');
-      await archive.writeAsBytes(
-        'Shymkent Valhalla archive'.codeUnits,
-        flush: true,
+      await archive.writeAsBytes(bytes, flush: true);
+      final expected = sha256.convert(bytes).toString();
+
+      expect(
+        await hasValidShymkentValhallaSha256(
+          archive,
+          expectedSha256: expected,
+        ),
+        isTrue,
       );
-      // A deterministic fixture uses its own known digest via the helper's
-      // production checksum in a separate integration verification.
-      expect(await hasValidShymkentValhallaSha256(archive), isFalse);
     });
 
     test('rejects modified archive bytes', () async {
