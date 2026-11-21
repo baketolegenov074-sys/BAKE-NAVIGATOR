@@ -34,14 +34,20 @@ class ValhallaRoutingBridge(
 
     companion object {
         private const val CHANNEL = "bake.navigator/valhalla"
+
+        // One process-wide engine and worker: recreating a FlutterActivity or
+        // its MethodChannel must not reload the on-device road graph.
+        private val worker: ExecutorService = Executors.newSingleThreadExecutor()
+        private val mainHandler = Handler(Looper.getMainLooper())
+
+        @Volatile
+        private var engine: Valhalla? = null
+
+        @Volatile
+        private var initializedTilePath: String? = null
     }
 
     private val channel = MethodChannel(messenger, CHANNEL)
-    private val worker: ExecutorService = Executors.newSingleThreadExecutor()
-    private val mainHandler = Handler(Looper.getMainLooper())
-
-    @Volatile
-    private var engine: Valhalla? = null
 
     init {
         channel.setMethodCallHandler(this)
@@ -61,11 +67,15 @@ class ValhallaRoutingBridge(
                         require(tileFile.isAbsolute && tileFile.isFile) {
                             "Valhalla tile extract was not found: $tilePath"
                         }
-                        val config = ValhallaConfigFactory.usingTileExtract(tileFile.absolutePath)
-                        val newEngine = Valhalla(appContext, config)
-                        val oldEngine = engine
-                        engine = newEngine
-                        oldEngine?.close()
+                        val activeEngine = engine
+                        if (activeEngine == null || initializedTilePath != tileFile.absolutePath) {
+                            val config = ValhallaConfigFactory.usingTileExtract(tileFile.absolutePath)
+                            val newEngine = Valhalla(appContext, config)
+                            val oldEngine = engine
+                            engine = newEngine
+                            initializedTilePath = tileFile.absolutePath
+                            oldEngine?.close()
+                        }
                         postSuccess(result, mapOf("ready" to true))
                     } catch (error: Exception) {
                         postError(result, "VALHALLA_INIT_FAILED", error.message ?: error.javaClass.simpleName)
@@ -109,6 +119,7 @@ class ValhallaRoutingBridge(
                     try {
                         engine?.close()
                         engine = null
+                        initializedTilePath = null
                         postSuccess(result, mapOf("disposed" to true))
                     } catch (error: Exception) {
                         postError(result, "VALHALLA_DISPOSE_FAILED", error.message ?: error.javaClass.simpleName)
@@ -122,11 +133,6 @@ class ValhallaRoutingBridge(
 
     fun close() {
         channel.setMethodCallHandler(null)
-        worker.execute {
-            engine?.close()
-            engine = null
-        }
-        worker.shutdown()
     }
 
     private fun postSuccess(result: MethodChannel.Result, value: Any) {
