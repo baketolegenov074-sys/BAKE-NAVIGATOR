@@ -474,8 +474,42 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
       ),
       body: Column(children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: Align(alignment: Alignment.centerLeft, child: Text('Всего в общей базе: ' + _records.length.toString())),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+          child: Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Icon(
+                    _loading ? Icons.sync : _error == null ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+                    color: _loading ? Colors.blueGrey : _error == null ? Colors.green : Colors.red,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    _loading ? 'Проверяем связь с Supabase…' : _error == null ? 'Supabase подключён' : 'Нет связи с Supabase',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  )),
+                  OutlinedButton.icon(
+                    onPressed: _loading ? null : _loadReports,
+                    icon: const Icon(Icons.wifi_tethering, size: 18),
+                    label: const Text('Проверить'),
+                  ),
+                ]),
+                const SizedBox(height: 5),
+                Text(
+                  RoadReportSyncService.configurationSummary,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 5),
+                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                ],
+                const SizedBox(height: 4),
+                Text('Всего в общей базе: ${_records.length}'),
+              ]),
+            ),
+          ),
         ),
         Expanded(child: TabBarView(children: [
           _buildReportList('На проверке'),
