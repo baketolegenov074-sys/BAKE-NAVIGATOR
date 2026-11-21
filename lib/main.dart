@@ -707,6 +707,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   double? _gpsHeadingDegrees;
   double? _lastCameraHeadingDegrees;
   bool _northUpLocked = false;
+  bool _headingUpGestureActive = false;
+  Timer? _headingUpResumeTimer;
   int _announcedManeuverStage = 0;
   int _offRouteSamples = 0;
   DateTime? _lastAutomaticReroute;
@@ -879,7 +881,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         target: current?.target ?? _toMapLibrePoint(_currentLocation ?? _shymkent),
         zoom: current?.zoom ?? 13,
         bearing: current?.bearing ?? 0,
-        tilt: _is3DMap ? 48 : 0,
+        tilt: _is3DMap ? 40 : 0,
       ),
     ), duration: const Duration(milliseconds: 450)));
   }
@@ -1124,6 +1126,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       ? _mapController.camera.zoom
       : (_mapLibreController?.cameraPosition?.zoom ?? 13);
 
+  void _scheduleHeadingUpReturn() {
+    _headingUpGestureActive = true;
+    _headingUpResumeTimer?.cancel();
+    _headingUpResumeTimer = Timer(const Duration(seconds: 4), _restoreHeadingUpCamera);
+  }
+
+  void _restoreHeadingUpCamera() {
+    if (!mounted || _northUpLocked) return;
+    _headingUpGestureActive = false;
+    final point = _currentLocation;
+    if (point == null) return;
+    final heading = _gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0;
+    _lastCameraHeadingDegrees = heading;
+    _updateNavigationCamera(point, math.max(_mapCameraZoom, 16.0).toDouble(), heading);
+  }
+
   void _moveMapCamera(LatLng point, double zoom) {
     if (_isOfflineMapActive) {
       _mapController.move(point, zoom);
@@ -1137,6 +1155,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   void _updateNavigationCamera(LatLng point, double zoom, double heading) {
+    _lastCameraHeadingDegrees = heading;
     if (_isOfflineMapActive) {
       _mapController.move(point, zoom);
       _mapController.rotate(-heading);
@@ -1154,7 +1173,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         // MapLibre camera bearing is the clockwise direction the camera faces.
         // Match the GPS course so the vehicle's direction stays toward screen top.
         bearing: heading,
-        tilt: _is3DMap ? 48 : 0,
+        tilt: _is3DMap ? 40 : 0,
       ),
     ), duration: const Duration(milliseconds: 350)));
   }
@@ -1172,7 +1191,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         target: current?.target ?? _toMapLibrePoint(_currentLocation ?? _shymkent),
         zoom: current?.zoom ?? 17,
         bearing: -rotation,
-        tilt: _is3DMap ? 48 : 0,
+        tilt: _is3DMap ? 40 : 0,
       ),
     ), duration: const Duration(milliseconds: 350)));
   }
@@ -1292,11 +1311,25 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
     try {
       final layerIds = await controller.getLayerIds();
-      final labelLayerPattern = RegExp(r'(^|[_-])(name|label|place|housenumber|poi|street)([_-]|$)', caseSensitive: false);
+      final labelLayerPattern = RegExp(r'(name|label|place|housenumber|poi|street|road|transportation|highway)', caseSensitive: false);
       for (final layerId in layerIds) {
         if (labelLayerPattern.hasMatch(layerId)) {
           try {
             await controller.setLayerVisibility(layerId, true);
+            if (RegExp(r'(road|street|transportation|highway|name)', caseSensitive: false).hasMatch(layerId)) {
+              try {
+                await controller.setLayerProperties(
+                  layerId,
+                  const ml.SymbolLayerProperties(
+                    textColor: '#202020',
+                    textHaloColor: '#FFFFFF',
+                    textHaloWidth: 1.2,
+                  ),
+                );
+              } catch (_) {
+                // Some style label layers are not symbol layers.
+              }
+            }
           } catch (error) {
             debugPrint('BAKE map label layer $layerId could not be enabled: $error');
           }
@@ -1646,6 +1679,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     WidgetsBinding.instance.removeObserver(this);
     _roadReportRetryTimer?.cancel();
     _positionSubscription?.cancel();
+    _headingUpResumeTimer?.cancel();
     _disposeOfflineMap();
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -1743,7 +1777,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         }
       }
 
-      if (!await hasValidShymkentValhallaSha256(archiveFile)) {
+      final archiveValid = await hasValidShymkentValhallaSha256(archiveFile)
+          .timeout(const Duration(seconds: 2), onTimeout: () => false);
+      if (!archiveValid) {
         throw Exception(
           'Контрольная сумма дорожного графа Шымкента не совпадает. Архив отклонён.',
         );
@@ -1831,19 +1867,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
     await _loadSavedOfflineMap();
     if (!mounted) return;
-    setState(() {
-      _message = _isOfflineMapActive
-          ? AppLocale.pick(
-              'Включена офлайн-карта Шымкента.',
-              'Шымкенттің офлайн картасы қосылды.',
-              'Shymkent offline map enabled.',
-            )
-          : AppLocale.pick(
-              'Сначала импортируйте MBTiles-карту в настройках.',
-              'Алдымен баптаулардан MBTiles картасын импорттаңыз.',
-              'Import an MBTiles map in settings first.',
-            );
-    });
+    final notice = _isOfflineMapActive
+        ? AppLocale.pick(
+            'Включена офлайн-карта Шымкента.',
+            'Шымкенттің офлайн картасы қосылды.',
+            'Shymkent offline map enabled.',
+          )
+        : AppLocale.pick(
+            'Сначала импортируйте MBTiles-карту в настройках.',
+            'Алдымен баптаулардан MBTiles картасын импорттаңыз.',
+            'Import an MBTiles map in settings first.',
+          );
+    setState(() => _message = '');
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(notice),
+      duration: const Duration(seconds: 2),
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   Future<void> _openSettings() async {
@@ -1887,7 +1927,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         setState(() {
           _offlineVectorMbtiles = database;
           _offlineVectorTileProvider = vectorProvider;
-          _message = AppLocale.pick('Векторная офлайн-карта подключена.', 'Векторлық офлайн карта қосылды.', 'Vector offline map connected.');
+          _message = '';
         });
       } else {
         database.dispose();
@@ -1895,7 +1935,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _disposeOfflineMap();
         setState(() {
           _offlineTileProvider = provider;
-          _message = AppLocale.pick('Офлайн-карта подключена.', 'Офлайн карта қосылды.', 'Offline map connected.');
+          _message = '';
         });
       }
     } catch (error) {
@@ -2290,7 +2330,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           await _startLiveLocationUpdates(backgroundNavigation: true);
         }
       } else {
-        _moveMapCamera(point, 15);
+        _updateNavigationCamera(point, 16, _gpsHeadingDegrees ?? 0.0);
         await _startLiveLocationUpdates();
       }
     } catch (error) {
@@ -2378,33 +2418,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
         // Follow GPS with one coordinated camera update instead of competing
         // position and bearing animations.
-        if (_navigationActive) {
+        if (position.speed >= 1.5 && _headingUpGestureActive) {
+          _headingUpResumeTimer?.cancel();
+          _headingUpGestureActive = false;
+        }
+        if (!_headingUpGestureActive) {
           final cameraCenter = _mapCameraCenter;
           final shouldRecenter = Geolocator.distanceBetween(
                 cameraCenter.latitude, cameraCenter.longitude,
                 point.latitude, point.longitude,
               ) > 3;
-          final heading = _gpsHeadingDegrees;
-          var normalizedHeading = _northUpLocked
+          final heading = _northUpLocked
               ? 0.0
-              : (_lastCameraHeadingDegrees ?? 0.0);
-          var shouldRotate = false;
-          if (!_northUpLocked && heading != null && position.speed >= 1.5) {
-            normalizedHeading = (heading % 360 + 360) % 360;
-            final previousHeading = _lastCameraHeadingDegrees;
-            final difference = previousHeading == null
-                ? 360.0
-                : ((normalizedHeading - previousHeading + 540) % 360) - 180;
-            shouldRotate = difference.abs() >= 4;
-          }
-          if (shouldRecenter || shouldRotate) {
+              : (_gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0);
+          final normalizedHeading = (heading % 360 + 360) % 360;
+          final previousHeading = _lastCameraHeadingDegrees;
+          final difference = previousHeading == null
+              ? 360.0
+              : ((normalizedHeading - previousHeading + 540) % 360) - 180;
+          final shouldRotate = difference.abs() >= 4;
+          if (shouldRecenter || shouldRotate || wasWaitingForNavigationFix) {
             _updateNavigationCamera(
               point,
-              math.max(_mapCameraZoom, 17.0).toDouble(),
+              math.max(_mapCameraZoom, _navigationActive ? 17.0 : 16.0).toDouble(),
               normalizedHeading,
             );
           }
-          if (shouldRotate) _lastCameraHeadingDegrees = normalizedHeading;
         }
 
         if (!firstFix.isCompleted) firstFix.complete();
@@ -3944,19 +3983,37 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
       // Valhalla currently supports a direct A→B request in this bridge.
       // Keep OSRM for trips with intermediate stops and as an internet fallback.
-      if (_routeStops.isEmpty) {
-        final valhallaReady = await _ensureValhallaReady();
-        if (valhallaReady) {
+      final destination = _destination!;
+      final isInsideShymkentGraph =
+          routeOrigin.latitude >= 42.12 &&
+          routeOrigin.latitude <= 42.53 &&
+          routeOrigin.longitude >= 69.35 &&
+          routeOrigin.longitude <= 69.90 &&
+          destination.latitude >= 42.12 &&
+          destination.latitude <= 42.53 &&
+          destination.longitude >= 69.35 &&
+          destination.longitude <= 69.90;
+      if (_routeStops.isEmpty && isInsideShymkentGraph) {
+        if (!_valhallaReady) {
+          // Never block route calculation on downloading or initializing the graph.
+          // It continues in the background for the next route.
+          unawaited(_ensureValhallaReady());
+          routingNotice = AppLocale.pick(
+            'Офлайн-граф подключается в фоне. Используем интернет-маршрут.',
+            'Офлайн графы фонда қосылуда. Интернет маршрутын қолданамыз.',
+            'Offline graph is preparing in the background. Using online routing.',
+          );
+        } else {
           try {
             final raw = await _valhallaChannel.invokeMethod<String>(
               'route',
               <String, dynamic>{
                 'startLat': routeOrigin.latitude,
                 'startLon': routeOrigin.longitude,
-                'endLat': _destination!.latitude,
-                'endLon': _destination!.longitude,
+                'endLat': destination.latitude,
+                'endLon': destination.longitude,
               },
-            );
+            ).timeout(const Duration(seconds: 2));
             if (raw == null || raw.isEmpty) {
               throw Exception('Пустой ответ офлайн-маршрутизатора.');
             }
@@ -4002,6 +4059,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             'Offline routing data could not be opened — trying the online router.',
           );
         }
+      }
+
+      if (_routeStops.isEmpty && !isInsideShymkentGraph) {
+        routingNotice = AppLocale.pick(
+          'Точка вне зоны офлайн-графа Шымкента. Используем интернет-маршрут.',
+          'Нүкте Шымкент офлайн графы аймағынан тыс. Интернет маршрутын қолданамыз.',
+          'Destination is outside Shymkent offline coverage. Using online routing.',
+        );
       }
 
       if (routeData == null) {
@@ -6325,11 +6390,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       body: Stack(
         children: [
           if (!_isOfflineMapActive)
-            ml.MapLibreMap(
+            Listener(
+              onPointerDown: (_) {
+                _headingUpGestureActive = true;
+                _headingUpResumeTimer?.cancel();
+              },
+              onPointerUp: (_) => _scheduleHeadingUpReturn(),
+              onPointerCancel: (_) => _scheduleHeadingUpReturn(),
+              child: ml.MapLibreMap(
               initialCameraPosition: ml.CameraPosition(
                 target: ml.LatLng(_shymkent.latitude, _shymkent.longitude),
                 zoom: 13,
-                tilt: _is3DMap ? 48 : 0,
+                tilt: _is3DMap ? 40 : 0,
               ),
               styleString: 'https://tiles.openfreemap.org/styles/liberty',
               onMapCreated: _onMapLibreCreated,
@@ -6343,6 +6415,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               zoomGesturesEnabled: true,
               scrollGesturesEnabled: true,
               minMaxZoomPreference: const ml.MinMaxZoomPreference(3, 20),
+              ),
             )
           else
             FlutterMap(
@@ -6352,6 +6425,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 initialZoom: 13,
                 onTap: (_, __) {},
                 onLongPress: (_, point) => _openPointMenu(point),
+                onPositionChanged: (_, hasGesture) {
+                  if (hasGesture) _scheduleHeadingUpReturn();
+                },
               ),
               children: [
                 if (_offlineVectorTileProvider != null)
@@ -6471,32 +6547,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               ),
             ),
           ),
-          Positioned(
-            top: 0,
-            left: _navigationActive ? 12 : 64,
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Material(
-                  color: Colors.white,
-                  elevation: 5,
-                  shape: const CircleBorder(),
-                  child: IconButton(
-                    tooltip: 'Дорожные отметки',
-                    onPressed: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const RoadToolsMenu()),
-                      );
-                      await _loadConfirmedRoadReports();
-                    },
-                    icon: const Icon(Icons.menu, color: Color(0xFF343434)),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          if (!_navigationActive)
+          if (_navigationActive)
             Positioned(
               top: 0,
               left: 12,
@@ -6509,14 +6560,73 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     elevation: 5,
                     shape: const CircleBorder(),
                     child: IconButton(
-                      tooltip: AppLocale.tr('Профиль'),
-                      onPressed: _openProfileMenu,
-                      icon: const Icon(Icons.person_outline, color: Color(0xFF343434)),
+                      tooltip: 'Дорожные отметки',
+                      onPressed: () async {
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const RoadToolsMenu()),
+                        );
+                        await _loadConfirmedRoadReports();
+                      },
+                      icon: const Icon(Icons.menu, color: Color(0xFF343434)),
                     ),
                   ),
                 ),
               ),
             ),
+          if (!_navigationActive)
+            Positioned(
+              left: 12,
+              top: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _roundMapButton(
+                        icon: Icons.person_outline,
+                        tooltip: AppLocale.tr('Профиль'),
+                        onPressed: _openProfileMenu,
+                      ),
+                      const SizedBox(height: 8),
+                      _roundMapButton(
+                        icon: Icons.menu,
+                        tooltip: 'Дорожные отметки',
+                        onPressed: () async {
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const RoadToolsMenu()),
+                          );
+                          await _loadConfirmedRoadReports();
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      _roundMapButton(
+                        icon: Icons.my_location,
+                        tooltip: AppLocale.tr('Моё местоположение'),
+                        iconColor: const Color(0xFF343434),
+                        onPressed: _isLocating ? null : () => unawaited(_locateMe()),
+                      ),
+                      const SizedBox(height: 8),
+                      Material(
+                        color: Colors.white,
+                        elevation: 5,
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          tooltip: 'Парковки',
+                          onPressed: () {
+                            _searchController.text = 'парковка';
+                            _searchAddress();
+                          },
+                          icon: const Text('P', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF1769AA))),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
           if (_navigationActive)
             Positioned(
               top: 0,
@@ -6704,35 +6814,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               ],
             ),
           ),
-          if (!_navigationActive && !_routeReady)
-            Positioned(
-              left: 14,
-              top: 124,
-              child: Material(
-                color: Colors.white,
-                elevation: 4,
-                shape: const CircleBorder(),
-                child: IconButton(
-                  tooltip: 'Парковки',
-                  onPressed: () {
-                    _searchController.text = 'парковка';
-                    _searchAddress();
-                  },
-                  icon: const Text('P', style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900, color: Color(0xFF1769AA))),
-                ),
-              ),
-            ),
-          Positioned(
-            left: 14,
-            top: _navigationActive ? null : 68,
-            bottom: _navigationActive ? 380 : null,
-            child: _roundMapButton(
-              icon: Icons.my_location,
-              tooltip: AppLocale.tr('Моё местоположение'),
-              iconColor: const Color(0xFF343434),
-              onPressed: _isLocating ? null : () => unawaited(_locateMe()),
-            ),
-          ),
+
+
           if (_navigationActive)
             Positioned(
               top: 0,
@@ -7100,9 +7183,29 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     _vehiclePlate.text = prefs.getString('vehicle_plate') ?? '';
     _offlineMapPath = prefs.getString('offline_map_path');
     _valhallaExtractPath = prefs.getString('valhalla_tile_extract_path');
+    if (_valhallaExtractPath != null) {
+      try {
+        final savedArchive = File(_valhallaExtractPath!);
+        final exists = await savedArchive.exists().timeout(
+          const Duration(seconds: 2), onTimeout: () => false,
+        );
+        final size = exists
+            ? await savedArchive.length().timeout(
+                const Duration(seconds: 2), onTimeout: () => 0,
+              )
+            : 0;
+        if (!exists || size < 100000) {
+          _valhallaExtractPath = null;
+          await prefs.remove('valhalla_tile_extract_path');
+        }
+      } catch (_) {
+        _valhallaExtractPath = null;
+        await prefs.remove('valhalla_tile_extract_path');
+      }
+    }
     _valhallaStatus = _valhallaExtractPath == null
-        ? 'Офлайн-граф ещё не подключён'
-        : 'Сохранённый граф будет проверен при запросе маршрута';
+        ? 'Офлайн-граф ещё не скачан. Интернет-маршрут доступен.'
+        : 'Граф найден на телефоне; подключение проверяется автоматически.';
     _voiceVolume = prefs.getDouble('voice_volume') ?? 1.0;
     _voiceRate = prefs.getDouble('voice_rate') ?? 0.48;
     _avoidTolls = prefs.getBool('avoid_tolls') ?? false;
@@ -7168,7 +7271,10 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     if (_importingValhallaExtract) return;
     setState(() => _importingValhallaExtract = true);
     try {
-      final ready = await widget.onRetryValhalla();
+      final ready = await widget.onRetryValhalla().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => false,
+      );
       final prefs = await SharedPreferences.getInstance();
       final savedPath = prefs.getString('valhalla_tile_extract_path');
       if (!mounted) return;
@@ -7176,13 +7282,13 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
         _valhallaExtractPath = savedPath;
         _valhallaStatus = ready
             ? 'Офлайн-маршрутизация Шымкента готова'
-            : 'Офлайн-граф не подключён; доступен интернет-маршрут';
+            : 'Загрузка или подключение продолжается в фоне; пока используется интернет-маршрут';
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(ready
               ? 'Офлайн-маршрутизатор Шымкента готов.'
-              : 'Не удалось подключить граф. Интернет-маршрут останется доступен.'),
+              : 'Подключение графа продолжается в фоне. Интернет-маршрут остаётся доступен.'),
         ),
       );
     } finally {
@@ -7236,8 +7342,10 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
       appBar: AppBar(title: Text(AppLocale.tr('Настройки BAKE Navigator'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(16),
+          : SafeArea(
+              top: false,
+              child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
                 const SizedBox(height: 4),
                 Text(AppLocale.tr('Автомобиль'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
@@ -7376,8 +7484,10 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                                 : const Icon(Icons.route_outlined),
                             label: Text(_importingValhallaExtract
-                                ? 'Проверяем архив…'
-                                : 'Повторить автоматическое подключение'),
+                                ? 'Подключаем граф…'
+                                : _valhallaExtractPath == null
+                                    ? 'Скачать дорожный граф Шымкента'
+                                    : 'Подключить офлайн-граф'),
                           ),
                         ),
                         if (_valhallaExtractPath != null)
@@ -7396,6 +7506,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                 ),
               ],
             ),
+          ),
     );
   }
 
