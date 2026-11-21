@@ -40,11 +40,11 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
       {'id': 'bake_transportation_casing', 'type': 'line', 'source': 'openmaptiles', 'source-layer': 'transportation', 'minzoom': 13,
        'filter': ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'residential', 'unclassified', 'service', 'living_street'],
        'layout': {'line-cap': 'round', 'line-join': 'round'},
-       'paint': {'line-color': '#FFFFFF', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 4.8, 14, 5.8, 15, 7.4, 16, 9.0, 17, 11.0, 18, 13.0]}},
+       'paint': {'line-color': '#FFFFFF', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 6.2, 14, 7.4, 15, 9.0, 16, 11.0, 17, 13.2, 18, 15.5]}},
       {'id': 'bake_transportation_wide', 'type': 'line', 'source': 'openmaptiles', 'source-layer': 'transportation', 'minzoom': 13,
        'filter': ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'residential', 'unclassified', 'service', 'living_street'],
        'layout': {'line-cap': 'round', 'line-join': 'round'},
-       'paint': {'line-color': '#F4D18A', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 2.4, 14, 3.2, 15, 4.4, 16, 5.8, 17, 7.5, 18, 9.0]}},
+       'paint': {'line-color': '#B7C2CE', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 3.4, 14, 4.4, 15, 5.8, 16, 7.2, 17, 9.0, 18, 10.8]}},
     ],
   });
   final labels = vtr.ThemeReader().read({
@@ -194,14 +194,24 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
     ],
   });
 
+  // Keep the built-in OpenMapTiles symbol layers (especially road_label).
+  // Draw wider BAKE road strokes before symbol layers so they cannot cover
+  // street names. Explicit labels remain last for regional name:* fallbacks.
+  final firstSymbolIndex = base.layers.indexWhere(
+    (layer) => layer.type == vtr.ThemeLayerType.symbol,
+  );
+  final orderedLayers = firstSymbolIndex < 0
+      ? <vtr.ThemeLayer>[...base.layers, ...roads.layers, ...labels.layers]
+      : <vtr.ThemeLayer>[
+          ...base.layers.take(firstSymbolIndex),
+          ...roads.layers,
+          ...base.layers.skip(firstSymbolIndex),
+          ...labels.layers,
+        ];
   return vtr.Theme(
     id: 'bake-shymkent-offline',
-    version: '1',
-    layers: [
-      ...base.layers.where((layer) => layer.id != 'road_label'),
-      ...roads.layers,
-      ...labels.layers,
-    ],
+    version: '2',
+    layers: orderedLayers,
   );
 }
 
@@ -829,7 +839,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _onlineLabelStylePatchStarted = false;
   bool _onlineLabelStylePatched = false;
   int _mapLibreStyleGeneration = 0;
-  bool _offlineStreetLabelsVisible = false;
   bool _is3DMap = true;
   bool _isSatelliteMap = false;
   final Map<String, dynamic> _satelliteOverlayFillOpacities = <String, dynamic>{};
@@ -7491,10 +7500,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 onLongPress: (_, point) => _openPointMenu(point),
                 onPositionChanged: (camera, hasGesture) {
                   if (hasGesture) _scheduleHeadingUpReturn();
-                  final showStreetLabels = camera.zoom >= 14;
-                  if (showStreetLabels != _offlineStreetLabelsVisible && mounted) {
-                    setState(() => _offlineStreetLabelsVisible = showStreetLabels);
-                  }
                 },
               ),
               children: [
