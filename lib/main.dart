@@ -2476,6 +2476,35 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return parts.join(', ');
   }
 
+  String _photonFeatureStreetAddress(Map<String, dynamic> feature) {
+    final raw = feature['properties'];
+    final p = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    final direct = p['address']?.toString().trim() ?? '';
+    if (direct.isNotEmpty) return direct;
+    final street = p['street']?.toString().trim() ?? '';
+    final house = p['housenumber']?.toString().trim() ?? '';
+    final district = (p['district'] ?? p['suburb'])?.toString().trim() ?? '';
+    return [if (street.isNotEmpty) street, if (house.isNotEmpty) house,
+      if (district.isNotEmpty) district].join(', ');
+  }
+
+  double? _photonFeatureDistanceMeters(Map<String, dynamic> feature) {
+    final origin = _currentLocation;
+    final geometry = feature['geometry'];
+    final coordinates = geometry is Map ? geometry['coordinates'] : null;
+    if (origin == null || coordinates is! List || coordinates.length < 2) return null;
+    final lon = double.tryParse(coordinates[0].toString());
+    final lat = double.tryParse(coordinates[1].toString());
+    if (lat == null || lon == null || !lat.isFinite || !lon.isFinite) return null;
+    return Geolocator.distanceBetween(origin.latitude, origin.longitude, lat, lon);
+  }
+
+  String _formatSearchDistance(Map<String, dynamic> feature) {
+    final distance = _photonFeatureDistanceMeters(feature);
+    if (distance == null) return '—';
+    return distance < 1000 ? '${distance.round()} м' : '${(distance / 1000).toStringAsFixed(1)} км';
+  }
+
   Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query) async {
     Future<List<Map<String, dynamic>>> request(Uri uri) async {
       final response = await http.get(uri, headers: const {
@@ -4275,6 +4304,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                                 );
                                 if (!searchContext.mounted) return;
                                 if (requestVersion != photonRequestVersion) return;
+                                found.sort((left, right) =>
+                                  (_photonFeatureDistanceMeters(left) ?? double.infinity).compareTo(
+                                    _photonFeatureDistanceMeters(right) ?? double.infinity));
                                 refreshSearch(() {
                                   photonSuggestions = found;
                                   photonLoadingSuggestions = false;
@@ -4329,11 +4361,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                               itemBuilder: (context, index) {
                                 final feature = photonSuggestions[index];
                                 final label = _photonFeatureAddress(feature);
+                                final rawProperties = feature['properties'];
+                                final properties = rawProperties is Map
+                                    ? Map<String, dynamic>.from(rawProperties)
+                                    : <String, dynamic>{};
+                                final name = (properties['name'] ?? label).toString().trim();
+                                final address = _photonFeatureStreetAddress(feature);
                                 return ListTile(
                                   dense: true,
                                   leading: Icon(feature['_roadReport'] == true ? Icons.push_pin : Icons.location_on_outlined, size: 20, color: feature['_roadReport'] == true ? const Color(0xFF16834A) : null),
-                                  title: Text(label.isEmpty ? 'Адрес' : label, maxLines: 2, overflow: TextOverflow.ellipsis),
-                                  subtitle: feature['_roadReport'] == true ? const Text('✓ Проверено', style: TextStyle(color: Color(0xFF16834A), fontWeight: FontWeight.w700)) : null,
+                                  title: Text(name.isEmpty ? 'Адрес' : name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                  subtitle: (address.isNotEmpty || feature['_roadReport'] == true)
+                                      ? Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                                          if (address.isNotEmpty) Text(address, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                          if (feature['_roadReport'] == true) const Text('✓ Проверено', style: TextStyle(color: Color(0xFF16834A), fontWeight: FontWeight.w700)),
+                                        ])
+                                      : null,
+                                  trailing: Text(_formatSearchDistance(feature), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF303840))),
                                   onTap: () {
                                     photonDebounce?.cancel();
                                     final geometry = feature['geometry'];
