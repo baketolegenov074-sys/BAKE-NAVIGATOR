@@ -74,14 +74,14 @@ grant select, insert, update, delete on public.road_reports to authenticated;
 grant select, insert on public.road_reports to anon;
 revoke update, delete on public.road_reports from anon;
 
-drop policy if exists "road_reports_admin_update" on public.road_reports;
-drop policy if exists "road_reports_admin_delete" on public.road_reports;
+drop policy if exists "admins moderate road reports" on public.road_reports;
+drop policy if exists "admins delete road reports" on public.road_reports;
 
-create policy "road_reports_admin_update"
+create policy "admins moderate road reports"
 on public.road_reports for update to authenticated
 using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
 with check ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
 
-create policy "road_reports_admin_delete"
+create policy "admins delete road reports"
 on public.road_reports for delete to authenticated
 using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
