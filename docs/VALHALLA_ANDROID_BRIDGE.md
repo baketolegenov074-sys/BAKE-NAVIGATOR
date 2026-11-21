@@ -10,11 +10,11 @@
 
 По Maven Central и опубликованному README подтверждены координаты:
 
-- `io.github.rallista:valhalla-mobile:0.6.4` — Android engine (релиз 0.6.4; версия 0.6.5 встречается на странице API, но отдельный опубликованный релиз 0.6.5 пока не подтверждён).
+- `io.github.rallista:valhalla-mobile:0.6.6` — Android engine (версия, указанная в текущем `.github/workflows/build-android.yml`; публикация 0.6.6 подтверждена Maven Central).
 - `io.github.rallista:valhalla-models:0.6.0` и `io.github.rallista:valhalla-models-config:0.6.0` — model/config artifacts, соответствующие engine 0.6.4 по опубликованным зависимостям.
 - `com.stadiamaps:osrm-openapi:0.0.10` — OSRM response model; bridge сейчас возвращает raw JSON, но зависимость указана в README библиотеки для OSRM typed response.
 
-Engine 0.6.4 публикуется с Kotlin stdlib 2.2.10. Шаблон Android для Flutter 3.27.4 использует Kotlin Gradle Plugin 1.8.22, Android Gradle Plugin 8.1.0 и Gradle 8.3. Kotlin 1.8.22 слишком стар для надёжной работы с metadata Kotlin 2.2.
+Engine 0.6.6 публикуется с Kotlin stdlib 2.2.10. Шаблон Android для Flutter 3.27.4 использует Kotlin Gradle Plugin 1.8.22, Android Gradle Plugin 8.1.0 и Gradle 8.3. Kotlin 1.8.22 слишком стар для надёжной работы с metadata Kotlin 2.2.
 
 По официальной таблице совместимости Kotlin Gradle Plugin 2.2.10 поддерживает Gradle 7.6.3–8.14 и AGP 7.3.1–8.10.0. Следовательно, текущие AGP 8.1.0 и Gradle 8.3 попадают в поддерживаемый диапазон; для подготовки достаточно поднять только Kotlin Gradle Plugin до 2.2.10, не меняя AGP, Gradle или Java 17. Источники: [Kotlin Gradle compatibility](https://kotlinlang.org/docs/gradle-configure-project.html), [Android Kotlin support](https://developer.android.com/build/kotlin-support).
 
@@ -34,7 +34,7 @@ Engine 0.6.4 публикуется с Kotlin stdlib 2.2.10. Шаблон Androi
 - PBF напрямую не читается. Исходный OSM PBF необходимо заранее преобразовать в Valhalla tile set.
 - Экземпляр `Valhalla` держит native actor и открытый tile extract; его нужно создавать один раз, переиспользовать для запросов и закрывать при завершении.
 - Маршрутизацию нельзя выполнять на главном Android-потоке.
-- В документации есть расхождение версий: README показывает более старые версии артефактов, страница API уже показывает 0.6.5, а опубликованный релиз/артефакт, который удалось подтвердить, — 0.6.4. Поэтому точные версии engine и model artifacts нужно сверить перед добавлением Gradle-зависимостей.
+- В документации есть расхождение версий: README показывает более старые версии артефактов, страница API уже показывает 0.6.5, а опубликованный релиз/артефакт, который удалось подтвердить, — 0.6.4. В текущем workflow зафиксированы engine 0.6.6 и model artifacts 0.6.0; перед обновлением этих версий нужно повторно сверять их POM и совместимость.
 
 ## Предлагаемый контракт Flutter ↔ Android
 
