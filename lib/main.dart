@@ -2217,7 +2217,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     var kazakhVoiceId = (prefs.getInt('kazakh_voice_sid') ?? _kazakhVoiceId).clamp(0, 5).toInt();
     var offlineVoiceBusy = false;
     var offlineVoiceReady = await _kazakhVoiceService.isInstalled;
-    var offlineVoiceStatus = '';
+    var offlineVoiceStatus = offlineVoiceReady ? 'Голос Иса уже скачан и доступен без интернета.' : '';
     var offlineVoiceFailed = false;
     var progressReceived = 0;
     var progressTotal = -1;
@@ -2249,7 +2249,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       refreshSheet(() {});
       try {
         await _kazakhVoiceService.speak(
-          text: 'Дауысты тексеру. Бағыт бойынша жүре беріңіз.',
+          text: 'Сәлем, мен Иса, жолға дайынмын!',
           speakerId: kazakhVoiceId,
           speed: 1.0,
           onDownloadProgress: (received, total) {
@@ -2303,7 +2303,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           offlineVoiceStatus = '';
         } else {
           await _kazakhVoiceService.speak(
-            text: 'Дауысты тексеру. Бағыт бойынша жүре беріңіз.',
+            text: 'Сәлем, мен Иса, жолға дайынмын!',
             speakerId: kazakhVoiceId,
             speed: 1.0,
           );
@@ -2346,25 +2346,28 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                   const SizedBox(height: 14),
                   Text(AppLocale.tr('Язык голосовых подсказок'), style: TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    value: language,
-                    isExpanded: true,
-                    items: languages.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
-                    onChanged: (value) async {
-                      if (value == null) return;
-                      language = value;
-                      _navigationLanguage = value;
-                      _selectedVoiceName = null;
-                      _selectedVoiceLocale = null;
-                      selectedKey = '';
-                      await prefs.setString('navigation_language', value);
-                      await prefs.remove('voice_name');
-                      await prefs.remove('voice_locale');
-                      await _tts.setLanguage(value);
-                      await _refreshAvailableVoices();
-                      await _prepareSpeechVoice();
-                      refresh(() {});
-                    },
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: languages.entries.map((entry) => ChoiceChip(
+                      label: Text(entry.value),
+                      selected: language == entry.key,
+                      onSelected: (_) async {
+                        final value = entry.key;
+                        language = value;
+                        _navigationLanguage = value;
+                        _selectedVoiceName = null;
+                        _selectedVoiceLocale = null;
+                        selectedKey = '';
+                        await prefs.setString('navigation_language', value);
+                        await prefs.remove('voice_name');
+                        await prefs.remove('voice_locale');
+                        await _tts.setLanguage(value);
+                        await _refreshAvailableVoices();
+                        await _prepareSpeechVoice();
+                        refresh(() {});
+                      },
+                    )).toList(),
                   ),
                   if (language == 'kk-KZ') ...[
                     const SizedBox(height: 14),
@@ -2393,17 +2396,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                       style: const TextStyle(fontSize: 12, color: Color(0xFF62666D)),
                     ),
                     const SizedBox(height: 8),
-                    FilledButton.icon(
-                      onPressed: offlineVoiceBusy ? null : loadAndPreviewVoice,
-                      icon: offlineVoiceBusy
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.download_for_offline_outlined),
-                      label: Text(offlineVoiceBusy
-                          ? AppLocale.pick('Подождите…', 'Күте тұрыңыз…', 'Please wait…')
-                          : offlineVoiceReady
-                              ? AppLocale.pick('Прослушать выбранный голос', 'Таңдалған дауысты тыңдау', 'Preview selected voice')
-                              : AppLocale.pick('Загрузить и прослушать голос', 'Жүктеу және дауысты тыңдау', 'Download and preview voice')),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: offlineVoiceBusy ? null : loadAndPreviewVoice,
+                            icon: offlineVoiceBusy
+                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                                : Icon(offlineVoiceReady ? Icons.check_circle_outline : Icons.download_for_offline_outlined),
+                            label: Text(offlineVoiceBusy
+                                ? AppLocale.pick('Загрузка голоса…', 'Дауыс жүктелуде…', 'Downloading voice…')
+                                : offlineVoiceReady
+                                    ? AppLocale.pick('Голос Иса скачан · Проверить', 'Иса дауысы жүктелген · Тексеру', 'Issai voice downloaded · Test')
+                                    : AppLocale.pick('Скачать голос Иса', 'Иса дауысын жүктеу', 'Download Issai voice')),
+                          ),
+                        ),
+                      ],
                     ),
+                    if (offlineVoiceBusy) ...[
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                        value: progressTotal > 0
+                            ? (progressReceived / progressTotal).clamp(0.0, 1.0)
+                            : null,
+                        minHeight: 5,
+                      ),
+                    ],
                     OutlinedButton.icon(
                       onPressed: offlineVoiceBusy ? null : importVoiceArchive,
                       icon: const Icon(Icons.folder_open_outlined),
