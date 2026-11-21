@@ -149,28 +149,6 @@ class RoadReportSyncService {
     return rows.map((row) => _fromDatabase(row)).toList();
   }
 
-  /// Direct public-client moderation; RLS policies control access.
-  static Future<void> moderateReport({
-    required String reportId,
-    required String action,
-  }) async {
-    if (!_initialized) throw StateError('Supabase не подключён.');
-    final table = _client.from('road_reports');
-    switch (action) {
-      case 'approve':
-        await table.update({'status': 'Подтверждено'}).eq('id', reportId);
-        break;
-      case 'reject':
-        await table.update({'status': 'Отклонено'}).eq('id', reportId);
-        break;
-      case 'delete':
-        await table.delete().eq('id', reportId);
-        break;
-      default:
-        throw ArgumentError.value(action, 'action', 'Недопустимое действие');
-    }
-  }
-
   static void subscribeToChanges(void Function() onChanged) {
     if (!_initialized) return;
     _reportsChannel ??= _client
