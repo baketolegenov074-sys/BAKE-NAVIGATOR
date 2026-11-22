@@ -941,6 +941,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   LatLng? _destination;
   String _selectedMapPointAddress = 'Адрес определяется…';
   int _routeRequestGeneration = 0;
+  DateTime? _mapPointerDownAt;
+  Duration _lastMapPointerHoldDuration = Duration.zero;
   LatLng? _routeOrigin;
   final List<LatLng> _routeStops = <LatLng>[];
   List<Map<String, dynamic>> _routeAlternatives = <Map<String, dynamic>>[];
@@ -1478,7 +1480,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         bearing: heading,
         tilt: _is3DMap ? 40 : 0,
       ),
-    ), duration: const Duration(milliseconds: 350)));
+    ), duration: const Duration(milliseconds: 180)));
   }
 
   void _rotateMapCamera(double rotation) {
@@ -2969,7 +2971,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final shouldRefreshAnnotations = shouldRefreshRouteLine ||
             _lastMapAnnotationUpdateAt == null ||
             annotationNow.difference(_lastMapAnnotationUpdateAt!) >=
-                const Duration(milliseconds: 900);
+                const Duration(milliseconds: 350);
         if (shouldRefreshAnnotations) {
           _lastMapAnnotationUpdateAt = annotationNow;
           unawaited(_syncMapLibreAnnotations(updateRoute: shouldRefreshRouteLine));
@@ -3006,7 +3008,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final cameraNow = DateTime.now();
         final cameraUpdateDue = _lastCameraUpdateAt == null ||
             cameraNow.difference(_lastCameraUpdateAt!) >=
-                const Duration(milliseconds: 650);
+                const Duration(milliseconds: 300);
         if (_appInForeground && cameraUpdateDue && !_headingUpGestureActive) {
           _lastCameraUpdateAt = cameraNow;
           final cameraCenter = _mapCameraCenter;
@@ -4821,16 +4823,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   void _checkForOffRoute(Position position) {
     if (!_navigationActive || _isBuildingRoute || _destination == null) return;
     // Ignore poor fixes; a bad GPS point must not trigger a false reroute.
-    if (position.accuracy > 45 || _routePoints.length < 2) return;
+    if (position.accuracy > 35 || _routePoints.length < 2) return;
     final now = DateTime.now();
     if (_lastAutomaticReroute != null &&
-        now.difference(_lastAutomaticReroute!) < const Duration(seconds: 10)) {
+        now.difference(_lastAutomaticReroute!) < const Duration(seconds: 4)) {
       return;
     }
     final distance = _distanceToRouteMeters(
       LatLng(position.latitude, position.longitude),
     );
-    final offRouteLimit = math.max(40.0, position.accuracy * 1.5);
+    final offRouteLimit = math.max(25.0, position.accuracy * 1.25);
     if (distance > offRouteLimit) {
       _offRouteSamples++;
     } else {
@@ -5922,6 +5924,61 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     status: 'Подписка BAKE Plus пока не создана. Оплата и платные функции не включены.',
   );
 
+  Future<void> _handleMapTap(LatLng point) async {
+    if (_navigationActive && _trySelectAlternativeAt(point)) return;
+    if (_lastMapPointerHoldDuration < const Duration(milliseconds: 2500)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(AppLocale.tr('Удерживайте палец на карте 2,5 секунды, чтобы выбрать новую точку.')),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
+    await _selectMapDestination(point);
+  }
+
+  bool _trySelectAlternativeAt(LatLng point) {
+    if (!_navigationActive || _routeAlternatives.length < 2) return false;
+    var bestIndex = -1;
+    var bestDistance = double.infinity;
+    for (var i = 0; i < _routeAlternatives.length; i++) {
+      if (i == _selectedRouteIndex) continue;
+      final points = _routePointsFromDecodedRoute(_routeAlternatives[i]);
+      final distance = _distanceToPolylineMeters(point, points);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
+    if (bestIndex < 0 || bestDistance > 24) return false;
+    _selectRouteAlternative(bestIndex);
+    setState(() => _message = AppLocale.tr('Выбран альтернативный маршрут. Продолжаем движение по нему.'));
+    unawaited(_speakCurrentInstruction());
+    return true;
+  }
+
+  double _distanceToPolylineMeters(LatLng position, List<LatLng> points) {
+    if (points.length < 2) return double.infinity;
+    const latScale = 110540.0;
+    final lonScale = 111320.0 * math.cos(position.latitude * math.pi / 180);
+    final px = position.longitude * lonScale;
+    final py = position.latitude * latScale;
+    var best = double.infinity;
+    for (var i = 0; i < points.length - 1; i++) {
+      final a = points[i], b = points[i + 1];
+      final ax = a.longitude * lonScale, ay = a.latitude * latScale;
+      final dx = (b.longitude - a.longitude) * lonScale;
+      final dy = (b.latitude - a.latitude) * latScale;
+      final len2 = dx * dx + dy * dy;
+      final t = len2 == 0 ? 0.0 : (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0).toDouble();
+      final ex = px - ax - t * dx, ey = py - ay - t * dy;
+      best = math.min(best, math.sqrt(ex * ex + ey * ey));
+    }
+    return best;
+  }
+
   Future<void> _selectMapDestination(LatLng point) async {
     if (point.latitude < 40 || point.latitude > 56 ||
         point.longitude < 46 || point.longitude > 88) {
@@ -5929,6 +5986,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         setState(() => _message = AppLocale.tr('Выберите точку на территории Казахстана.'));
       }
       return;
+    }
+    if (_navigationActive) {
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(AppLocale.tr('Изменить текущий заказ?')),
+          content: Text(AppLocale.tr('Текущий маршрут останется активным, пока вы не подтвердите перестроение.')),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(AppLocale.tr('Продолжить текущий маршрут'))),
+            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text(AppLocale.tr('Построить новый маршрут'))),
+          ],
+        ),
+      );
+      if (accepted != true || !mounted) return;
     }
     _selectDestination(point);
     _moveMapCamera(point, 15);
@@ -7369,11 +7440,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           if (!_isOfflineMapActive)
             Listener(
               onPointerDown: (_) {
+                _mapPointerDownAt = DateTime.now();
                 _headingUpGestureActive = true;
                 _headingUpResumeTimer?.cancel();
               },
-              onPointerUp: (_) => _scheduleHeadingUpReturn(),
-              onPointerCancel: (_) => _scheduleHeadingUpReturn(),
+              onPointerUp: (_) {
+                final startedAt = _mapPointerDownAt;
+                _lastMapPointerHoldDuration = startedAt == null
+                    ? Duration.zero
+                    : DateTime.now().difference(startedAt);
+                _mapPointerDownAt = null;
+                _scheduleHeadingUpReturn();
+              },
+              onPointerCancel: (_) {
+                _mapPointerDownAt = null;
+                _lastMapPointerHoldDuration = Duration.zero;
+                _scheduleHeadingUpReturn();
+              },
               child: ml.MapLibreMap(
               initialCameraPosition: ml.CameraPosition(
                 target: ml.LatLng(_shymkent.latitude, _shymkent.longitude),
@@ -7386,8 +7469,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               onMapCreated: _onMapLibreCreated,
               onStyleLoadedCallback: _onMapLibreStyleLoaded,
               onCameraIdle: () => unawaited(_syncMapLibreAnnotations()),
-              onMapClick: (_, point) => unawaited(_selectMapDestination(LatLng(point.latitude, point.longitude))),
-              onMapLongClick: (_, point) => _openPointMenu(LatLng(point.latitude, point.longitude)),
+              onMapClick: (_, point) => unawaited(_handleMapTap(LatLng(point.latitude, point.longitude))),
               compassEnabled: false,
               trackCameraPosition: true,
               rotateGesturesEnabled: true,
@@ -7404,8 +7486,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 onMapReady: _onOfflineMapReady,
                 initialCenter: _shymkent,
                 initialZoom: 13,
-                onTap: (_, point) => unawaited(_selectMapDestination(point)),
-                onLongPress: (_, point) => _openPointMenu(point),
+                onTap: (_, point) => unawaited(_handleMapTap(point)),
                 onPositionChanged: (camera, hasGesture) {
                   if (hasGesture) _scheduleHeadingUpReturn();
                 },
