@@ -1589,7 +1589,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         bearing: heading,
         tilt: _is3DMap ? 40 : 0,
       ),
-    ), duration: const Duration(milliseconds: 180)));
+    ), duration: const Duration(milliseconds: 420)));
   }
 
   void _rotateMapCamera(double rotation) {
@@ -3215,16 +3215,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           _headingUpGestureActive = false;
         }
         final cameraNow = DateTime.now();
+        final cameraUpdateInterval = _isOfflineMapActive
+            ? const Duration(milliseconds: 300)
+            : const Duration(milliseconds: 450);
         final cameraUpdateDue = _lastCameraUpdateAt == null ||
-            cameraNow.difference(_lastCameraUpdateAt!) >=
-                const Duration(milliseconds: 300);
+            cameraNow.difference(_lastCameraUpdateAt!) >= cameraUpdateInterval;
         if (_appInForeground && cameraUpdateDue && _mapFollowEnabled && !_headingUpGestureActive) {
           _lastCameraUpdateAt = cameraNow;
           final cameraCenter = _mapCameraCenter;
           final shouldRecenter = Geolocator.distanceBetween(
                 cameraCenter.latitude, cameraCenter.longitude,
                 point.latitude, point.longitude,
-              ) > 3;
+              ) > (_isOfflineMapActive ? 3 : 5);
           final routeHeading = _navigationActive && _routePoints.length > 1
               ? _routeBearingAt(point)
               : null;
@@ -3236,7 +3238,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           final difference = previousHeading == null
               ? 360.0
               : ((normalizedHeading - previousHeading + 540) % 360) - 180;
-          final shouldRotate = difference.abs() >= 4;
+          final shouldRotate = difference.abs() >= (_isOfflineMapActive ? 4 : 6);
           if (shouldRecenter || shouldRotate || wasWaitingForNavigationFix) {
             _updateNavigationCamera(
               point,
