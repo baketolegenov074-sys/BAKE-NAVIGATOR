@@ -40,11 +40,11 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
       {'id': 'bake_transportation_casing', 'type': 'line', 'source': 'openmaptiles', 'source-layer': 'transportation', 'minzoom': 13,
        'filter': ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'residential', 'unclassified', 'service', 'living_street'],
        'layout': {'line-cap': 'round', 'line-join': 'round'},
-       'paint': {'line-color': '#FFFFFF', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 6.8, 14, 8.1, 15, 9.8, 16, 12.0, 17, 14.4, 18, 17.0]}},
+       'paint': {'line-color': '#FFFFFF', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 9.0, 14, 10.8, 15, 13.0, 16, 16.0, 17, 19.0, 18, 22.0]}},
       {'id': 'bake_transportation_wide', 'type': 'line', 'source': 'openmaptiles', 'source-layer': 'transportation', 'minzoom': 13,
        'filter': ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'residential', 'unclassified', 'service', 'living_street'],
        'layout': {'line-cap': 'round', 'line-join': 'round'},
-       'paint': {'line-color': '#B7C2CE', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 3.8, 14, 4.9, 15, 6.4, 16, 7.9, 17, 9.9, 18, 11.9]}},
+       'paint': {'line-color': '#B7C2CE', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 5.4, 14, 6.8, 15, 8.8, 16, 10.8, 17, 13.5, 18, 16.0]}},
     ],
   });
   final labels = vtr.ThemeReader().read({
@@ -1939,7 +1939,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         'bake-route-casing-layer',
         const ml.LineLayerProperties(
           lineColor: '#FFD400',
-          lineWidth: 16,
+          lineWidth: 19,
           lineOpacity: 0.96,
         ),
       );
@@ -1950,7 +1950,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         'bake-route-outline-layer',
         const ml.LineLayerProperties(
           lineColor: '#36D9FF',
-          lineWidth: 12,
+          lineWidth: 15,
           lineOpacity: 0.98,
         ),
       );
@@ -1961,7 +1961,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         'bake-route-line-layer',
         const ml.LineLayerProperties(
           lineColor: '#0878F9',
-          lineWidth: 7,
+          lineWidth: 9,
           lineOpacity: 1,
         ),
       );
@@ -2008,8 +2008,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           layerId,
           const ml.LineLayerProperties(
             lineColor: '#22BFA5',
-            lineWidth: 5,
-            lineOpacity: 0.62,
+            lineWidth: 7,
+            lineOpacity: 0.72,
           ),
         );
       }
@@ -6295,7 +6295,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
     // Wider geographic hit corridor makes a finger tap practical on both
     // MapLibre and FlutterMap, including when the visible line is narrow.
-    if (bestIndex < 0 || bestDistance > 45) return false;
+    if (bestIndex < 0 || bestDistance > 75) return false;
     _selectRouteAlternative(bestIndex);
     setState(() => _message = AppLocale.tr(
       _navigationActive
@@ -7875,15 +7875,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                         if (i != _selectedRouteIndex)
                           Polyline(
                             points: _routePointsFromDecodedRoute(_routeAlternatives[i]),
-                            strokeWidth: 5,
-                            color: const Color(0x9922BFA5),
+                            strokeWidth: 7,
+                            color: const Color(0xAA22BFA5),
                           ),
                     ],
                   ),
                 if (visibleRoutePoints.isNotEmpty)
                   PolylineLayer(
                     polylines: [
-                      Polyline(points: visibleRoutePoints, strokeWidth: 8, color: const Color(0xFF0878F9)),
+                      Polyline(points: visibleRoutePoints, strokeWidth: 10, color: const Color(0xFF0878F9)),
                     ],
                   ),
                 MarkerLayer(markers: markers),
