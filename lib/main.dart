@@ -2289,83 +2289,25 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           }
         }
 
-        // Show the route start as a direction arrow instead of a static green dot.
-        final routeStart = !_navigationActive ? (_routeOrigin ?? (_routePoints.length > 1 ? _routePoints.first : null)) : null;
-        if (rebuildStaticAnnotations && routeStart != null && _routePoints.length > 1) {
-          final routeStartBearing = Geolocator.bearingBetween(
-            _routePoints.first.latitude,
-            _routePoints.first.longitude,
-            _routePoints[1].latitude,
-            _routePoints[1].longitude,
+        // Keep one red GPS dot in free drive, route preview and navigation.
+        // The blue vehicle arrow and separate route-start arrow are disabled.
+        final vehiclePoint = _vehicleDisplayLocation;
+        if (vehiclePoint != null) {
+          final gpsOptions = ml.CircleOptions(
+            geometry: _toMapLibrePoint(vehiclePoint),
+            circleRadius: 8,
+            circleColor: '#E53935',
+            circleOpacity: 1,
+            circleStrokeColor: '#FFFFFF',
+            circleStrokeWidth: 2.5,
           );
-          await controller.addFill(ml.FillOptions(
-            geometry: [_directionArrowPolygon(
-              routeStart,
-              routeStartBearing,
-              lengthMeters: 18,
-              halfWidthMeters: 7,
-            )],
-            fillColor: '#2378C8',
-            fillOpacity: 1,
-            fillOutlineColor: '#FFFFFF',
-          ));
+          final existingGpsCircle = _freeDriveGpsCircle;
+          if (existingGpsCircle == null) {
+            _freeDriveGpsCircle = await controller.addCircle(gpsOptions);
+          } else {
+            await controller.updateCircle(existingGpsCircle, gpsOptions);
+          }
         }
-      // Free drive uses one red GPS dot; active navigation replaces it with
-      // one blue direction arrow. Both use the same display position.
-      final vehiclePoint = _vehicleDisplayLocation;
-      if (vehiclePoint != null && !_navigationActive) {
-        final gpsOptions = ml.CircleOptions(
-          geometry: _toMapLibrePoint(vehiclePoint),
-          circleRadius: 8,
-          circleColor: '#E53935',
-          circleOpacity: 1,
-          circleStrokeColor: '#FFFFFF',
-          circleStrokeWidth: 2.5,
-        );
-        final existingGpsCircle = _freeDriveGpsCircle;
-        if (existingGpsCircle == null) {
-          _freeDriveGpsCircle = await controller.addCircle(gpsOptions);
-        } else {
-          await controller.updateCircle(existingGpsCircle, gpsOptions);
-        }
-      } else if (vehiclePoint != null && _navigationActive) {
-        _freeDriveGpsCircle = null;
-        final vehicleBearing = _vehicleDisplayBearing * 180.0 / math.pi;
-        final haloOptions = ml.FillOptions(
-          geometry: [_directionArrowPolygon(
-            vehiclePoint,
-            vehicleBearing,
-            lengthMeters: 18,
-            halfWidthMeters: 7,
-          )],
-          fillColor: '#FFFFFF',
-          fillOpacity: 1,
-          fillOutlineColor: '#FFFFFF',
-        );
-        final existingHalo = _routePositionHaloFill;
-        if (existingHalo == null) {
-          _routePositionHaloFill = await controller.addFill(haloOptions);
-        } else {
-          await controller.updateFill(existingHalo, haloOptions);
-        }
-        final arrowOptions = ml.FillOptions(
-          geometry: [_directionArrowPolygon(
-            vehiclePoint,
-            vehicleBearing,
-            lengthMeters: 14,
-            halfWidthMeters: 5.5,
-          )],
-          fillColor: '#0878F9',
-          fillOpacity: 1,
-          fillOutlineColor: '#FFFFFF',
-        );
-        final existingArrow = _routePositionFill;
-        if (existingArrow == null) {
-          _routePositionFill = await controller.addFill(arrowOptions);
-        } else {
-          await controller.updateFill(existingArrow, arrowOptions);
-        }
-      }
       if (rebuildStaticAnnotations) {
       for (var i = 0; i < _routeStops.length; i++) {
         await controller.addSymbol(ml.SymbolOptions(
@@ -8300,7 +8242,7 @@ _navigationMatchedLocation = null;
             child: _buildManeuverDistanceCue(),
           ),
         ),
-      if (_vehicleDisplayLocation != null && !_navigationActive)
+      if (_vehicleDisplayLocation != null)
         Marker(
           point: _vehicleDisplayLocation!,
           width: 20,
@@ -8313,31 +8255,6 @@ _navigationMatchedLocation = null;
               boxShadow: const [
                 BoxShadow(color: Color(0x55000000), blurRadius: 4, offset: Offset(0, 1)),
               ],
-            ),
-          ),
-        ),
-      if (_vehicleDisplayLocation != null && _navigationActive)
-        Marker(
-          point: _vehicleDisplayLocation!,
-          width: 40,
-          height: 40,
-          child: Transform.rotate(
-            angle: _vehicleDisplayBearing,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF0878F9), width: 2),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x55000000), blurRadius: 4, offset: Offset(0, 1)),
-                ],
-              ),
-              alignment: Alignment.center,
-              child: const Icon(
-                Icons.navigation,
-                color: Color(0xFF0878F9),
-                size: 27,
-              ),
             ),
           ),
         ),
