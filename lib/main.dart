@@ -3183,6 +3183,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       );
 
       final point = LatLng(position.latitude, position.longitude);
+      _recordGpsDiagnostic(event: 'LOCATE_FIX', position: position, rawPoint: point, displayPoint: point);
       if (!mounted) return;
       _freeDriveDisplayLocation = point;
       _freeDriveFixTimestamp = position.timestamp;
@@ -3302,7 +3303,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final line = jsonEncode(record);
     _gpsDiagnosticWriteQueue = _gpsDiagnosticWriteQueue.then<void>((_) async {
       final file = await _gpsDiagnosticsFile();
-      await file.writeAsString('$line\\n', mode: FileMode.append, flush: false);
+      await file.writeAsString('$line\n', mode: FileMode.append, flush: false);
     }).catchError((Object error) {
       debugPrint('BAKE GPS diagnostic write failed: $error');
     });
@@ -3310,7 +3311,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _openGpsDiagnostics() async {
     final prefs = await SharedPreferences.getInstance();
-    var enabled = _gpsDiagnosticsEnabled;
+    var enabled = prefs.getBool('gps_diagnostics_enabled') ?? false;
+    _gpsDiagnosticsEnabled = enabled;
     final file = await _gpsDiagnosticsFile();
     var logText = await file.exists() ? await file.readAsString() : '';
     if (!mounted) return;
@@ -3363,6 +3365,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                   await prefs.setBool('gps_diagnostics_enabled', true);
                   _recordGpsDiagnostic(event: 'DIAGNOSTICS_START');
                 }
+                await _gpsDiagnosticWriteQueue;
                 logText = await file.exists() ? await file.readAsString() : '';
                 refreshDialog(() {});
               },
@@ -3370,6 +3373,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             ),
             TextButton(
               onPressed: () async {
+                await _gpsDiagnosticWriteQueue;
                 await _gpsDiagnosticWriteQueue;
                 logText = await file.exists() ? await file.readAsString() : '';
                 refreshDialog(() {});
@@ -3420,6 +3424,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     bool waitForFirstFix = false,
   }) async {
     final previousSubscription = _positionSubscription;
+    if (previousSubscription != null) {
+      _recordGpsDiagnostic(event: 'STREAM_CANCEL', detail: 'Subscription replaced or stopped');
+    }
     _positionSubscription = null;
     await previousSubscription?.cancel();
     if (!mounted) return;
