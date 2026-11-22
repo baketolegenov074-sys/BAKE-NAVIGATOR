@@ -990,6 +990,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   double? _gpsHeadingDegrees;
   double? _lastCameraHeadingDegrees;
   bool _northUpLocked = false;
+  bool _mapFollowEnabled = true;
   bool _headingUpGestureActive = false;
   Timer? _headingUpResumeTimer;
   int _announcedManeuverStage = 0;
@@ -1545,23 +1546,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       ? (_offlineMapReady ? _mapController.camera.zoom : 13)
       : (_mapLibreController?.cameraPosition?.zoom ?? 13);
 
+  // Manual panning disables camera-follow only; GPS, route progress and voice guidance keep running.
   void _scheduleHeadingUpReturn() {
-    _headingUpGestureActive = true;
-    _headingUpResumeTimer?.cancel();
-    _headingUpResumeTimer = Timer(const Duration(seconds: 4), _restoreHeadingUpCamera);
-  }
-
-  void _restoreHeadingUpCamera() {
     _headingUpGestureActive = false;
-    if (!mounted || (_northUpLocked && !_navigationActive)) return;
-    final point = _currentLocation;
-    if (point == null) return;
-    final routeHeading = _navigationActive && _routePoints.length > 1
-        ? _routeBearingAt(point)
-        : null;
-    final heading = _gpsHeadingDegrees ?? routeHeading ?? _lastCameraHeadingDegrees ?? 0.0;
-    _lastCameraHeadingDegrees = heading;
-    _updateNavigationCamera(point, math.max(_mapCameraZoom, 16.0).toDouble(), heading);
+    _headingUpResumeTimer?.cancel();
   }
 
   void _moveMapCamera(LatLng point, double zoom) {
@@ -2008,11 +1996,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         });
       }
       if (!layerIds.contains(layerId)) {
+        const alternativeColors = ['#FF9800', '#9C27B0', '#00A6A6'];
         await controller.addLineLayer(
           sourceId,
           layerId,
-          const ml.LineLayerProperties(
-            lineColor: const ['#FF9800', '#9C27B0', '#00A6A6'][index],
+          ml.LineLayerProperties(
+            lineColor: alternativeColors[index],
             lineWidth: 8,
             lineOpacity: 0.9,
           ),
@@ -3045,6 +3034,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
       final point = LatLng(position.latitude, position.longitude);
       if (!mounted) return;
+      _mapFollowEnabled = true;
       setState(() {
         _currentLocation = point;
         _gpsAvailable = true;
@@ -3215,7 +3205,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final cameraUpdateDue = _lastCameraUpdateAt == null ||
             cameraNow.difference(_lastCameraUpdateAt!) >=
                 const Duration(milliseconds: 300);
-        if (_appInForeground && cameraUpdateDue && !_headingUpGestureActive) {
+        if (_appInForeground && cameraUpdateDue && _mapFollowEnabled && !_headingUpGestureActive) {
           _lastCameraUpdateAt = cameraNow;
           final cameraCenter = _mapCameraCenter;
           final shouldRecenter = Geolocator.distanceBetween(
@@ -4042,6 +4032,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
     if (!mounted) return;
 
+    _mapFollowEnabled = true;
     setState(() {
       _navigationActive = true;
       _announcedManeuverStage = 0;
@@ -5340,8 +5331,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       });
       if (points.isNotEmpty) {
         await _syncMapLibreAnnotations(updateRoute: true);
-        _fitMapCamera(points);
-        if (automaticReroute && resumeNavigation && _currentLocation != null) {
+        if (!automaticReroute || _mapFollowEnabled) _fitMapCamera(points);
+        if (automaticReroute && resumeNavigation && _mapFollowEnabled && _currentLocation != null) {
           _moveMapCamera(_currentLocation!, 17);
           final heading = _gpsHeadingDegrees;
           if (heading != null && _currentSpeedKmh >= 5.4) {
@@ -7765,6 +7756,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 final start = _mapPointerDownPosition;
                 if (start != null && (event.localPosition - start).distance > 12) {
                   _mapPointerMoved = true;
+                  _mapFollowEnabled = false;
                 }
               },
               onPointerUp: (_) {
@@ -7819,10 +7811,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             )
           else
             Listener(
-              onPointerDown: (_) {
+              onPointerDown: (event) {
                 _mapPointerDownAt = DateTime.now();
+                _mapPointerDownPosition = event.localPosition;
+                _mapPointerMoved = false;
                 _headingUpGestureActive = true;
                 _headingUpResumeTimer?.cancel();
+              },
+              onPointerMove: (event) {
+                final start = _mapPointerDownPosition;
+                if (start != null && (event.localPosition - start).distance > 12) {
+                  _mapPointerMoved = true;
+                  _mapFollowEnabled = false;
+                }
               },
               onPointerUp: (_) {
                 final startedAt = _mapPointerDownAt;
@@ -7830,6 +7831,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     ? Duration.zero
                     : DateTime.now().difference(startedAt);
                 _mapPointerDownAt = null;
+                _mapPointerDownPosition = null;
                 final heldPoint = _pendingMapLongPressPoint;
                 _pendingMapLongPressPoint = null;
                 if (heldPoint != null && !_mapPointerMoved &&
@@ -7856,7 +7858,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 },
                 onLongPress: (_, point) => _pendingMapLongPressPoint = point,
                 onPositionChanged: (camera, hasGesture) {
-                  if (hasGesture) _scheduleHeadingUpReturn();
+                  if (hasGesture) {
+                    _mapFollowEnabled = false;
+                    _scheduleHeadingUpReturn();
+                  }
                 },
               ),
               children: [
