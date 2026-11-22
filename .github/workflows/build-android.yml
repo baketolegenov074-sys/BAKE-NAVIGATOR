@@ -1,4 +1,5 @@
 name: Build BAKE Navigator APK
+# Triggered after the approved offline street-label and road-width updates.
 # Build requested after road-report Supabase diagnostics and retry fixes.
 
 on:
