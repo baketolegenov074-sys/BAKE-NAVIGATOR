@@ -990,6 +990,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   double? _routeDurationSeconds;
   StreamSubscription<Position>? _positionSubscription;
   Future<void> _gpsStreamQueue = Future<void>.value();
+  bool _gpsDiagnosticsEnabled = false;
+  Future<void> _gpsDiagnosticWriteQueue = Future<void>.value();
+  DateTime? _lastGpsDiagnosticCallbackAt;
+  DateTime? _lastGpsDiagnosticFixAt;
+  LatLng? _lastGpsDiagnosticRawPoint;
   bool _appInForeground = true;
   DateTime? _lastCameraUpdateAt;
   DateTime? _lastMapAnnotationUpdateAt;
@@ -1019,6 +1024,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(_loadGpsDiagnosticsSetting());
     _roadReportRetryTimer = Timer.periodic(
       const Duration(seconds: 45),
       (_) => unawaited(_retryPendingRoadReports()),
@@ -2740,6 +2746,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           onOpenSoundSettings: _openSoundSettings,
           onOpenRoutePreferences: _openRoutePreferences,
           onOpenProfile: _openProfileMenu,
+          onOpenGpsDiagnostics: _openGpsDiagnostics,
           onVoiceChanged: (enabled) {
             setState(() => _voiceMode = enabled ? 3 : 0);
             if (!enabled) {
@@ -3226,6 +3233,168 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
 
+  Future<void> _loadGpsDiagnosticsSetting() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      _gpsDiagnosticsEnabled = prefs.getBool('gps_diagnostics_enabled') ?? false;
+    } catch (error) {
+      debugPrint('BAKE GPS diagnostics preference unavailable: $error');
+    }
+  }
+
+  Future<File> _gpsDiagnosticsFile() async {
+    final directory = await getApplicationSupportDirectory();
+    return File('${directory.path}/bake_gps_diagnostics.log');
+  }
+
+  void _recordGpsDiagnostic({
+    required String event,
+    Position? position,
+    LatLng? rawPoint,
+    LatLng? displayPoint,
+    String? detail,
+  }) {
+    if (!_gpsDiagnosticsEnabled) return;
+    final now = DateTime.now();
+    final callbackGapMs = position == null || _lastGpsDiagnosticCallbackAt == null
+        ? null
+        : now.difference(_lastGpsDiagnosticCallbackAt!).inMilliseconds;
+    final fixGapMs = position == null || _lastGpsDiagnosticFixAt == null
+        ? null
+        : position.timestamp.difference(_lastGpsDiagnosticFixAt!).inMilliseconds;
+    final rawJumpMeters = rawPoint == null || _lastGpsDiagnosticRawPoint == null
+        ? null
+        : Geolocator.distanceBetween(
+            _lastGpsDiagnosticRawPoint!.latitude,
+            _lastGpsDiagnosticRawPoint!.longitude,
+            rawPoint.latitude,
+            rawPoint.longitude,
+          );
+    if (position != null) {
+      _lastGpsDiagnosticCallbackAt = now;
+      _lastGpsDiagnosticFixAt = position.timestamp;
+      if (rawPoint != null) _lastGpsDiagnosticRawPoint = rawPoint;
+    }
+    final record = <String, Object?>{
+      'event': event,
+      'app_time': now.toIso8601String(),
+      'detail': detail,
+      'stream_active': _positionSubscription != null,
+      'foreground': _appInForeground,
+      'navigation_active': _navigationActive,
+      'callback_gap_ms': callbackGapMs,
+      'fix_gap_ms': fixGapMs,
+      'raw_jump_m': rawJumpMeters,
+      'fix_time': position?.timestamp.toIso8601String(),
+      'fix_age_ms': position == null
+          ? null
+          : now.difference(position.timestamp).inMilliseconds,
+      'accuracy_m': position?.accuracy,
+      'speed_mps': position?.speed,
+      'heading_deg': position?.heading,
+      'mocked': position?.isMocked,
+      'raw_lat': rawPoint?.latitude,
+      'raw_lon': rawPoint?.longitude,
+      'display_lat': displayPoint?.latitude,
+      'display_lon': displayPoint?.longitude,
+    };
+    final line = jsonEncode(record);
+    _gpsDiagnosticWriteQueue = _gpsDiagnosticWriteQueue.then<void>((_) async {
+      final file = await _gpsDiagnosticsFile();
+      await file.writeAsString('$line\\n', mode: FileMode.append, flush: false);
+    }).catchError((Object error) {
+      debugPrint('BAKE GPS diagnostic write failed: $error');
+    });
+  }
+
+  Future<void> _openGpsDiagnostics() async {
+    final prefs = await SharedPreferences.getInstance();
+    var enabled = _gpsDiagnosticsEnabled;
+    final file = await _gpsDiagnosticsFile();
+    var logText = await file.exists() ? await file.readAsString() : '';
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, refreshDialog) => AlertDialog(
+          title: const Text('Диагностика GPS'),
+          content: SizedBox(
+            width: 520,
+            height: 300,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(enabled
+                    ? 'Запись включена. Проедьте обычным маршрутом 10–15 минут.'
+                    : 'Запись выключена. Включите её перед поездкой.'),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(8),
+                    color: const Color(0xFFF3F4F6),
+                    child: SingleChildScrollView(
+                      child: SelectableText(
+                        logText.isEmpty ? 'Записей пока нет.' : logText,
+                        style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                if (enabled) {
+                  _recordGpsDiagnostic(event: 'DIAGNOSTICS_STOP');
+                  enabled = false;
+                  _gpsDiagnosticsEnabled = false;
+                  await prefs.setBool('gps_diagnostics_enabled', false);
+                } else {
+                  await file.writeAsString('');
+                  _lastGpsDiagnosticCallbackAt = null;
+                  _lastGpsDiagnosticFixAt = null;
+                  _lastGpsDiagnosticRawPoint = null;
+                  enabled = true;
+                  _gpsDiagnosticsEnabled = true;
+                  await prefs.setBool('gps_diagnostics_enabled', true);
+                  _recordGpsDiagnostic(event: 'DIAGNOSTICS_START');
+                }
+                logText = await file.exists() ? await file.readAsString() : '';
+                refreshDialog(() {});
+              },
+              child: Text(enabled ? 'Остановить запись' : 'Начать запись'),
+            ),
+            TextButton(
+              onPressed: () async {
+                await _gpsDiagnosticWriteQueue;
+                logText = await file.exists() ? await file.readAsString() : '';
+                refreshDialog(() {});
+              },
+              child: const Text('Обновить'),
+            ),
+            TextButton(
+              onPressed: () async {
+                await _gpsDiagnosticWriteQueue;
+                logText = await file.exists() ? await file.readAsString() : '';
+                await Clipboard.setData(ClipboardData(text: logText));
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('GPS-журнал скопирован')),
+                  );
+                }
+              },
+              child: const Text('Копировать журнал'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _startLiveLocationUpdates({
     bool backgroundNavigation = false,
     bool waitForFirstFix = false,
@@ -3276,6 +3445,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       );
     }
 
+    _recordGpsDiagnostic(
+      event: 'STREAM_START',
+      detail: backgroundNavigation && defaultTargetPlatform == TargetPlatform.android
+          ? 'AndroidSettings; interval=1000ms; distanceFilter=1m; bestForNavigation'
+          : 'LocationSettings; interval=not-explicit; distanceFilter=1m; bestForNavigation',
+    );
     _positionSubscription = Geolocator.getPositionStream(
       locationSettings: locationSettings,
     ).listen(
@@ -3287,6 +3462,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final displayPoint = _navigationActive
             ? point
             : _updateFreeDriveDisplayPosition(position, point);
+        _recordGpsDiagnostic(
+          event: 'GPS_FIX',
+          position: position,
+          rawPoint: point,
+          displayPoint: displayPoint,
+        );
         final navigationPoint = _navigationActive
             ? _matchNavigationPosition(position, point)
             : point;
@@ -3394,6 +3575,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _checkForOffRoute(position);
       },
       onError: (Object error) {
+        _recordGpsDiagnostic(event: 'STREAM_ERROR', detail: error.toString());
         if (waitForFirstFix && !firstFix.isCompleted) {
           firstFix.completeError(error, StackTrace.current);
         }
@@ -3402,6 +3584,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           _gpsAvailable = false;
           _message = AppLocale.pick('Потеряна связь с GPS. Проверьте геолокацию телефона.', 'GPS байланысы жоғалды. Телефон геолокациясын тексеріңіз.', 'GPS signal lost. Check your phone location settings.');
         });
+      },
+      onDone: () {
+        _recordGpsDiagnostic(event: 'STREAM_DONE', detail: 'Geolocator position stream closed');
       },
     );
 
@@ -4786,6 +4971,7 @@ _navigationMatchedLocation = null;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _recordGpsDiagnostic(event: 'APP_LIFECYCLE', detail: state.name);
     if (state == AppLifecycleState.resumed) {
       _appInForeground = true;
       _lastCameraUpdateAt = null;
@@ -9075,12 +9261,14 @@ class NavigatorPreferencesScreen extends StatefulWidget {
     required this.onOpenSoundSettings,
     required this.onOpenRoutePreferences,
     required this.onOpenProfile,
+    required this.onOpenGpsDiagnostics,
     required this.onVoiceChanged,
   });
 
   final Future<void> Function() onOpenSoundSettings;
   final Future<void> Function() onOpenRoutePreferences;
   final Future<void> Function() onOpenProfile;
+  final Future<void> Function() onOpenGpsDiagnostics;
   final ValueChanged<bool> onVoiceChanged;
 
   @override
@@ -9215,6 +9403,13 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
                   title: Text(AppLocale.tr('Профиль')),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: widget.onOpenProfile,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.gps_fixed),
+                  title: const Text('Диагностика GPS'),
+                  subtitle: const Text('Запись интервалов, точности и скачков координат'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onOpenGpsDiagnostics,
                 ),
                 ListTile(
                   leading: const Icon(Icons.info_outline),
