@@ -7817,6 +7817,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               onStyleLoadedCallback: _onMapLibreStyleLoaded,
               onCameraIdle: () => unawaited(_syncMapLibreAnnotations()),
               onMapClick: (_, point) => unawaited(_handleMapTap(LatLng(point.latitude, point.longitude))),
+              onMapLongClick: (_, point) => unawaited(_handleMapTap(LatLng(point.latitude, point.longitude))),
               compassEnabled: false,
               trackCameraPosition: true,
               rotateGesturesEnabled: true,
