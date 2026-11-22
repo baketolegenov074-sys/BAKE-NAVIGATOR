@@ -967,6 +967,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   int _navigationFixSegmentIndex = 0;
   double _navigationFixSegmentT = 0;
   Timer? _navigationPredictionTimer;
+  List<double> _routeCumulativeMeters = <double>[];
+  List<double> _instructionProgressMeters = <double>[];
+  double _navigationFixProgressMeters = 0;
+  double _navigationProgressMeters = 0;
   List<RouteInstruction> _instructions = [];
   int _instructionIndex = 0;
   bool _navigationActive = false;
@@ -3993,6 +3997,76 @@ _navigationMatchedLocation = null;
     return '$action$road';
   }
 
+  List<double> _buildRouteCumulativeMeters(List<LatLng> points) {
+    if (points.isEmpty) return <double>[];
+    final cumulative = <double>[0];
+    for (var i = 1; i < points.length; i++) {
+      cumulative.add(cumulative.last + Geolocator.distanceBetween(
+        points[i - 1].latitude, points[i - 1].longitude,
+        points[i].latitude, points[i].longitude,
+      ));
+    }
+    return cumulative;
+  }
+
+  double _projectRouteProgress(
+    List<LatLng> points, List<double> cumulative, LatLng location, {
+    int fromSegment = 0,
+  }) {
+    if (points.length < 2 || cumulative.length != points.length) return 0;
+    const latScale = 110540.0;
+    final lonScale = 111320.0 * math.cos(location.latitude * math.pi / 180);
+    final px = location.longitude * lonScale, py = location.latitude * latScale;
+    final first = fromSegment.clamp(0, points.length - 2).toInt();
+    var bestDistance = double.infinity;
+    var bestProgress = cumulative[first];
+    for (var i = first; i < points.length - 1; i++) {
+      final a = points[i], b = points[i + 1];
+      final ax = a.longitude * lonScale, ay = a.latitude * latScale;
+      final dx = (b.longitude - a.longitude) * lonScale;
+      final dy = (b.latitude - a.latitude) * latScale;
+      final lengthSquared = dx * dx + dy * dy;
+      if (lengthSquared < 0.01) continue;
+      final t = (((px - ax) * dx + (py - ay) * dy) / lengthSquared)
+          .clamp(0.0, 1.0).toDouble();
+      final ex = px - (ax + t * dx), ey = py - (ay + t * dy);
+      final distance = math.sqrt(ex * ex + ey * ey);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestProgress = cumulative[i] + (cumulative[i + 1] - cumulative[i]) * t;
+      }
+    }
+    return bestProgress;
+  }
+
+  List<double> _buildInstructionProgressMeters(
+    List<LatLng> points, List<RouteInstruction> instructions,
+  ) {
+    final cumulative = _buildRouteCumulativeMeters(points);
+    if (points.length < 2 || instructions.isEmpty) return <double>[];
+    final result = <double>[];
+    var fromSegment = 0;
+    var previousProgress = 0.0;
+    for (final instruction in instructions) {
+      final progress = _projectRouteProgress(
+        points, cumulative, instruction.location, fromSegment: fromSegment,
+      ).clamp(previousProgress, cumulative.last).toDouble();
+      result.add(progress);
+      previousProgress = progress;
+      while (fromSegment < points.length - 2 && cumulative[fromSegment + 1] < progress) {
+        fromSegment++;
+      }
+    }
+    return result;
+  }
+
+  void _prepareNavigationProgress(List<LatLng> points, List<RouteInstruction> instructions) {
+    _routeCumulativeMeters = _buildRouteCumulativeMeters(points);
+    _instructionProgressMeters = _buildInstructionProgressMeters(points, instructions);
+    _navigationFixProgressMeters = 0;
+    _navigationProgressMeters = 0;
+  }
+
   List<RouteInstruction> _readInstructions(Map<String, dynamic> route) {
     final result = <RouteInstruction>[];
     final legs = route['legs'] as List<dynamic>? ?? [];
@@ -4223,11 +4297,9 @@ _navigationMatchedLocation = null;
       }
       return;
     }
-    final meters = Geolocator.distanceBetween(
-      currentLocation.latitude,
-      currentLocation.longitude,
-      instruction.location.latitude,
-      instruction.location.longitude,
+    final meters = _distanceToNextManeuverMeters ?? Geolocator.distanceBetween(
+      currentLocation.latitude, currentLocation.longitude,
+      instruction.location.latitude, instruction.location.longitude,
     );
     final distanceText = meters >= 1000
         ? _localized('${(meters / 1000).toStringAsFixed(1)} километра', '${(meters / 1000).toStringAsFixed(1)} километр', '${(meters / 1000).toStringAsFixed(1)} kilometers')
@@ -4238,14 +4310,14 @@ _navigationMatchedLocation = null;
   }
 
   double? get _distanceToNextManeuverMeters {
-    if (_currentLocation == null || _instructionIndex >= _instructions.length) return null;
+    if (_instructionIndex >= _instructions.length) return null;
+    if (_instructionProgressMeters.length == _instructions.length && _routeCumulativeMeters.isNotEmpty) {
+      return math.max(0.0, _instructionProgressMeters[_instructionIndex] - _navigationProgressMeters).toDouble();
+    }
+    final point = _navigationMatchedLocation ?? _currentLocation;
+    if (point == null) return null;
     final target = _instructions[_instructionIndex].location;
-    return Geolocator.distanceBetween(
-      _currentLocation!.latitude,
-      _currentLocation!.longitude,
-      target.latitude,
-      target.longitude,
-    );
+    return Geolocator.distanceBetween(point.latitude, point.longitude, target.latitude, target.longitude);
   }
 
   int get _effectiveSpeedLimitKmh {
@@ -5042,6 +5114,15 @@ _navigationMatchedLocation = null;
         final predicted = _predictNavigationPosition();
         if (predicted == null) return;
         _navigationMatchedLocation = predicted;
+        if (_routeCumulativeMeters.length == _routePoints.length && _navigationFixTimestamp != null) {
+          final ageSeconds = DateTime.now().difference(_navigationFixTimestamp!).inMilliseconds / 1000.0;
+          final predictedProgress = _navigationFixProgressMeters +
+              _navigationFixSpeedMetersPerSecond.clamp(0.0, 40.0) * ageSeconds.clamp(0.0, 4.0).toDouble();
+          _navigationProgressMeters = math.max(
+            _navigationProgressMeters,
+            predictedProgress.clamp(0.0, _routeCumulativeMeters.last).toDouble(),
+          ).toDouble();
+        }
 
         if (_mapFollowEnabled && !_headingUpGestureActive) {
           final center = _mapCameraCenter;
@@ -5137,7 +5218,8 @@ _navigationMatchedLocation = null;
     final lonScale = 111320.0 * math.cos(rawPoint.latitude * math.pi / 180);
     final px = rawPoint.longitude * lonScale;
     final py = rawPoint.latitude * latScale;
-    final first = math.max(0, _routeProgressSegmentIndex - 1).toInt();
+    final first = math.max(_routeProgressSegmentIndex, _navigationFixSegmentIndex)
+        .clamp(0, _routePoints.length - 2).toInt();
     final last = math.min(_routePoints.length - 2, first + 80).toInt();
     var bestScore = double.infinity;
     var bestDistance = double.infinity;
@@ -5170,6 +5252,7 @@ _navigationMatchedLocation = null;
           ? _bearingDifference(fix.heading, segmentBearing)
           : 0.0;
       if (hasCourse && headingDifference > 105) continue;
+      if (i == _navigationFixSegmentIndex && t + 0.02 < _navigationFixSegmentT) continue;
       final score = distance + headingDifference * 0.22;
       if (score < bestScore) {
         bestScore = score;
@@ -5198,6 +5281,11 @@ _navigationMatchedLocation = null;
         fix.speed.isFinite ? math.max(0.0, fix.speed).toDouble() : 0.0;
     _navigationFixSegmentIndex = bestIndex;
     _navigationFixSegmentT = bestT;
+    if (_routeCumulativeMeters.length == _routePoints.length) {
+      _navigationFixProgressMeters = _routeCumulativeMeters[bestIndex] +
+          (_routeCumulativeMeters[bestIndex + 1] - _routeCumulativeMeters[bestIndex]) * bestT;
+      _navigationProgressMeters = math.max(_navigationProgressMeters, _navigationFixProgressMeters).toDouble();
+    }
     return matched;
   }
 
@@ -5205,21 +5293,14 @@ _navigationMatchedLocation = null;
     if (!_navigationActive || _instructionIndex >= _instructions.length) return;
 
     final target = _instructions[_instructionIndex];
-    final measuredMeters = Geolocator.distanceBetween(
-      position.latitude,
-      position.longitude,
-      target.location.latitude,
-      target.location.longitude,
-    );
-    // GPS providers can report a moving vehicle a little late. Predict only
-    // the distance along the current heading for maneuver guidance; never
-    // shift the stored GPS fix or the vehicle marker.
-    final gpsSpeedMetersPerSecond = _currentSpeedKmh / 3.6;
-    final gpsLatencyCompensation =
-        gpsSpeedMetersPerSecond.clamp(0.0, 45.0) * 2.0;
-    final meters = math.max(0.0, measuredMeters - gpsLatencyCompensation);
+    final hasRouteProgress = _instructionProgressMeters.length == _instructions.length &&
+        _routeCumulativeMeters.length == _routePoints.length && _routeCumulativeMeters.isNotEmpty;
+    final meters = hasRouteProgress
+        ? math.max(0.0, _instructionProgressMeters[_instructionIndex] - _navigationProgressMeters)
+        : Geolocator.distanceBetween(position.latitude, position.longitude,
+            target.location.latitude, target.location.longitude);
 
-    // Announce the upcoming maneuver in stages instead of speaking only once.
+    // HUD, voice prompts and maneuver switching share one monotonic route distance.
     final isArrivalInstruction = _instructionIndex + 1 >= _instructions.length;
     final stage = isArrivalInstruction
         ? (meters <= 150 ? 2 : meters <= 500 ? 1 : 0)
@@ -5235,7 +5316,10 @@ _navigationMatchedLocation = null;
       }
     }
 
-    if (meters <= 35) {
+    final maneuverPassed = hasRouteProgress
+        ? _navigationProgressMeters >= _instructionProgressMeters[_instructionIndex] + 5
+        : meters <= 35;
+    if (maneuverPassed) {
       if (_instructionIndex + 1 >= _instructions.length) {
         setState(() {
           _navigationActive = false;
@@ -5568,6 +5652,7 @@ _navigationMatchedLocation = null;
         _routeReady = points.length >= 2;
         _routeActionDismissed = false;
         _instructions = instructions;
+        _prepareNavigationProgress(points, instructions);
         _navigationActive = resumeNavigation;
         _instructionIndex = resumeNavigation && instructions.length > 1 ? 1 : 0;
         _offRouteSamples = 0;
@@ -5682,6 +5767,15 @@ _navigationMatchedLocation = null;
       _routePoints = points;
       _routeReady = points.length >= 2;
       _instructions = instructions;
+      _prepareNavigationProgress(points, instructions);
+      if (wasNavigating && _currentLocation != null && _routeCumulativeMeters.isNotEmpty) {
+        _navigationProgressMeters = _projectRouteProgress(points, _routeCumulativeMeters, _currentLocation!);
+        _navigationFixProgressMeters = _navigationProgressMeters;
+        nearestInstructionIndex = _instructionProgressMeters.indexWhere(
+          (progress) => progress >= _navigationProgressMeters - 8,
+        );
+        if (nearestInstructionIndex < 0) nearestInstructionIndex = instructions.length - 1;
+      }
       _instructionIndex = nearestInstructionIndex;
       _routeDistanceMeters = (route['distance'] as num).toDouble();
       _routeDurationSeconds = (route['duration'] as num).toDouble();
