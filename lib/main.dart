@@ -906,6 +906,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
+  List<RoadFeature> _roadFeatures = <RoadFeature>[];
+  DateTime? _lastRoadFeatureLookup;
+  LatLng? _lastRoadFeatureLookupPoint;
+  bool _roadFeatureLookupInProgress = false;
+  final Map<String, int> _announcedRoadFeatureStages = <String, int>{};
   Timer? _roadReportRetryTimer;
   bool _roadReportRetryInProgress = false;
   final OfflineAddressSearch _offlineAddressSearch = OfflineAddressSearch();
@@ -3043,6 +3048,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               ? position.heading
               : null,
         ));
+        unawaited(_updateRoadFeatureWarnings(
+          point,
+          position.heading.isFinite && position.speed >= 0.8
+              ? position.heading
+              : null,
+        ));
 
         // The first GPS fix may arrive after navigation has already started.
         // Initialize the camera and speak the current instruction exactly once.
@@ -4694,6 +4705,96 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         'Алда жылдамдықты бақылау камерасы бар. Қашықтық $distanceText.',
         'Speed camera ahead. Distance $distanceText.',
       );
+      await _speakText(message);
+      if (!mounted || !_navigationActive || _voiceMode == 0) return;
+    }
+  }
+
+
+  Future<void> _updateRoadFeatureWarnings(
+    LatLng position,
+    double? gpsHeading,
+  ) async {
+    if (_roadFeatureLookupInProgress) return;
+    final now = DateTime.now();
+    final lastPoint = _lastRoadFeatureLookupPoint;
+    final movedMeters = lastPoint == null
+        ? double.infinity
+        : Geolocator.distanceBetween(
+            lastPoint.latitude, lastPoint.longitude,
+            position.latitude, position.longitude,
+          );
+    final shouldRefresh = _lastRoadFeatureLookup == null ||
+        now.difference(_lastRoadFeatureLookup!) >= const Duration(minutes: 2) ||
+        movedMeters >= 250;
+    if (shouldRefresh) {
+      _roadFeatureLookupInProgress = true;
+      try {
+        final loaded = await _roadAlertService.fetchNearbyFeatures(
+          position,
+          radiusMeters: 1800,
+        );
+        _roadFeatures = loaded;
+        _lastRoadFeatureLookup = DateTime.now();
+        _lastRoadFeatureLookupPoint = position;
+      } catch (error) {
+        debugPrint('Не удалось обновить школы и переходы: $error');
+      } finally {
+        _roadFeatureLookupInProgress = false;
+      }
+    }
+
+    if (!mounted || !_navigationActive || _voiceMode == 0) return;
+    double? heading = gpsHeading;
+    if (heading == null && _instructionIndex < _instructions.length) {
+      final next = _instructions[_instructionIndex].location;
+      heading = Geolocator.bearingBetween(
+        position.latitude, position.longitude,
+        next.latitude, next.longitude,
+      );
+    }
+    if (heading == null || !heading.isFinite) return;
+
+    final candidates = <({RoadFeature feature, double distance})>[];
+    for (final feature in _roadFeatures) {
+      final distance = Geolocator.distanceBetween(
+        position.latitude, position.longitude,
+        feature.location.latitude, feature.location.longitude,
+      );
+      final announceRadius = feature.kind == RoadFeatureKind.school ? 450.0 : 260.0;
+      if (distance > announceRadius || distance < 25) continue;
+      final bearing = Geolocator.bearingBetween(
+        position.latitude, position.longitude,
+        feature.location.latitude, feature.location.longitude,
+      );
+      if (_bearingDifference(heading, bearing) > 60) continue;
+      candidates.add((feature: feature, distance: distance));
+    }
+    candidates.sort((a, b) => a.distance.compareTo(b.distance));
+
+    for (final candidate in candidates.take(2)) {
+      final feature = candidate.feature;
+      final distance = candidate.distance;
+      final isSchool = feature.kind == RoadFeatureKind.school;
+      final stage = isSchool
+          ? (distance <= 130 ? 2 : 1)
+          : (distance <= 70 ? 2 : 1);
+      if (stage <= (_announcedRoadFeatureStages[feature.id] ?? 0)) continue;
+      _announcedRoadFeatureStages[feature.id] = stage;
+      final distanceText = distance >= 1000
+          ? '${(distance / 1000).toStringAsFixed(1)} километра'
+          : '${(distance / 50).round() * 50} метров';
+      final message = isSchool
+          ? _localized(
+              stage == 1 ? 'Впереди школа. $distanceText.' : 'Школа через $distanceText. Снизьте скорость.',
+              stage == 1 ? 'Алда мектеп. $distanceText.' : 'Мектеп $distanceText кейін. Жылдамдықты азайтыңыз.',
+              stage == 1 ? 'School ahead. $distanceText.' : 'School in $distanceText. Slow down.',
+            )
+          : _localized(
+              stage == 1 ? 'Впереди пешеходный переход. $distanceText.' : 'Пешеходный переход через $distanceText.',
+              stage == 1 ? 'Алда жаяу жүргіншілер өткелі. $distanceText.' : 'Жаяу жүргіншілер өткелі $distanceText кейін.',
+              stage == 1 ? 'Pedestrian crossing ahead. $distanceText.' : 'Pedestrian crossing in $distanceText.',
+            );
       await _speakText(message);
       if (!mounted || !_navigationActive || _voiceMode == 0) return;
     }
