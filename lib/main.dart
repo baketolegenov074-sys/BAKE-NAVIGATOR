@@ -1221,6 +1221,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       if (!mounted || _trafficLayerEnabled == enabled) return;
       setState(() => _trafficLayerEnabled = enabled);
       unawaited(_syncMapLibreAnnotations());
+      unawaited(_syncTomTomTrafficLayer());
     } catch (error) {
       debugPrint('BAKE traffic layer preference load failed: $error');
     }
@@ -6045,7 +6046,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 Padding(
                   padding: const EdgeInsets.only(bottom: 18),
                   child: Text(
-                    AppLocale.pick('Спутниковые снимки загружаются из ArcGIS World Imagery. Пробки, парковки и общий слой дорожных событий пока не подключены к источникам данных.', 'Спутниктік суреттер ArcGIS World Imagery көзінен жүктеледі. Кептелістер, тұрақтар және жол оқиғаларының жалпы қабаты әзірге деректер көздеріне қосылмаған.', 'Satellite imagery is provided by ArcGIS World Imagery. Traffic, parking, and the shared road-events layer are not connected yet.'),
+                    AppLocale.pick('Спутниковые снимки загружаются из ArcGIS World Imagery. Для реальных пробок нужен API-ключ TomTom; парковки пока не подключены.', 'Спутниктік суреттер ArcGIS World Imagery көзінен жүктеледі. Кептелістер, тұрақтар және жол оқиғаларының жалпы қабаты әзірге деректер көздеріне қосылмаған.', 'Satellite imagery is provided by ArcGIS World Imagery. Traffic, parking, and the shared road-events layer are not connected yet.'),
                     style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                 ),
