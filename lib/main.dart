@@ -960,6 +960,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   int _selectedRouteIndex = 0;
   List<LatLng> _routePoints = [];
   int _routeProgressSegmentIndex = 0;
+  LatLng? _navigationMatchedLocation;
   List<RouteInstruction> _instructions = [];
   int _instructionIndex = 0;
   bool _navigationActive = false;
@@ -3188,6 +3189,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final wasWaitingForNavigationFix =
             _navigationActive && _currentLocation == null;
         final point = LatLng(position.latitude, position.longitude);
+        final navigationPoint = _navigationActive
+            ? _matchNavigationPosition(position, point)
+            : point;
+        _navigationMatchedLocation = _navigationActive ? navigationPoint : null;
         setState(() {
           _currentLocation = point;
           _gpsAvailable = true;
@@ -3259,12 +3264,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (_appInForeground && cameraUpdateDue && _mapFollowEnabled && !_headingUpGestureActive) {
           _lastCameraUpdateAt = cameraNow;
           final cameraCenter = _mapCameraCenter;
+          final cameraTarget = _navigationActive ? navigationPoint : point;
           final shouldRecenter = Geolocator.distanceBetween(
                 cameraCenter.latitude, cameraCenter.longitude,
-                point.latitude, point.longitude,
+                cameraTarget.latitude, cameraTarget.longitude,
               ) > (_isOfflineMapActive ? 3 : 5);
           final routeHeading = _navigationActive && _routePoints.length > 1
-              ? _routeBearingAt(point)
+              ? _routeBearingAt(cameraTarget)
               : null;
           final heading = _navigationActive
               ? (_gpsHeadingDegrees ?? routeHeading ?? _lastCameraHeadingDegrees ?? 0.0)
@@ -3277,7 +3283,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           final shouldRotate = difference.abs() >= (_isOfflineMapActive ? 4 : 6);
           if (shouldRecenter || shouldRotate || wasWaitingForNavigationFix) {
             _updateNavigationCamera(
-              point,
+              cameraTarget,
               math.max(_mapCameraZoom, _navigationActive ? 17.0 : 16.0).toDouble(),
               normalizedHeading,
             );
@@ -3285,7 +3291,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         }
 
         if (!firstFix.isCompleted) firstFix.complete();
-        _updateNavigationProgress(point);
+        _updateNavigationProgress(navigationPoint);
         _checkForOffRoute(position);
       },
       onError: (Object error) {
@@ -3657,6 +3663,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     setState(() {
       _routeOrigin = point;
       _routeProgressSegmentIndex = 0;
+      _navigationMatchedLocation = null;
       _routePoints = [];
       _routeReady = false;
       _instructions = [];
@@ -5000,6 +5007,79 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
+  // Snap accepted GPS fixes to the active route. Raw GPS remains untouched
+  // for road alerts and off-route detection; only guidance and map-follow use
+  // this road-matched position.
+  LatLng _matchNavigationPosition(Position fix, LatLng rawPoint) {
+    if (!_navigationActive || _routePoints.length < 2) return rawPoint;
+    if (!fix.accuracy.isFinite || fix.accuracy > 60) {
+      return _navigationMatchedLocation ?? rawPoint;
+    }
+    if (DateTime.now().difference(fix.timestamp).inSeconds > 8) {
+      return _navigationMatchedLocation ?? rawPoint;
+    }
+
+    const latScale = 110540.0;
+    final lonScale = 111320.0 * math.cos(rawPoint.latitude * math.pi / 180);
+    final px = rawPoint.longitude * lonScale;
+    final py = rawPoint.latitude * latScale;
+    final first = math.max(0, _routeProgressSegmentIndex - 1).toInt();
+    final last = math.min(_routePoints.length - 2, first + 80).toInt();
+    var bestScore = double.infinity;
+    var bestDistance = double.infinity;
+    var bestIndex = -1;
+    var bestT = 0.0;
+    final hasCourse = fix.speed >= 1.5 &&
+        fix.heading.isFinite &&
+        fix.heading >= 0 &&
+        fix.heading <= 360;
+
+    for (var i = first; i <= last; i++) {
+      final a = _routePoints[i];
+      final b = _routePoints[i + 1];
+      final ax = a.longitude * lonScale;
+      final ay = a.latitude * latScale;
+      final dx = (b.longitude - a.longitude) * lonScale;
+      final dy = (b.latitude - a.latitude) * latScale;
+      final lengthSquared = dx * dx + dy * dy;
+      if (lengthSquared < 0.01) continue;
+      final t = (((px - ax) * dx + (py - ay) * dy) / lengthSquared)
+          .clamp(0.0, 1.0)
+          .toDouble();
+      final ex = px - (ax + t * dx);
+      final ey = py - (ay + t * dy);
+      final distance = math.sqrt(ex * ex + ey * ey);
+      final segmentBearing = Geolocator.bearingBetween(
+        a.latitude, a.longitude, b.latitude, b.longitude,
+      );
+      final headingDifference = hasCourse
+          ? _bearingDifference(fix.heading, segmentBearing)
+          : 0.0;
+      if (hasCourse && headingDifference > 105) continue;
+      final score = distance + headingDifference * 0.22;
+      if (score < bestScore) {
+        bestScore = score;
+        bestDistance = distance;
+        bestIndex = i;
+        bestT = t;
+      }
+    }
+
+    final snapLimit = math.max(55.0, fix.accuracy * 1.8);
+    if (bestIndex < 0 || bestDistance > snapLimit) {
+      return _navigationMatchedLocation ?? rawPoint;
+    }
+    if (bestIndex > _routeProgressSegmentIndex) {
+      _routeProgressSegmentIndex = bestIndex;
+    }
+    final a = _routePoints[bestIndex];
+    final b = _routePoints[bestIndex + 1];
+    return LatLng(
+      a.latitude + (b.latitude - a.latitude) * bestT,
+      a.longitude + (b.longitude - a.longitude) * bestT,
+    );
+  }
+
   void _updateNavigationProgress(LatLng position) {
     if (!_navigationActive || _instructionIndex >= _instructions.length) return;
 
@@ -5059,7 +5139,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   // Keep full route geometry for rerouting; clip only the line rendered during navigation.
   List<LatLng> _remainingRoutePoints() {
     if (!_navigationActive || _currentLocation == null || _routePoints.length < 2) return _routePoints;
-    final p = _currentLocation!;
+    final p = _navigationMatchedLocation ?? _currentLocation!;
     const latScale = 110540.0;
     final lonScale = 111320.0 * math.cos(p.latitude * math.pi / 180);
     final px = p.longitude * lonScale, py = p.latitude * latScale;
