@@ -7883,7 +7883,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               onMapCreated: _onMapLibreCreated,
               onStyleLoadedCallback: _onMapLibreStyleLoaded,
               onCameraIdle: () => unawaited(_syncMapLibreAnnotations()),
-              onMapClick: (_, point) => unawaited(_handleMapTap(LatLng(point.latitude, point.longitude))),
+              onMapClick: (_, point) {
+                // Short taps are reserved for choosing a visible alternative route.
+                // Address selection is handled only by the two-second hold above.
+                _trySelectAlternativeAt(LatLng(point.latitude, point.longitude));
+              },
               onMapLongClick: (_, point) => _pendingMapLongPressPoint = LatLng(point.latitude, point.longitude),
               compassEnabled: false,
               trackCameraPosition: true,
@@ -7927,7 +7931,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 onMapReady: _onOfflineMapReady,
                 initialCenter: _shymkent,
                 initialZoom: 13,
-                onTap: (_, point) => unawaited(_handleMapTap(point)),
+                onTap: (_, point) {
+                  // A short tap may switch an alternative route, never set an address.
+                  _trySelectAlternativeAt(point);
+                },
                 onLongPress: (_, point) => _pendingMapLongPressPoint = point,
                 onPositionChanged: (camera, hasGesture) {
                   if (hasGesture) _scheduleHeadingUpReturn();
