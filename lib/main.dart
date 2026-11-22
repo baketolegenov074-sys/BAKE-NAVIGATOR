@@ -5160,20 +5160,42 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final route = _routeAlternatives[index];
     final points = _routePointsFromDecodedRoute(route);
     final instructions = _readInstructions(route);
+    final wasNavigating = _navigationActive;
+    var nearestInstructionIndex = 0;
+    if (wasNavigating && _currentLocation != null && instructions.isNotEmpty) {
+      var nearestDistance = double.infinity;
+      for (var i = 0; i < instructions.length; i++) {
+        final distance = Geolocator.distanceBetween(
+          _currentLocation!.latitude,
+          _currentLocation!.longitude,
+          instructions[i].location.latitude,
+          instructions[i].location.longitude,
+        );
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestInstructionIndex = i;
+        }
+      }
+    }
     setState(() {
       _selectedRouteIndex = index;
       _routeProgressSegmentIndex = 0;
       _routePoints = points;
       _routeReady = points.length >= 2;
       _instructions = instructions;
-      _instructionIndex = 0;
+      _instructionIndex = nearestInstructionIndex;
       _routeDistanceMeters = (route['distance'] as num).toDouble();
       _routeDurationSeconds = (route['duration'] as num).toDouble();
       _message = _localized('Выбран вариант маршрута ${index + 1}.', '${index + 1}-маршрут нұсқасы таңдалды.', 'Route option ${index + 1} selected.');
     });
     if (points.isNotEmpty) {
       unawaited(_syncMapLibreAnnotations(updateRoute: true));
-      _fitMapCamera(points);
+      if (!wasNavigating) {
+        _fitMapCamera(points);
+      } else if (_currentLocation != null) {
+        final heading = _gpsHeadingDegrees ?? _routeBearingAt(_currentLocation!);
+        _updateNavigationCamera(_currentLocation!, 17, heading);
+      }
     }
   }
 
@@ -7531,7 +7553,26 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               ),
             )
           else
-            FlutterMap(
+            Listener(
+              onPointerDown: (_) {
+                _mapPointerDownAt = DateTime.now();
+                _headingUpGestureActive = true;
+                _headingUpResumeTimer?.cancel();
+              },
+              onPointerUp: (_) {
+                final startedAt = _mapPointerDownAt;
+                _lastMapPointerHoldDuration = startedAt == null
+                    ? Duration.zero
+                    : DateTime.now().difference(startedAt);
+                _mapPointerDownAt = null;
+                _scheduleHeadingUpReturn();
+              },
+              onPointerCancel: (_) {
+                _mapPointerDownAt = null;
+                _lastMapPointerHoldDuration = Duration.zero;
+                _scheduleHeadingUpReturn();
+              },
+              child: FlutterMap(
               mapController: _mapController,
               options: MapOptions(
                 onMapReady: _onOfflineMapReady,
@@ -7576,6 +7617,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                   attributions: [TextSourceAttribution('© OpenStreetMap contributors')],
                 ),
               ],
+            ),
             ),
           Positioned(
             top: 238,
