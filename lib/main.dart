@@ -1636,19 +1636,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         'text-halo-width': 2.5,
       };
 
-      var roadLayerFound = false;
+      // Replace Liberty's class-filtered road-label layers with one
+      // unrestricted layer. The original class filters omit many local streets.
+      // Overlap is allowed for road names so adjacent streets are not silently
+      // dropped by MapLibre's symbol collision placement.
+      layers.removeWhere((layer) =>
+          layer['type'] == 'symbol' &&
+          layer['source-layer'] == 'transportation_name');
       var placeLayerFound = false;
       for (final layer in layers) {
-        if (layer['type'] != 'symbol') continue;
-        final sourceLayer = layer['source-layer'];
-        if (sourceLayer != 'transportation_name' && sourceLayer != 'place') {
+        if (layer['type'] != 'symbol' || layer['source-layer'] != 'place') {
           continue;
         }
         final layout = Map<String, dynamic>.from(
           (layer['layout'] as Map?) ?? <String, dynamic>{},
         );
-        layout['symbol-placement'] =
-            sourceLayer == 'transportation_name' ? 'line' : 'point';
+        layout['symbol-placement'] = 'point';
         layout['text-field'] = textField;
         layout['text-font'] = textFont;
         layout['text-size'] = 14;
@@ -1661,27 +1664,30 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           ...labelPaint,
         };
         layer['minzoom'] = 11;
-        if (sourceLayer == 'transportation_name') roadLayerFound = true;
-        if (sourceLayer == 'place') placeLayerFound = true;
+        placeLayerFound = true;
       }
 
-      if (!roadLayerFound) {
-        layers.add({
-          'id': 'bake-restored-road-labels',
-          'type': 'symbol',
-          'source': vectorSourceId,
-          'source-layer': 'transportation_name',
-          'minzoom': 11,
-          'layout': {
-            'symbol-placement': 'line',
-            'text-field': textField,
-            'text-font': textFont,
-            'text-size': 14,
-            'text-allow-overlap': false,
-          },
-          'paint': labelPaint,
-        });
-      }
+      layers.add({
+        'id': 'bake-restored-road-labels',
+        'type': 'symbol',
+        'source': vectorSourceId,
+        'source-layer': 'transportation_name',
+        'minzoom': 10,
+        'layout': {
+          'symbol-placement': 'line',
+          'text-field': textField,
+          'text-font': textFont,
+          'text-size': 12,
+          'text-max-width': 12,
+          'text-max-angle': 45,
+          'text-padding': 1,
+          'symbol-spacing': 220,
+          'text-keep-upright': true,
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        'paint': labelPaint,
+      });
       if (!placeLayerFound) {
         layers.add({
           'id': 'bake-restored-place-labels',
