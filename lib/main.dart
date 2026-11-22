@@ -911,6 +911,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   LatLng? _lastRouteLineSyncPoint;
   ml.Fill? _routePositionHaloFill;
   ml.Fill? _routePositionFill;
+  ml.Circle? _freeDriveGpsCircle;
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
@@ -2237,6 +2238,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (rebuildStaticAnnotations) {
           await controller.clearSymbols();
           await controller.clearCircles();
+          _freeDriveGpsCircle = null;
         }
         // Keep the live GPS arrow fill between ordinary GPS updates.
         // Route/style rebuilds clear fills and recreate the arrow below.
@@ -2308,11 +2310,26 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             fillOutlineColor: '#FFFFFF',
           ));
         }
-      // Render exactly one vehicle marker. Its position is the smoothed GPS
-      // fix in free drive and the road-matched/predicted GPS position during
-      // navigation. Do not draw a second GPS dot underneath the route arrow.
+      // Free drive uses one red GPS dot; active navigation replaces it with
+      // one blue direction arrow. Both use the same display position.
       final vehiclePoint = _vehicleDisplayLocation;
-      if (vehiclePoint != null) {
+      if (vehiclePoint != null && !_navigationActive) {
+        final gpsOptions = ml.CircleOptions(
+          geometry: _toMapLibrePoint(vehiclePoint),
+          circleRadius: 8,
+          circleColor: '#E53935',
+          circleOpacity: 1,
+          circleStrokeColor: '#FFFFFF',
+          circleStrokeWidth: 2.5,
+        );
+        final existingGpsCircle = _freeDriveGpsCircle;
+        if (existingGpsCircle == null) {
+          _freeDriveGpsCircle = await controller.addCircle(gpsOptions);
+        } else {
+          await controller.updateCircle(existingGpsCircle, gpsOptions);
+        }
+      } else if (vehiclePoint != null && _navigationActive) {
+        _freeDriveGpsCircle = null;
         final vehicleBearing = _vehicleDisplayBearing * 180.0 / math.pi;
         final haloOptions = ml.FillOptions(
           geometry: [_directionArrowPolygon(
@@ -8283,7 +8300,23 @@ _navigationMatchedLocation = null;
             child: _buildManeuverDistanceCue(),
           ),
         ),
-      if (_vehicleDisplayLocation != null)
+      if (_vehicleDisplayLocation != null && !_navigationActive)
+        Marker(
+          point: _vehicleDisplayLocation!,
+          width: 20,
+          height: 20,
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFE53935),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2.5),
+              boxShadow: const [
+                BoxShadow(color: Color(0x55000000), blurRadius: 4, offset: Offset(0, 1)),
+              ],
+            ),
+          ),
+        ),
+      if (_vehicleDisplayLocation != null && _navigationActive)
         Marker(
           point: _vehicleDisplayLocation!,
           width: 40,
