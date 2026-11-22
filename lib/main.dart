@@ -6317,12 +6317,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   );
 
   Future<void> _handleMapTap(LatLng point) async {
-    // Require a deliberate two-second hold; quick touches and map drags do nothing.
+    // This handler is called only after a deliberate two-second hold.
+    // A hold selects an address; alternative routes use a separate short tap.
     if (_lastMapPointerHoldDuration < const Duration(seconds: 2)) return;
-    if (_routeReady && _routeAlternatives.length > 1 &&
-        _trySelectAlternativeAt(point)) {
-      return;
-    }
     await _selectMapDestination(point);
   }
 
