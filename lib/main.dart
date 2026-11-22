@@ -899,6 +899,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _mapLibreAnnotationSyncInProgress = false;
   bool _mapLibreAnnotationSyncPending = false;
   bool _mapLibreRouteSyncPending = false;
+  DateTime? _lastFullMapAnnotationRebuildAt;
   static const String _routeGeoJsonSourceId = 'bake-route-geojson';
   LatLng? _lastRouteLineSyncPoint;
   ml.Fill? _routePositionHaloFill;
@@ -2050,6 +2051,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final controller = _mapLibreController;
         if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
         final visibleRoutePoints = _remainingRoutePoints();
+        final annotationNow = DateTime.now();
+        final rebuildStaticAnnotations = syncRoute ||
+            _lastFullMapAnnotationRebuildAt == null ||
+            annotationNow.difference(_lastFullMapAnnotationRebuildAt!) >=
+                const Duration(seconds: 8);
+        if (rebuildStaticAnnotations) {
+          _lastFullMapAnnotationRebuildAt = annotationNow;
+        }
         // GPS refreshes must never remove the already-rendered route line.
         // Only route/style changes are allowed to replace route geometry.
         if (syncRoute) {
@@ -2059,8 +2068,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           await _setMapLibreRouteGeometry(controller, visibleRoutePoints);
           await _setMapLibreAlternativeRouteGeometry(controller);
         }
-        await controller.clearSymbols();
-        await controller.clearCircles();
+        if (rebuildStaticAnnotations) {
+          await controller.clearSymbols();
+          await controller.clearCircles();
+        }
         // Keep the live GPS arrow fill between ordinary GPS updates.
         // Route/style rebuilds clear fills and recreate the arrow below.
         final shouldClearStaleRouteBird = _routePositionFill != null &&
@@ -2068,7 +2079,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 (_navigationActive &&
                     _routePoints.length > 1 &&
                     _distanceToRouteMeters(_currentLocation!) > 100));
-        if (syncRoute || shouldClearStaleRouteBird) {
+        if (rebuildStaticAnnotations || shouldClearStaleRouteBird) {
           await controller.clearFills();
           _routePositionHaloFill = null;
           _routePositionFill = null;
@@ -2080,7 +2091,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         // above the blue route ribbon, a short distance before its intersection.
         // The dark offset copy creates a raised 3D/shadow effect. The separate
         // blue lane-guidance banner elsewhere in the UI is intentionally untouched.
-        if (visibleRoutePoints.length > 1) {
+        if (rebuildStaticAnnotations && visibleRoutePoints.length > 1) {
           for (var i = 0; i < _instructions.length; i++) {
             final instruction = _instructions[i];
             if (!_isRouteManeuverMarker(instruction)) continue;
@@ -2114,7 +2125,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
         // Show the route start as a direction arrow instead of a static green dot.
         final routeStart = !_navigationActive ? (_routeOrigin ?? (_routePoints.length > 1 ? _routePoints.first : null)) : null;
-        if (routeStart != null && _routePoints.length > 1) {
+        if (rebuildStaticAnnotations && routeStart != null && _routePoints.length > 1) {
           final routeStartBearing = Geolocator.bearingBetween(
             _routePoints.first.latitude,
             _routePoints.first.longitude,
@@ -2208,6 +2219,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           await controller.updateFill(existingGpsDot, gpsDotOptions);
         }
       }
+      if (rebuildStaticAnnotations) {
       for (var i = 0; i < _routeStops.length; i++) {
         await controller.addSymbol(ml.SymbolOptions(
           geometry: _toMapLibrePoint(_routeStops[i]), textField: '${i + 1}',
@@ -2301,7 +2313,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           ));
         }
       }
-      if (_destination != null) {
+      if (rebuildStaticAnnotations && _destination != null) {
         // The marker's ground anchor is exactly point B. Red glow rings are
         // drawn first so the smaller checkered flag remains clear above them.
         await controller.addCircle(ml.CircleOptions(
@@ -2335,6 +2347,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             fillOutlineColor: '#FFFFFF',
           ));
         }
+      }
       }
       } while (_mapLibreAnnotationSyncPending);
     } catch (error, stackTrace) {
@@ -6217,6 +6230,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     status: 'Подписка BAKE Plus пока не создана. Оплата и платные функции не включены.',
   );
 
+  void _captureMapLongPressPoint(LatLng point) {
+    _pendingMapLongPressPoint = point;
+    // Native MapLibre/FlutterMap long-press callbacks can arrive just after
+    // the pointer-up event. Preserve a completed one-second hold in that case.
+    if (_mapPointerDownAt == null &&
+        !_mapPointerMoved &&
+        _lastMapPointerHoldDuration >= const Duration(seconds: 1)) {
+      _pendingMapLongPressPoint = null;
+      unawaited(_handleMapTap(point));
+    }
+  }
+
   Future<void> _handleMapTap(LatLng point) async {
     // Address selection requires a deliberate one-second hold.
     if (_lastMapPointerHoldDuration < const Duration(seconds: 1)) return;
@@ -7799,7 +7824,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 // Address selection is handled only by the one-second hold above.
                 _trySelectAlternativeAt(LatLng(point.latitude, point.longitude));
               },
-              onMapLongClick: (_, point) => _pendingMapLongPressPoint = LatLng(point.latitude, point.longitude),
+              onMapLongClick: (_, point) => _captureMapLongPressPoint(LatLng(point.latitude, point.longitude)),
               compassEnabled: false,
               trackCameraPosition: true,
               rotateGesturesEnabled: true,
@@ -7815,6 +7840,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 _mapPointerDownAt = DateTime.now();
                 _mapPointerDownPosition = event.localPosition;
                 _mapPointerMoved = false;
+                _lastMapPointerHoldDuration = Duration.zero;
                 _headingUpGestureActive = true;
                 _headingUpResumeTimer?.cancel();
               },
@@ -7856,7 +7882,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                   // A short tap may switch an alternative route, never set an address.
                   _trySelectAlternativeAt(point);
                 },
-                onLongPress: (_, point) => _pendingMapLongPressPoint = point,
+                onLongPress: (_, point) => _captureMapLongPressPoint(point),
                 onPositionChanged: (camera, hasGesture) {
                   if (hasGesture) {
                     _mapFollowEnabled = false;
@@ -7901,7 +7927,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             ),
             ),
           Positioned(
-            top: 286,
+            top: 342,
             right: 14,
             child: SafeArea(
               bottom: false,
@@ -8476,11 +8502,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                         color: const Color(0xEEFFFFFF),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(
-                        _routeSummary(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF555B63)),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_selectedMapPointAddress.isNotEmpty)
+                            Text(
+                              'B · $_selectedMapPointAddress',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF202020)),
+                            ),
+                          Text(
+                            _routeSummary(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF555B63)),
+                          ),
+                        ],
                       ),
                     ),
                     SizedBox(
