@@ -497,8 +497,7 @@ class AppLocale {
       'Музыка': 'Музыка',
       'Маршрут ещё не построен': 'Маршрут әлі құрылмаған',
       'Следующий манёвр': 'Келесі маневр',
-      'Навигация завершена.': 'Навигация аяқталды.',
-      'Расстояние неизвестно': 'Қашықтық белгісіз',
+      'Навигация завершена.': 'Навигация аяқталды.',      'Расстояние неизвестно': 'Қашықтық белгісіз',
       'Снять все отметки': 'Барлық белгіні алып тастау',
       'Выбрать все сети': 'Барлық желіні таңдау',
       'Для выбранного языка голоса не найдены. Установите голосовые данные в настройках преобразования текста в речь Android.': 'Таңдалған тілге арналған дауыс табылмады. Android мәтінді сөйлеуге түрлендіру баптауларынан дауыс деректерін орнатыңыз.',
@@ -997,8 +996,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   int _announcedManeuverStage = 0;
   int _offRouteSamples = 0;
   DateTime? _lastAutomaticReroute;
-  DateTime? _plannedDeparture;
-  String _message = '';
+  DateTime? _plannedDeparture;  String _message = '';
 
   @override
   void initState() {
@@ -1497,8 +1495,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             : AppLocale.pick(
                 'Не удалось запустить выбранный голос навигации.',
                 'Таңдалған навигация дауысын іске қосу мүмкін болмады.',
-                'Could not start the selected navigation voice.',
-              ));
+                'Could not start the selected navigation voice.',              ));
       }
     }
   }
@@ -1997,8 +1994,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         });
       }
       if (!layerIds.contains(layerId)) {
-        const alternativeColors = ['#FF9800', '#9C27B0', '#00A6A6'];
-        await controller.addLineLayer(
+        const alternativeColors = ['#FF9800', '#9C27B0', '#00A6A6'];        await controller.addLineLayer(
           sourceId,
           layerId,
           ml.LineLayerProperties(
@@ -2497,8 +2493,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
       if (mounted) {
         setState(() => _valhallaStatus = 'Подключаем офлайн-маршрутизатор…');
-      }
-      final initialized = await _valhallaChannel.invokeMapMethod<String, dynamic>(
+      }      final initialized = await _valhallaChannel.invokeMapMethod<String, dynamic>(
         'initialize',
         <String, dynamic>{'tileExtractPath': archiveFile.path},
       );
@@ -2997,8 +2992,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     await prefs.setDouble('voice_volume', value); await _tts.setVolume(value);
                   }),
                   Text('${AppLocale.tr('Скорость речи')} · ${rate.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                  Slider(value: rate, min: 0.25, max: 0.75, divisions: 10, onChanged: (value) async {
-                    rate = value; refresh(() {});
+                  Slider(value: rate, min: 0.25, max: 0.75, divisions: 10, onChanged: (value) async {                    rate = value; refresh(() {});
                     await prefs.setDouble('voice_rate', value); await _tts.setSpeechRate(value);
                   }),
                   const SizedBox(height: 12),
@@ -3497,8 +3491,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _searchAddress({bool selectAsOrigin = false}) async {
     final query = _searchController.text.trim();
-    if (query.isEmpty || _isSearching) return;
-    final prefs = await SharedPreferences.getInstance();
+    if (query.isEmpty || _isSearching) return;    final prefs = await SharedPreferences.getInstance();
     final history = prefs.getStringList('search_history') ?? <String>[];
     history.remove(query);
     history.insert(0, query);
@@ -3997,8 +3990,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         title: Text(AppLocale.pick(
           'Разрешите GPS в фоне',
           'Фондық GPS-ке рұқсат беріңіз',
-          'Allow background GPS',
-        )),
+          'Allow background GPS',        )),
         content: Text(AppLocale.pick(
           'Сейчас доступ к GPS разрешён только при открытом приложении. Откройте настройки приложения, выберите «Местоположение» и установите «Разрешить всегда». Затем вернитесь в BAKE Navigator и снова нажмите «Поехали».',
           'Қазір GPS тек қолданба ашық кезде қолжетімді. Қолданба баптауларын ашып, «Орналасқан жер» бөлімінен «Әрқашан рұқсат ету» таңдаңыз. Содан кейін BAKE Navigator-ға оралып, «Жолға шығу» түймесін қайта басыңыз.',
@@ -4497,8 +4489,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Widget _buildRoadAlertMapMarker(RoadAlert alert) {
     final color = _roadAlertColor(alert);
-    final details = [
-      alert.name ?? 'Камера',
+    final details = [      alert.name ?? 'Камера',
       if (alert.isApproximate) 'Примерное место — камера здесь не подтверждена',
       if (alert.verificationStatus != null) 'Статус: ${alert.verificationStatus}',
       if (alert.source != null) 'Источник: ${alert.source}',
@@ -4997,8 +4988,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             ? _localized('Через 500 метров: ${target.text}', '500 метрден кейін: ${target.text}', 'In 500 meters: ${target.text}')
             : stage == 2
                 ? _localized('Через 150 метров: ${target.text}', '150 метрден кейін: ${target.text}', 'In 150 meters: ${target.text}')
-                : target.text;
-        unawaited(_speakText(announcement));
+                : target.text;        unawaited(_speakText(announcement));
       }
     }
 
@@ -5497,8 +5487,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       MaterialPageRoute(
         builder: (pageContext) => Scaffold(
           backgroundColor: Colors.white,
-          appBar: AppBar(
-            title: Text(AppLocale.tr('Поиск')),
+          appBar: AppBar(            title: Text(AppLocale.tr('Поиск')),
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
           ),
@@ -5997,8 +5986,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     await saveLayer('layer_parking', value);
                   },
                 ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
+                SwitchListTile(                  contentPadding: EdgeInsets.zero,
                   secondary: const Icon(Icons.satellite_alt_outlined),
                   title: Text(AppLocale.tr('Спутниковая карта')),
                   value: satellite,
@@ -6251,16 +6239,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   bool _trySelectAlternativeAt(LatLng point) {
-    // MapLibre/FlutterMap call this only for a recognized tap. Do not reject
-    // it because the outer pointer listener saw small finger drift; that made
-    // ordinary taps fail on real phones. A deliberate one-second hold remains
-    // reserved for choosing a new destination.
+    // A short tap on an alternative line switches to it immediately.
+    // Do not use a fixed/geographic hit radius: the visible line thickness
+    // changes with zoom and a radius made taps unreliable on real devices.
+    // Compare every route and switch only when the tapped point is closest
+    // to a different route than the currently selected one.
     if (_lastMapPointerHoldDuration >= const Duration(seconds: 1)) return false;
     if (!_routeReady || _routeAlternatives.length < 2) return false;
     var bestIndex = -1;
     var bestDistance = double.infinity;
     for (var i = 0; i < _routeAlternatives.length; i++) {
-      if (i == _selectedRouteIndex) continue;
       final points = _routePointsFromDecodedRoute(_routeAlternatives[i]);
       final distance = _distanceToPolylineMeters(point, points);
       if (distance < bestDistance) {
@@ -6268,19 +6256,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         bestIndex = i;
       }
     }
-    // Use a finger-sized hit target in screen pixels. A fixed 35 m corridor
-    // was only a couple of pixels at normal city zoom and was too hard to tap.
-    final metersPerPixel = 156543.03392 *
-        math.cos(point.latitude * math.pi / 180) /
-        math.pow(2, _mapCameraZoom);
-    final hitToleranceMeters = math.max(35.0, metersPerPixel * 26.0);
-    if (bestIndex < 0 || bestDistance > hitToleranceMeters) return false;
+    if (bestIndex < 0 || bestIndex == _selectedRouteIndex) return false;
+
+    // Selection is synchronous: update the active route on this same tap.
     _selectRouteAlternative(bestIndex);
-    setState(() => _message = AppLocale.tr(
-      _navigationActive
-          ? 'Выбран альтернативный маршрут. Продолжаем движение по нему.'
-          : 'Выбран альтернативный маршрут.',
-    ));
+    if (mounted) {
+      setState(() => _message = AppLocale.tr(
+        _navigationActive
+            ? 'Выбран альтернативный маршрут. Продолжаем движение по нему.'
+            : 'Выбран альтернативный маршрут.',
+      ));
+    }
     if (_navigationActive) unawaited(_speakCurrentInstruction());
     return true;
   }
@@ -6497,8 +6483,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final detail = controller.text.trim();
     final eventTitle = title == 'Дорожное событие' ? selectedType : title;
     final report = '$eventTitle\nКоординаты: ${point.latitude}, ${point.longitude}\n$detail';
-    if (title == 'Дорожное событие') {
-      final prefs = await SharedPreferences.getInstance();
+    if (title == 'Дорожное событие') {      final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getStringList('road_event_reports') ?? <String>[];
       saved.add(jsonEncode({'kind': selectedType, 'detail': detail, 'lat': point.latitude, 'lon': point.longitude, 'date': DateTime.now().toLocal().toString().substring(0, 16)}));
       await prefs.setStringList('road_event_reports', saved);
@@ -6997,8 +6982,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                                   leading: Icon(
                                     Icons.speed,
                                     color: const Color(0xFF1976D2),
-                                    size: 30,
-                                  ),
+                                    size: 30,                                  ),
                                   title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
                                   subtitle: Text(details),
                                 );
@@ -7497,8 +7481,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               actions: [
                 TextButton(
                   onPressed: () async {
-                    await prefs.setStringList('selected_station_networks', initial.toList());
-                    if (!pageContext.mounted) return;
+                    await prefs.setStringList('selected_station_networks', initial.toList());                    if (!pageContext.mounted) return;
                     Navigator.pop(pageContext);
                     final query = initial.isEmpty || initial.length == networks.length
                         ? 'АЗС'
@@ -7997,8 +7980,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     Icons.traffic,
                     color: _trafficLayerEnabled
                         ? const Color(0xFF169B55)
-                        : const Color(0xFF555B63),
-                  ),
+                        : const Color(0xFF555B63),                  ),
                 ),
               ),
             ),
@@ -8497,8 +8479,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             ),
           if (_routeReady && !_navigationActive && !_routeActionDismissed)
             Positioned(
-              left: 12,
-              right: 12,
+              left: 12,              right: 12,
               bottom: 76,
               child: SafeArea(
                 top: false,
@@ -8997,8 +8978,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                         divisions: 10,
                         label: '${(_voiceVolume * 100).round()}%',
                         onChanged: (value) {
-                          setState(() => _voiceVolume = value);
-                          unawaited(_saveNavigationPreferences());
+                          setState(() => _voiceVolume = value);                          unawaited(_saveNavigationPreferences());
                         },
                       ),
                       Text('${AppLocale.tr('Скорость речи')} · ${_voiceRate.toStringAsFixed(2)}'),
