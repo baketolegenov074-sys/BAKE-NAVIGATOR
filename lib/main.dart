@@ -990,6 +990,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   double? _routeDurationSeconds;
   StreamSubscription<Position>? _positionSubscription;
   Future<void> _gpsStreamQueue = Future<void>.value();
+  bool _gpsStopPending = false;
   bool _gpsDiagnosticsEnabled = false;
   Future<void> _gpsDiagnosticWriteQueue = Future<void>.value();
   DateTime? _lastGpsDiagnosticCallbackAt;
@@ -3422,6 +3423,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   /// Stop GPS through the same queue as starts so lifecycle callbacks cannot
   /// overlap cancellation with creation of a replacement subscription.
   Future<void> _stopLiveLocationUpdates({String reason = 'requested'}) {
+    _gpsStopPending = true;
     final previousOperation = _gpsStreamQueue;
     final operationCompleter = Completer<void>();
     _gpsStreamQueue = operationCompleter.future;
@@ -3430,11 +3432,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         await previousOperation;
         final subscription = _positionSubscription;
         _positionSubscription = null;
-        if (subscription == null) return;
-        _recordGpsDiagnostic(event: 'STREAM_CANCEL_REQUEST', detail: reason);
-        await subscription.cancel();
-        _recordGpsDiagnostic(event: 'STREAM_CANCEL_COMPLETE', detail: reason);
+        if (subscription != null) {
+          _recordGpsDiagnostic(event: 'STREAM_CANCEL_REQUEST', detail: reason);
+          await subscription.cancel();
+          _recordGpsDiagnostic(event: 'STREAM_CANCEL_COMPLETE', detail: reason);
+        }
       } finally {
+        _gpsStopPending = false;
         if (!operationCompleter.isCompleted) operationCompleter.complete();
       }
     }();
@@ -5011,7 +5015,7 @@ _navigationMatchedLocation = null;
       );
       unawaited(_retryPendingRoadReports());
       unawaited(_loadConfirmedRoadReports());
-      if (_positionSubscription == null) {
+      if (_positionSubscription == null || _gpsStopPending) {
         unawaited(_startLiveLocationUpdates(
           backgroundNavigation: _navigationActive,
         ));
