@@ -911,8 +911,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   LatLng? _lastRouteLineSyncPoint;
   ml.Fill? _routePositionHaloFill;
   ml.Fill? _routePositionFill;
-  ml.Fill? _gpsPositionHaloFill;
-  ml.Fill? _gpsPositionDotFill;
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
@@ -2251,8 +2249,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           await controller.clearFills();
           _routePositionHaloFill = null;
           _routePositionFill = null;
-          _gpsPositionHaloFill = null;
-          _gpsPositionDotFill = null;
         }
 
         // Show only real upcoming turns. Each white arrow floats directly
