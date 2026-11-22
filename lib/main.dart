@@ -7906,6 +7906,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                   tooltip: 'Подтверждённые дорожные события',
                   onPressed: () {
                     setState(() => _trafficLayerEnabled = !_trafficLayerEnabled);
+                    unawaited(_syncTomTomTrafficLayer());
+                    unawaited(SharedPreferences.getInstance().then(
+                      (prefs) => prefs.setBool('layer_traffic', _trafficLayerEnabled),
+                    ));
                     if (_trafficLayerEnabled && _trafficReports.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                         content: Text('Подтверждённых отметок о пробках или перекрытиях пока нет.'),
