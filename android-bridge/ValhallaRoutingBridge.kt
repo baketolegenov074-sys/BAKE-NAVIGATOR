@@ -102,6 +102,7 @@ class ValhallaRoutingBridge(
                             .put(JSONObject().put("lat", endLat).put("lon", endLon).put("type", "break"))
                         val request = JSONObject()
                             .put("locations", locations)
+                            .put("alternates", 2)
                             .put("costing", "auto")
                             .put(
                                 "costing_options",
