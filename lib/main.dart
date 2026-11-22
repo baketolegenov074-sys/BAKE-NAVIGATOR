@@ -2509,7 +2509,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _roadReportRetryTimer?.cancel();
-    _positionSubscription?.cancel();
+    unawaited(_stopLiveLocationUpdates(reason: 'widget_disposed'));
     _headingUpResumeTimer?.cancel();
     _navigationPredictionTimer?.cancel();
     _disposeOfflineMap();
@@ -3403,18 +3403,39 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     bool backgroundNavigation = false,
     bool waitForFirstFix = false,
   }) {
-    final previousStart = _gpsStreamQueue;
-    final startCompleter = Completer<void>();
-    _gpsStreamQueue = startCompleter.future;
+    final previousOperation = _gpsStreamQueue;
+    final operationCompleter = Completer<void>();
+    _gpsStreamQueue = operationCompleter.future;
     return () async {
       try {
-        await previousStart;
+        await previousOperation;
         await _startLiveLocationUpdatesInternal(
           backgroundNavigation: backgroundNavigation,
           waitForFirstFix: waitForFirstFix,
         );
       } finally {
-        if (!startCompleter.isCompleted) startCompleter.complete();
+        if (!operationCompleter.isCompleted) operationCompleter.complete();
+      }
+    }();
+  }
+
+  /// Stop GPS through the same queue as starts so lifecycle callbacks cannot
+  /// overlap cancellation with creation of a replacement subscription.
+  Future<void> _stopLiveLocationUpdates({String reason = 'requested'}) {
+    final previousOperation = _gpsStreamQueue;
+    final operationCompleter = Completer<void>();
+    _gpsStreamQueue = operationCompleter.future;
+    return () async {
+      try {
+        await previousOperation;
+        final subscription = _positionSubscription;
+        _positionSubscription = null;
+        if (subscription == null) return;
+        _recordGpsDiagnostic(event: 'STREAM_CANCEL_REQUEST', detail: reason);
+        await subscription.cancel();
+        _recordGpsDiagnostic(event: 'STREAM_CANCEL_COMPLETE', detail: reason);
+      } finally {
+        if (!operationCompleter.isCompleted) operationCompleter.complete();
       }
     }();
   }
@@ -4492,8 +4513,7 @@ _navigationMatchedLocation = null;
         waitForFirstFix: false,
       );
     } catch (error) {
-      await _positionSubscription?.cancel();
-      _positionSubscription = null;
+      await _stopLiveLocationUpdates(reason: 'navigation_start_failed');
       if (!mounted) return;
       setState(() {
         _navigationActive = false;
@@ -5009,9 +5029,7 @@ _navigationMatchedLocation = null;
       _roadReportRetryTimer?.cancel();
       _roadReportRetryTimer = null;
       if (!_navigationActive) {
-        final previous = _positionSubscription;
-        _positionSubscription = null;
-        unawaited(previous?.cancel());
+        unawaited(_stopLiveLocationUpdates(reason: 'app_${state.name}'));
       }
     }
   }
