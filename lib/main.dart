@@ -3273,7 +3273,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               ? _routeBearingAt(cameraTarget)
               : null;
           final heading = _navigationActive
-              ? (_gpsHeadingDegrees ?? routeHeading ?? _lastCameraHeadingDegrees ?? 0.0)
+              ? (routeHeading ?? _gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0)
               : (_northUpLocked ? 0.0 : (_gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0));
           final normalizedHeading = (heading % 360 + 360) % 360;
           final previousHeading = _lastCameraHeadingDegrees;
@@ -3682,6 +3682,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     setState(() {
       _routeOrigin = null;
       _routeProgressSegmentIndex = 0;
+_navigationMatchedLocation = null;
       _routePoints = [];
       _routeReady = false;
       _instructions = [];
@@ -3703,6 +3704,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _routeAlternatives = <Map<String, dynamic>>[];
       _selectedRouteIndex = 0;
       _routeProgressSegmentIndex = 0;
+_navigationMatchedLocation = null;
       _routePoints = [];
       _routeReady = false;
       _instructions = [];
@@ -4134,6 +4136,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _routeReady = false;
       _routeActionDismissed = true;
       _routeProgressSegmentIndex = 0;
+_navigationMatchedLocation = null;
       _routePoints = <LatLng>[];
       _routeOrigin = null;
       _destination = null;
@@ -4163,6 +4166,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _routeActionDismissed = true;
       _routeReady = false;
       _routeProgressSegmentIndex = 0;
+_navigationMatchedLocation = null;
       _routePoints = <LatLng>[];
       _routeOrigin = null;
       _destination = null;
@@ -5442,6 +5446,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _routeAlternatives = validRoutes;
         _selectedRouteIndex = 0;
         _routeProgressSegmentIndex = 0;
+_navigationMatchedLocation = null;
         _routePoints = points;
         _routeReady = points.length >= 2;
         _routeActionDismissed = false;
@@ -5556,6 +5561,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     setState(() {
       _selectedRouteIndex = index;
       _routeProgressSegmentIndex = 0;
+_navigationMatchedLocation = null;
       _routePoints = points;
       _routeReady = points.length >= 2;
       _instructions = instructions;
