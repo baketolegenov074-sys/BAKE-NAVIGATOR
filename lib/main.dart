@@ -2072,7 +2072,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         await controller.clearCircles();
         // Keep the live GPS arrow fill between ordinary GPS updates.
         // Route/style rebuilds clear fills and recreate the arrow below.
-        if (syncRoute) {
+        final shouldClearStaleRouteBird = _routePositionFill != null &&
+            (_currentLocation == null ||
+                (_navigationActive &&
+                    _routePoints.length > 1 &&
+                    _distanceToRouteMeters(_currentLocation!) > 100));
+        if (syncRoute || shouldClearStaleRouteBird) {
           await controller.clearFills();
           _routePositionHaloFill = null;
           _routePositionFill = null;
