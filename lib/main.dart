@@ -939,6 +939,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   LatLng? _currentLocation;
   LatLng? _destination;
+  String _selectedMapPointAddress = 'Адрес определяется…';
   LatLng? _routeOrigin;
   final List<LatLng> _routeStops = <LatLng>[];
   List<Map<String, dynamic>> _routeAlternatives = <Map<String, dynamic>>[];
@@ -5107,64 +5108,87 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   Future<void> _openRouteAlternatives() async {
-    if (_routeAlternatives.isEmpty) {
-      await _openRoutePlanner();
-      return;
-    }
+    if (_routeAlternatives.isEmpty) return;
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
-        child: Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 38,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD5D9DE),
-                    borderRadius: BorderRadius.circular(4),
+        child: StatefulBuilder(
+          builder: (sheetContext, refreshSheet) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 38,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD5D9DE),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                AppLocale.tr('Варианты маршрута'),
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 8),
-              ...List.generate(_routeAlternatives.length, (index) {
-                final route = _routeAlternatives[index];
-                final km = ((route['distance'] as num).toDouble() / 1000).toStringAsFixed(1);
-                final minutes = (((route['duration'] as num).toDouble()) / 60).round();
-                final selected = index == _selectedRouteIndex;
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  leading: Icon(
-                    selected ? Icons.radio_button_checked : Icons.radio_button_off,
-                    color: selected ? const Color(0xFFB88A00) : const Color(0xFF69737D),
+                const SizedBox(height: 14),
+                Text(
+                  AppLocale.tr('Адрес назначения'),
+                  style: const TextStyle(fontSize: 13, color: Colors.black54),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '$_selectedMapPointAddress\\n${_destination?.latitude.toStringAsFixed(6)}, ${_destination?.longitude.toStringAsFixed(6)}',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  AppLocale.tr('Варианты маршрута'),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                ...List.generate(_routeAlternatives.length, (index) {
+                  final route = _routeAlternatives[index];
+                  final km = ((route['distance'] as num).toDouble() / 1000).toStringAsFixed(1);
+                  final minutes = (((route['duration'] as num).toDouble()) / 60).round();
+                  final selected = index == _selectedRouteIndex;
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    leading: Icon(
+                      selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                      color: selected ? const Color(0xFFB88A00) : const Color(0xFF69737D),
+                    ),
+                    title: Text(
+                      _routeAlternativeLabel(index),
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text('$minutes мин · $km км'),
+                    onTap: () {
+                      _selectRouteAlternative(index);
+                      refreshSheet(() {});
+                    },
+                  );
+                }),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _routeReady
+                        ? () {
+                            Navigator.pop(sheetContext);
+                            unawaited(_startNavigation());
+                          }
+                        : null,
+                    icon: const Icon(Icons.navigation),
+                    label: Text(AppLocale.tr('Поехали')),
                   ),
-                  title: Text(
-                    _routeAlternativeLabel(index),
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  subtitle: Text('$minutes мин · $km км'),
-                  onTap: () {
-                    _selectRouteAlternative(index);
-                    Navigator.pop(sheetContext);
-                  },
-                );
-              }),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -5891,14 +5915,28 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
     _selectDestination(point);
     _moveMapCamera(point, 15);
-    unawaited(_resolveSelectedMapPointAddress(point));
     if (mounted) {
-      setState(() => _message = AppLocale.pick(
-        'Пункт назначения выбран на карте. Строим маршрут…',
-        'Межелі орын картадан таңдалды. Маршрут құрылуда…',
-        'Destination selected on map. Building route…',
-      ));
+      setState(() {
+        _selectedMapPointAddress = 'Адрес определяется…';
+        _message = AppLocale.pick(
+          'Определяем адрес и строим варианты маршрута…',
+          'Мекенжай анықталып, маршрут нұсқалары құрылуда…',
+          'Resolving address and building route options…',
+        );
+      });
     }
+    try {
+      final address = await _lookupPhotonReverseAddress(point);
+      if (mounted && _destination == point) {
+        setState(() => _selectedMapPointAddress = address);
+      }
+    } catch (error) {
+      debugPrint('BAKE selected point address lookup failed: $error');
+      if (mounted && _destination == point) {
+        setState(() => _selectedMapPointAddress = 'Адрес не найден.');
+      }
+    }
+    if (!mounted || _destination != point) return;
     await _buildRoute();
   }
 
@@ -7331,7 +7369,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               onMapCreated: _onMapLibreCreated,
               onStyleLoadedCallback: _onMapLibreStyleLoaded,
               onCameraIdle: () => unawaited(_syncMapLibreAnnotations()),
-              onMapClick: (_, __) {},
+              onMapClick: (_, point) => unawaited(_selectMapDestination(LatLng(point.latitude, point.longitude))),
               onMapLongClick: (_, point) => _openPointMenu(LatLng(point.latitude, point.longitude)),
               compassEnabled: false,
               trackCameraPosition: true,
@@ -7349,7 +7387,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 onMapReady: _onOfflineMapReady,
                 initialCenter: _shymkent,
                 initialZoom: 13,
-                onTap: (_, __) {},
+                onTap: (_, point) => unawaited(_selectMapDestination(point)),
                 onLongPress: (_, point) => _openPointMenu(point),
                 onPositionChanged: (camera, hasGesture) {
                   if (hasGesture) _scheduleHeadingUpReturn();
