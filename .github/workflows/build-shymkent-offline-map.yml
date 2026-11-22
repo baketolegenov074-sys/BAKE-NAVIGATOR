@@ -97,10 +97,13 @@ jobs:
           if road is None:
               raise SystemExit("MBTiles has no transportation_name vector layer")
           fields = sorted((road.get("fields") or {}).keys())
-          if "name" not in fields:
-              raise SystemExit(f"transportation_name has no name field; fields={fields}")
+          name_fields = {"name", "name:latin", "name:nonlatin"}
+          available_name_fields = sorted(name_fields.intersection(fields))
+          if not available_name_fields:
+              raise SystemExit(f"transportation_name has no supported name field; fields={fields}")
           print("Offline MBTiles source-layer: transportation_name")
           print("Offline road-label fields: " + ", ".join(fields))
+          print("Usable street-name fields: " + ", ".join(available_name_fields))
           PY
           mkdir -p output
           cp shymkent.mbtiles output/shymkent.mbtiles
