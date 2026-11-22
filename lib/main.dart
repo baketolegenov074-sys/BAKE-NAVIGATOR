@@ -6105,7 +6105,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     trafficKeyController.dispose();
   }
 
-  Future<void> _openProfileMenu async {
+  Future<void> _openProfileMenu() async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
