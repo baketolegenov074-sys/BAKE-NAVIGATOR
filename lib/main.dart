@@ -894,6 +894,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   int _mapLibreStyleGeneration = 0;
   bool _is3DMap = true;
   bool _isSatelliteMap = false;
+  bool _isBrightMapPreview = false;
   final Map<String, dynamic> _satelliteOverlayFillOpacities = <String, dynamic>{};
   bool _mapLibreAnnotationSyncInProgress = false;
   bool _mapLibreAnnotationSyncPending = false;
@@ -1654,6 +1655,47 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _gpsHeadingDegrees ?? 0.0,
       );
     });
+  }
+
+  Future<void> _toggleOnlineMapPreviewStyle() async {
+    if (_isOfflineMapActive) return;
+    final controller = _mapLibreController;
+    if (controller == null || !_mapLibreStyleReady) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Онлайн-карта ещё загружается. Повторите через секунду.'),
+        duration: Duration(seconds: 2),
+      ));
+      return;
+    }
+
+    final nextPreview = !_isBrightMapPreview;
+    final previousStyle = _isBrightMapPreview;
+    setState(() => _isBrightMapPreview = nextPreview);
+    _mapLibreStyleReady = false;
+    try {
+      await controller.setStyle(
+        nextPreview
+            ? 'https://tiles.openfreemap.org/styles/bright'
+            : 'https://tiles.openfreemap.org/styles/liberty',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(nextPreview
+            ? 'Тестовая карта Bright включена'
+            : 'Возвращена основная карта Liberty'),
+        duration: const Duration(seconds: 2),
+      ));
+    } catch (error) {
+      _mapLibreStyleReady = true;
+      if (mounted) {
+        setState(() => _isBrightMapPreview = previousStyle);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Не удалось переключить стиль карты: $error'),
+          duration: const Duration(seconds: 4),
+        ));
+      }
+      debugPrint('BAKE preview map style switch failed: $error');
+    }
   }
 
   void _onMapLibreCreated(ml.MapLibreMapController controller) {
@@ -8006,6 +8048,43 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               ),
             ),
           ),
+          if (!_isOfflineMapActive)
+            Positioned(
+              top: 286,
+              right: 14,
+              child: SafeArea(
+                bottom: false,
+                child: Material(
+                  color: _isBrightMapPreview
+                      ? const Color(0xFFE8F5E9)
+                      : Colors.white,
+                  elevation: 5,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: _toggleOnlineMapPreviewStyle,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.layers_outlined, size: 18, color: Color(0xFF202020)),
+                          const SizedBox(width: 6),
+                          Text(
+                            _isBrightMapPreview ? 'BRIGHT · ТЕСТ' : 'LIBERTY · ОСНОВНАЯ',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF202020),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (!_isOfflineMapActive)
             Positioned(
               top: 190,
