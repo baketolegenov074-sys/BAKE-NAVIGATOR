@@ -1539,206 +1539,25 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _onlineLabelStylePatchStarted = false;
       return;
     }
+
+    // Keep the hosted Liberty style exactly as delivered by OpenFreeMap.
+    // Its native transportation_name layers already render street names.
+    // Do not rewrite road colors/widths or replace the provider's label layers.
+    _onlineLabelStylePatched = true;
     try {
-      final response = await http.get(
-        Uri.parse('https://tiles.openfreemap.org/styles/liberty'),
-      ).timeout(const Duration(seconds: 25));
-      if (response.statusCode != 200) {
-        throw HttpException('Liberty style HTTP ${response.statusCode}');
-      }
-      final style = Map<String, dynamic>.from(
-        jsonDecode(utf8.decode(response.bodyBytes)) as Map,
-      );
-      final sources = Map<String, dynamic>.from(style['sources'] as Map);
-      var layers = (style['layers'] as List)
-          .map((item) => Map<String, dynamic>.from(item as Map))
-          .toList();
-
-      final widenedRoadLayers = <Map<String, dynamic>>[];
-      final existingLayerIds = layers.map((layer) => layer['id']?.toString()).toSet();
-      for (final layer in layers) {
-        final id = layer['id']?.toString() ?? '';
-        final sourceLayer = layer['source-layer']?.toString() ?? '';
-        final isRoadLine = layer['type'] == 'line' && sourceLayer == 'transportation';
-        final isRail = RegExp(r'(rail|one_way_arrow)', caseSensitive: false).hasMatch(id);
-        final isCasing = RegExp(r'(casing|outline|border)', caseSensitive: false).hasMatch(id);
-        if (isRoadLine && !isRail) {
-          // Liberty's default major-road palette uses orange (#e9ac77/#fea/#fc8).
-          // Keep the road hierarchy and widths, but use neutral road strokes.
-          final paint = Map<String, dynamic>.from((layer['paint'] as Map?) ?? <String, dynamic>{});
-          paint['line-color'] = isCasing ? '#D6DCE3' : '#FFFFFF';
-          layer['paint'] = paint;
-        }
-        if (isRoadLine && !isCasing && !isRail) {
-          final paint = Map<String, dynamic>.from((layer['paint'] as Map?) ?? <String, dynamic>{});
-          final width = paint['line-width'];
-          if (width != null) {
-            final wide = ['*', width, 2.25];
-            final casingId = '$id-bake-casing';
-            if (!existingLayerIds.contains(casingId)) {
-              final casing = Map<String, dynamic>.from(layer);
-              casing['id'] = casingId;
-              casing['paint'] = {'line-color': '#FFFFFF', 'line-width': ['+', wide, 2.4], 'line-opacity': paint['line-opacity'] ?? 1};
-              widenedRoadLayers.add(casing);
-              existingLayerIds.add(casingId);
-            }
-            paint['line-width'] = wide;
-            layer['paint'] = paint;
-          }
-        }
-        widenedRoadLayers.add(layer);
-      }
-      layers = widenedRoadLayers;
-
-      String? vectorSourceId;
-      for (final layer in layers) {
-        if (layer['source-layer'] == 'transportation_name' &&
-            layer['source'] is String) {
-          vectorSourceId = layer['source'] as String;
-          break;
-        }
-      }
-      vectorSourceId ??= sources.entries
-          .where((entry) =>
-              entry.value is Map &&
-              (entry.value as Map)['type'] == 'vector')
-          .map((entry) => entry.key)
-          .cast<String?>()
-          .firstWhere((value) => value != null, orElse: () => null);
-      if (vectorSourceId == null) {
-        throw StateError('Liberty style has no OpenMapTiles vector source');
-      }
-
-      // Keep Liberty's own glyph endpoint. Its fontstack and sprite metadata
-      // are paired with the hosted style; replacing either can break style reloads.
-      final originalGlyphs = style['glyphs'];
-      if (originalGlyphs is! String || originalGlyphs.isEmpty) {
-        throw StateError('Liberty style has no valid glyphs endpoint');
-      }
-      const textField = [
-        'coalesce',
-        ['get', 'name:ru'],
-        ['get', 'name'],
-        ['get', 'name:kk'],
-        ['get', 'name:latin'],
-        ['get', 'name:nonlatin'],
-        ['get', 'name_ru'],
-        ['get', 'name_kk'],
-      ];
-      final textFont = layers
-          .map((layer) => (layer['layout'] as Map?)?['text-font'])
-          .whereType<List>()
-          .map((fonts) => fonts.whereType<String>().toList())
-          .firstWhere((fonts) => fonts.isNotEmpty, orElse: () => <String>['Open Sans Regular']);
-      const labelPaint = {
-        'text-color': '#111111',
-        'text-halo-color': '#FFFFFF',
-        'text-halo-width': 2.5,
-      };
-
-      // Replace Liberty's class-filtered road-label layers with one
-      // unrestricted layer. The original class filters omit many local streets.
-      // Overlap is allowed for road names so adjacent streets are not silently
-      // dropped by MapLibre's symbol collision placement.
-      layers.removeWhere((layer) =>
-          layer['type'] == 'symbol' &&
-          layer['source-layer'] == 'transportation_name');
-      var placeLayerFound = false;
-      for (final layer in layers) {
-        if (layer['type'] != 'symbol' || layer['source-layer'] != 'place') {
-          continue;
-        }
-        final layout = Map<String, dynamic>.from(
-          (layer['layout'] as Map?) ?? <String, dynamic>{},
-        );
-        layout['symbol-placement'] = 'point';
-        layout['text-field'] = textField;
-        layout['text-font'] = textFont;
-        layout['text-size'] = 14;
-        layout['text-allow-overlap'] = false;
-        layer['layout'] = layout;
-        layer['paint'] = {
-          ...Map<String, dynamic>.from(
-            (layer['paint'] as Map?) ?? <String, dynamic>{},
-          ),
-          ...labelPaint,
-        };
-        layer['minzoom'] = 11;
-        placeLayerFound = true;
-      }
-
-      layers.add({
-        'id': 'bake-restored-road-labels',
-        'type': 'symbol',
-        'source': vectorSourceId,
-        'source-layer': 'transportation_name',
-        'minzoom': 10,
-        'layout': {
-          'symbol-placement': 'line',
-          'text-field': textField,
-          'text-font': textFont,
-          'text-size': 12,
-          'text-max-width': 12,
-          'text-max-angle': 45,
-          'text-padding': 1,
-          'symbol-spacing': 220,
-          'text-keep-upright': true,
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
-        },
-        'paint': labelPaint,
-      });
-      if (!placeLayerFound) {
-        layers.add({
-          'id': 'bake-restored-place-labels',
-          'type': 'symbol',
-          'source': vectorSourceId,
-          'source-layer': 'place',
-          'minzoom': 11,
-          'layout': {
-            'symbol-placement': 'point',
-            'text-field': textField,
-            'text-font': textFont,
-            'text-size': 14,
-            'text-allow-overlap': false,
-          },
-          'paint': labelPaint,
-        });
-      }
-
-      style['layers'] = layers;
-      // Validate the complete document before asking the native renderer to
-      // replace its currently working style.
-      final encodedStyle = jsonEncode(style);
-      final decodedStyle = jsonDecode(encodedStyle);
-      if (decodedStyle is! Map || decodedStyle['sources'] is! Map || decodedStyle['layers'] is! List) {
-        throw const FormatException('Patched Liberty style has an invalid structure');
-      }
-      if (generation != _mapLibreStyleGeneration || !identical(controller, _mapLibreController)) return;
-      // Mark before setStyle: native onStyleLoaded may fire before its Future
-      // completes. That callback must finish initialization, not start a loop.
-      _onlineLabelStylePatched = true;
-      await controller.setStyle(encodedStyle);
-    } catch (error, stackTrace) {
-      debugPrint('BAKE online street-label style patch failed; keeping base Liberty style: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      if (generation == _mapLibreStyleGeneration && identical(controller, _mapLibreController)) {
-        _onlineLabelStylePatched = true;
+      if (generation == _mapLibreStyleGeneration &&
+          identical(controller, _mapLibreController)) {
         await _finishMapLibreStyleLoaded();
       }
     } finally {
-      if (generation == _mapLibreStyleGeneration) _onlineLabelStylePatchStarted = false;
+      if (generation == _mapLibreStyleGeneration) {
+        _onlineLabelStylePatchStarted = false;
+      }
     }
   }
 
   Future<void> _finishMapLibreStyleLoaded() async {
     if (!mounted || !_mapLibreStyleReady || _isOfflineMapActive) return;
-    try {
-      await _ensureMapLibreLabelLayers();
-    } catch (error, stackTrace) {
-      debugPrint('BAKE label-layer recovery failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-    }
     try {
       await _syncMapLibreAnnotations(updateRoute: true);
     } catch (error, stackTrace) {
@@ -1843,41 +1662,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     } catch (error) {
       // A satellite tile failure must never disable the normal vector map.
       debugPrint('BAKE satellite imagery unavailable: $error');
-    }
-  }
-
-  Future<void> _ensureMapLibreLabelLayers() async {
-    final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
-    try {
-      final layerIds = await controller.getLayerIds();
-      final labelLayerPattern = RegExp(r'(name|label|place|housenumber|poi|street|road|transportation|highway)', caseSensitive: false);
-      for (final layerId in layerIds) {
-        if (labelLayerPattern.hasMatch(layerId)) {
-          try {
-            await controller.setLayerVisibility(layerId, true);
-            if (RegExp(r'(road|street|transportation|highway|name)', caseSensitive: false).hasMatch(layerId)) {
-              try {
-                await controller.setLayerProperties(
-                  layerId,
-                  const ml.SymbolLayerProperties(
-                    textColor: '#202020',
-                    textHaloColor: '#FFFFFF',
-                    textHaloWidth: 2,
-                    textSize: 14,
-                  ),
-                );
-              } catch (_) {
-                // Some style label layers are not symbol layers.
-              }
-            }
-          } catch (error) {
-            debugPrint('BAKE map label layer $layerId could not be enabled: $error');
-          }
-        }
-      }
-    } catch (error) {
-      debugPrint('BAKE map labels unavailable: $error');
     }
   }
 
