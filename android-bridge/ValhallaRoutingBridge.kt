@@ -103,6 +103,13 @@ class ValhallaRoutingBridge(
                         val request = JSONObject()
                             .put("locations", locations)
                             .put("costing", "auto")
+                            .put(
+                                "costing_options",
+                                JSONObject().put(
+                                    "auto",
+                                    JSONObject().put("shortest", true)
+                                )
+                            )
                             .put("format", "osrm")
                             .put("shape_format", "geojson")
                             .toString()

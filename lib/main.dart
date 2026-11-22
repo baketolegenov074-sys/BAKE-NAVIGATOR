@@ -4974,11 +4974,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         throw Exception(AppLocale.pick('Сервис вернул слишком длинный маршрут. Проверьте выбранные точки.', 'Қызмет тым ұзын маршрут қайтарды. Таңдалған нүктелерді тексеріңіз.', 'The service returned a route that is too long. Check the selected points.'));
       }
 
-      // OSRM's duration is the best estimate available from the current
-      // routing source. Sort by it so the quickest returned option is selected
-      // by default; this is NOT live traffic-aware ETA.
+      // Prefer the shortest distance by default. Keep the returned alternatives
+      // available so the driver can still select the fastest option.
       validRoutes.sort((a, b) =>
-          (a['duration'] as num).compareTo(b['duration'] as num));
+          (a['distance'] as num).compareTo(b['distance'] as num));
       if (validRoutes.length > 3) {
         validRoutes.removeRange(3, validRoutes.length);
       }
