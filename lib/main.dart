@@ -1501,6 +1501,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   Future<void> _speakText(String text) async {
+    // The global voice switch must silence every navigation language,
+    // including the bundled Kazakh ISSAI voice.
+    if (_voiceMode == 0) return;
     try {
       // Kazakh navigation speech is provided by BAKE's bundled ISSAI engine.
       // It must never depend on a Kazakh voice installed in Android.
