@@ -41,6 +41,25 @@ class RoadAlert {
   final String? verificationStatus;
 }
 
+
+enum RoadFeatureKind { pedestrianCrossing, school }
+
+class RoadFeature {
+  const RoadFeature({
+    required this.id,
+    required this.kind,
+    required this.location,
+    this.name,
+    this.isApproximate = false,
+  });
+
+  final String id;
+  final RoadFeatureKind kind;
+  final LatLng location;
+  final String? name;
+  final bool isApproximate;
+}
+
 /// Loads mapped fixed speed cameras from both legacy camera tags and the
 /// structured OSM enforcement relation schema. OSM coverage is not complete.
 class RoadAlertService {
@@ -240,6 +259,83 @@ class RoadAlertService {
       ));
     }
     return result;
+  }
+
+
+  /// Loads nearby mapped schools and pedestrian crossings from OpenStreetMap.
+  /// School polygons use their geometric center; crossings are exact mapped nodes.
+  Future<List<RoadFeature>> fetchNearbyFeatures(
+    LatLng point, {
+    int radiusMeters = 1800,
+  }) async {
+    final radius = radiusMeters.clamp(300, 5000);
+    final lat = point.latitude;
+    final lon = point.longitude;
+    final query = '[out:json][timeout:20];('
+        'node(around:$radius,$lat,$lon)[highway=crossing];'
+        'node(around:$radius,$lat,$lon)[crossing];'
+        'node(around:$radius,$lat,$lon)[amenity=school];'
+        'way(around:$radius,$lat,$lon)[amenity=school];'
+        ');out center tags;';
+    const endpoints = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+    ];
+    http.Response? response;
+    for (final endpoint in endpoints) {
+      try {
+        final candidate = await _client.post(
+          Uri.parse(endpoint),
+          headers: const {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'User-Agent': 'BAKE-Navigator/1.0 (Shymkent road safety alerts)',
+          },
+          body: {'data': query},
+        ).timeout(const Duration(seconds: 23));
+        if (candidate.statusCode == 200) {
+          response = candidate;
+          break;
+        }
+      } catch (_) {
+        // Try the next public Overpass endpoint.
+      }
+    }
+    if (response == null) {
+      throw Exception('Сервис объектов OpenStreetMap временно недоступен.');
+    }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map<String, dynamic> || decoded['elements'] is! List) {
+      throw const FormatException('Некорректный ответ объектов OpenStreetMap.');
+    }
+    final result = <String, RoadFeature>{};
+    for (final raw in decoded['elements'] as List) {
+      if (raw is! Map) continue;
+      final tags = _tags(raw['tags']);
+      final kind = tags['amenity'] == 'school'
+          ? RoadFeatureKind.school
+          : (tags['highway'] == 'crossing' || tags.containsKey('crossing'))
+              ? RoadFeatureKind.pedestrianCrossing
+              : null;
+      if (kind == null) continue;
+      final location = _elementLocation(raw);
+      if (location == null) continue;
+      final type = raw['type']?.toString() ?? 'node';
+      final id = raw['id']?.toString() ?? '';
+      if (id.isEmpty) continue;
+      final distance = const Distance().as(
+        LengthUnit.Meter, point, location,
+      );
+      if (distance > radius) continue;
+      final name = (tags['name'] ?? tags['ref'])?.toString();
+      result['osm/$type/$id'] = RoadFeature(
+        id: 'osm/$type/$id',
+        kind: kind,
+        location: location,
+        name: name,
+        isApproximate: type != 'node',
+      );
+    }
+    return result.values.toList();
   }
 
   static List<List<String>> _parseCsv(String input) {
