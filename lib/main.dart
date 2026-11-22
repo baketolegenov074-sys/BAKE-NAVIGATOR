@@ -903,6 +903,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   LatLng? _lastRouteLineSyncPoint;
   ml.Fill? _routePositionHaloFill;
   ml.Fill? _routePositionFill;
+  ml.Fill? _gpsPositionHaloFill;
+  ml.Fill? _gpsPositionDotFill;
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
@@ -2074,6 +2076,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           await controller.clearFills();
           _routePositionHaloFill = null;
           _routePositionFill = null;
+          _gpsPositionHaloFill = null;
+          _gpsPositionDotFill = null;
         }
 
         // Show only real upcoming turns. Each white arrow floats directly
@@ -2133,58 +2137,79 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             fillOutlineColor: '#FFFFFF',
           ));
         }
-      if (_currentLocation != null) {
-        // One navigation bird only: snap to the road while nearby, but keep
-        // following the real GPS fix if the driver leaves the planned route.
-        final nearRoute = _navigationActive &&
-            _routePoints.length > 1 &&
-            _distanceToRouteMeters(_currentLocation!) <= 45;
-        final birdPosition = nearRoute
-            ? _remainingRoutePoints().first
-            : _currentLocation!;
-        final birdBearing = _gpsHeadingDegrees != null &&
-                _currentSpeedKmh >= 5.4
-            ? _gpsHeadingDegrees!
-            : _routePoints.length > 1
-                ? _routeBearingAt(birdPosition)
-                : (_gpsHeadingDegrees ?? 0.0);
+      // The navigation bird belongs to route progress, not to the raw GPS fix.
+      // It follows the projected position on the planned line only while the
+      // vehicle remains near that route; it never changes _currentLocation.
+      if (_navigationActive &&
+          _routePoints.length > 1 &&
+          _currentLocation != null &&
+          _distanceToRouteMeters(_currentLocation!) <= 100) {
+        final remaining = _remainingRoutePoints();
+        if (remaining.isNotEmpty) {
+          final routeBirdPosition = remaining.first;
+          final routeBirdBearing = _routeBearingAt(routeBirdPosition);
+          final haloOptions = ml.FillOptions(
+            geometry: [_directionArrowPolygon(
+              routeBirdPosition,
+              routeBirdBearing,
+              lengthMeters: 17,
+              halfWidthMeters: 6.5,
+            )],
+            fillColor: '#FFFFFF',
+            fillOpacity: 1,
+            fillOutlineColor: '#FFFFFF',
+          );
+          final existingHalo = _routePositionHaloFill;
+          if (existingHalo == null) {
+            _routePositionHaloFill = await controller.addFill(haloOptions);
+          } else {
+            await controller.updateFill(existingHalo, haloOptions);
+          }
+          final birdOptions = ml.FillOptions(
+            geometry: [_directionArrowPolygon(
+              routeBirdPosition,
+              routeBirdBearing,
+              lengthMeters: 14,
+              halfWidthMeters: 5.2,
+            )],
+            fillColor: '#0878F9',
+            fillOpacity: 1,
+            fillOutlineColor: '#FFFFFF',
+          );
+          final existingBird = _routePositionFill;
+          if (existingBird == null) {
+            _routePositionFill = await controller.addFill(birdOptions);
+          } else {
+            await controller.updateFill(existingBird, birdOptions);
+          }
+        }
+      }
 
-        // A wider white silhouette sits behind the blue bird to separate it
-        // clearly from the blue route ribbon.
-        final haloOptions = ml.FillOptions(
-          geometry: [_directionArrowPolygon(
-            birdPosition,
-            birdBearing,
-            lengthMeters: 16,
-            halfWidthMeters: 6,
-          )],
+      // GPS is shown independently as a small blue dot at the exact fix.
+      if (_currentLocation != null) {
+        final gpsHaloOptions = ml.FillOptions(
+          geometry: [_circlePolygon(_currentLocation!, 7)],
           fillColor: '#FFFFFF',
           fillOpacity: 1,
           fillOutlineColor: '#FFFFFF',
         );
-        final existingHalo = _routePositionHaloFill;
-        if (existingHalo == null) {
-          _routePositionHaloFill = await controller.addFill(haloOptions);
+        final existingGpsHalo = _gpsPositionHaloFill;
+        if (existingGpsHalo == null) {
+          _gpsPositionHaloFill = await controller.addFill(gpsHaloOptions);
         } else {
-          await controller.updateFill(existingHalo, haloOptions);
+          await controller.updateFill(existingGpsHalo, gpsHaloOptions);
         }
-
-        final birdOptions = ml.FillOptions(
-          geometry: [_directionArrowPolygon(
-            birdPosition,
-            birdBearing,
-            lengthMeters: 13,
-            halfWidthMeters: 5,
-          )],
+        final gpsDotOptions = ml.FillOptions(
+          geometry: [_circlePolygon(_currentLocation!, 4.5)],
           fillColor: '#0878F9',
           fillOpacity: 1,
           fillOutlineColor: '#FFFFFF',
         );
-        final existingBird = _routePositionFill;
-        if (existingBird == null) {
-          _routePositionFill = await controller.addFill(birdOptions);
+        final existingGpsDot = _gpsPositionDotFill;
+        if (existingGpsDot == null) {
+          _gpsPositionDotFill = await controller.addFill(gpsDotOptions);
         } else {
-          await controller.updateFill(existingBird, birdOptions);
+          await controller.updateFill(existingGpsDot, gpsDotOptions);
         }
       }
       for (var i = 0; i < _routeStops.length; i++) {
@@ -3755,6 +3780,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       -forwardNorth * rearDistance + rightNorth * halfWidthMeters,
     );
     return <ml.LatLng>[tip, leftBase, rightBase, tip];
+  }
+
+  List<ml.LatLng> _circlePolygon(LatLng center, double radiusMeters) {
+    const segments = 20;
+    final latitudeScale = 111320.0;
+    final longitudeScale = math.max(
+      1.0,
+      111320.0 * math.cos(center.latitude * math.pi / 180),
+    );
+    return List<ml.LatLng>.generate(segments + 1, (index) {
+      final angle = 2 * math.pi * index / segments;
+      final latitude = center.latitude +
+          math.sin(angle) * radiusMeters / latitudeScale;
+      final longitude = center.longitude +
+          math.cos(angle) * radiusMeters / longitudeScale;
+      return ml.LatLng(latitude, longitude);
+    }, growable: false);
   }
 
   double _routeBearingAt(LatLng point) {
@@ -7669,26 +7711,38 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             child: _buildManeuverDistanceCue(),
           ),
         ),
+      if (_navigationActive &&
+          _routePoints.length > 1 &&
+          _currentLocation != null &&
+          _distanceToRouteMeters(_currentLocation!) <= 100 &&
+          visibleRoutePoints.isNotEmpty)
+        Marker(
+          point: visibleRoutePoints.first,
+          width: 38,
+          height: 38,
+          child: Transform.rotate(
+            angle: _routeBearingAt(visibleRoutePoints.first) * math.pi / 180,
+            child: const Icon(
+              Icons.navigation,
+              color: Color(0xFF0878F9),
+              size: 32,
+              shadows: [Shadow(color: Colors.white, blurRadius: 5)],
+            ),
+          ),
+        ),
       if (_currentLocation != null)
         Marker(
           point: _currentLocation!,
-          width: 40,
-          height: 40,
-          child: Transform.rotate(
-            angle: (_gpsHeadingDegrees ??
-              (_routePoints.length > 1 ? _routeBearingAt(_currentLocation!) : 0.0)) *
-              math.pi / 180,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF172B4D), width: 2.5),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x55000000), blurRadius: 7, offset: Offset(0, 2)),
-                ],
-              ),
-              alignment: Alignment.center,
-              child: const Icon(Icons.navigation, color: Color(0xFFFFB800), size: 30),
+          width: 14,
+          height: 14,
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF0878F9),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: const [
+                BoxShadow(color: Color(0x66000000), blurRadius: 3, offset: Offset(0, 1)),
+              ],
             ),
           ),
         ),
