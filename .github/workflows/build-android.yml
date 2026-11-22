@@ -297,6 +297,30 @@ jobs:
                   f"Expected one Flutter NDK version declaration, found {ndk_count}"
               )
 
+          # Restrict packaged native libraries to the Samsung Galaxy A33's ARM64 ABI.
+          # This filters transitive AAR .so files as well as Flutter plugin binaries.
+          if re.search(r"(?m)^\\s*abiFilters\\b", app_content):
+              raise SystemExit("Unexpected existing ABI filter; refusing to overwrite it")
+          if app_gradle.suffix == ".kts":
+              app_content, abi_count = re.subn(
+                  r"(defaultConfig\\s*\\{)",
+                  r'\\1\\n        ndk {\\n            abiFilters += setOf("arm64-v8a")\\n        }',
+                  app_content,
+                  count=1,
+              )
+          else:
+              app_content, abi_count = re.subn(
+                  r"(defaultConfig\\s*\\{)",
+                  r"\\1\\n        ndk {\\n            abiFilters 'arm64-v8a'\\n        }",
+                  app_content,
+                  count=1,
+              )
+          if abi_count != 1:
+              raise SystemExit(f"Expected one defaultConfig block for ABI filter, found {abi_count}")
+          if "arm64-v8a" not in app_content:
+              raise SystemExit("ARM64 ABI filter was not applied")
+          print("Android native ABI filter: arm64-v8a only")
+
           app_gradle.write_text(app_content)
           print("Android compileSdk pinned to 36")
           print("Android NDK pinned to 29.0.14206865")
