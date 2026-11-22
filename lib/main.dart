@@ -949,6 +949,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   // Smoothed marker/camera position for free-drive mode; raw GPS remains in _currentLocation.
   LatLng? _freeDriveDisplayLocation;
   DateTime? _freeDriveFixTimestamp;
+  LatLng? _freeDriveJumpCandidate;
+  int _freeDriveJumpCandidateCount = 0;
   LatLng? _destination;
   String _selectedMapPointAddress = 'Адрес определяется…';
   int _routeRequestGeneration = 0;
@@ -1565,6 +1567,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (previous == null) {
       _freeDriveDisplayLocation = rawPoint;
       _freeDriveFixTimestamp = fix.timestamp;
+      _freeDriveJumpCandidate = null;
+      _freeDriveJumpCandidateCount = 0;
       return rawPoint;
     }
 
@@ -1584,8 +1588,29 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final jumpLimit = math.max(25.0, plausibleTravel * 2.0 +
         math.min(fix.accuracy, 35.0) * 0.8);
     if (distance > jumpLimit) {
+      final candidate = _freeDriveJumpCandidate;
+      final candidateDistance = candidate == null ? double.infinity :
+          Geolocator.distanceBetween(candidate.latitude, candidate.longitude,
+              rawPoint.latitude, rawPoint.longitude);
+      if (candidateDistance <= math.max(20.0, fix.accuracy)) {
+        _freeDriveJumpCandidateCount++;
+      } else {
+        _freeDriveJumpCandidate = rawPoint;
+        _freeDriveJumpCandidateCount = 1;
+      }
+      // Reacquire after three consecutive fixes agree on the new position;
+      // a single GPS teleport cannot move the displayed vehicle.
+      if (_freeDriveJumpCandidateCount >= 3) {
+        _freeDriveDisplayLocation = rawPoint;
+        _freeDriveFixTimestamp = fix.timestamp;
+        _freeDriveJumpCandidate = null;
+        _freeDriveJumpCandidateCount = 0;
+        return rawPoint;
+      }
       return previous;
     }
+    _freeDriveJumpCandidate = null;
+    _freeDriveJumpCandidateCount = 0;
 
     // Follow accepted fixes promptly while softening small coordinate jitter.
     final factor = distance < 5 ? 0.75 : 0.60;
