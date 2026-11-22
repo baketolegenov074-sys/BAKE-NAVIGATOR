@@ -67,6 +67,8 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
           // field. This offline renderer uses local Flutter fonts, not PBF glyphs.
           'text-field': [
           'coalesce',
+          ['get', 'name:latin'],
+          ['get', 'name:nonlatin'],
           ['get', 'name:ru'],
           ['get', 'name'],
           ['get', 'name:kk'],
@@ -99,6 +101,8 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
           'text-field': [
             'coalesce',
             ['get', 'name'],
+            ['get', 'name:latin'],
+            ['get', 'name:nonlatin'],
             ['get', 'name:ru'],
             ['get', 'name:kk'],
             ['get', 'name_ru'],
@@ -126,6 +130,8 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
           'text-anchor': 'center',
           'text-field': [
           'coalesce',
+          ['get', 'name:latin'],
+          ['get', 'name:nonlatin'],
           ['get', 'name:ru'],
           ['get', 'name'],
           ['get', 'name:kk'],
@@ -155,6 +161,8 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
           'text-anchor': 'center',
           'text-field': [
           'coalesce',
+          ['get', 'name:latin'],
+          ['get', 'name:nonlatin'],
           ['get', 'name:ru'],
           ['get', 'name'],
           ['get', 'name:kk'],
