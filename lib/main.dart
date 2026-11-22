@@ -940,6 +940,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   LatLng? _currentLocation;
   LatLng? _destination;
   String _selectedMapPointAddress = 'Адрес определяется…';
+  int _routeRequestGeneration = 0;
   LatLng? _routeOrigin;
   final List<LatLng> _routeStops = <LatLng>[];
   List<Map<String, dynamic>> _routeAlternatives = <Map<String, dynamic>>[];
@@ -2922,8 +2923,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (backgroundNavigation && defaultTargetPlatform == TargetPlatform.android) {
       locationSettings = AndroidSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 5,
-        intervalDuration: const Duration(seconds: 3),
+        distanceFilter: 1,
+        intervalDuration: const Duration(seconds: 1),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: 'BAKE Navigator — навигация активна',
           notificationText: 'GPS и голосовые подсказки продолжают работать в фоне.',
@@ -2934,7 +2935,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     } else {
       locationSettings = const LocationSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 5,
+        distanceFilter: 1,
       );
     }
 
@@ -3439,14 +3440,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   void _selectDestination(LatLng point) {
     final wasNavigating = _navigationActive;
+    // Invalidate every in-flight route request for the previous destination.
+    _routeRequestGeneration++;
     setState(() {
       _destination = point;
+      _selectedMapPointAddress = 'Адрес определяется…';
+      _routeAlternatives = <Map<String, dynamic>>[];
+      _selectedRouteIndex = 0;
       _routeProgressSegmentIndex = 0;
       _routePoints = [];
       _routeReady = false;
       _instructions = [];
       _navigationActive = false;
       _instructionIndex = 0;
+      _announcedManeuverStage = 0;
       _routeDistanceMeters = null;
       _routeDurationSeconds = null;
       _message = '';
@@ -4643,12 +4650,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (!_navigationActive || _instructionIndex >= _instructions.length) return;
 
     final target = _instructions[_instructionIndex];
-    final meters = Geolocator.distanceBetween(
+    final measuredMeters = Geolocator.distanceBetween(
       position.latitude,
       position.longitude,
       target.location.latitude,
       target.location.longitude,
     );
+    // GPS providers can report a moving vehicle a little late. Predict only
+    // the distance along the current heading for maneuver guidance; never
+    // shift the stored GPS fix or the vehicle marker.
+    final gpsLatencyCompensation = (position.speed.isFinite
+        ? position.speed.clamp(0.0, 45.0) * 2.0
+        : 0.0);
+    final meters = math.max(0.0, measuredMeters - gpsLatencyCompensation);
 
     // Announce the upcoming maneuver in stages instead of speaking only once.
     final isArrivalInstruction = _instructionIndex + 1 >= _instructions.length;
@@ -4830,6 +4844,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   Future<void> _buildRoute({bool automaticReroute = false}) async {
+    final requestGeneration = ++_routeRequestGeneration;
     if (_destination == null) {
       setState(() => _message = AppLocale.pick('Сначала выберите конечную точку на карте.', 'Алдымен картадан соңғы нүктені таңдаңыз.', 'First select the destination point on the map.'));
       return;
@@ -4989,7 +5004,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       final distance = (first['distance'] as num).toDouble();
       final duration = (first['duration'] as num).toDouble();
 
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _routeRequestGeneration) return;
       setState(() {
         _routeAlternatives = validRoutes;
         _selectedRouteIndex = 0;
@@ -5035,7 +5050,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         await _openRouteAlternatives();
       }
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestGeneration != _routeRequestGeneration) return;
       final failure = error.toString().replaceFirst('Exception: ', '');
       setState(() => _message = routingNotice == null
           ? failure
@@ -5045,7 +5060,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               '$routingNotice The online router also did not respond. Check your connection.',
             ));
     } finally {
-      if (mounted) setState(() => _isBuildingRoute = false);
+      if (mounted && requestGeneration == _routeRequestGeneration) {
+        setState(() => _isBuildingRoute = false);
+      }
     }
   }
 
