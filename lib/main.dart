@@ -948,6 +948,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   int _routeRequestGeneration = 0;
   DateTime? _mapPointerDownAt;
   Duration _lastMapPointerHoldDuration = Duration.zero;
+  LatLng? _pendingMapLongPressPoint;
   LatLng? _routeOrigin;
   final List<LatLng> _routeStops = <LatLng>[];
   List<Map<String, dynamic>> _routeAlternatives = <Map<String, dynamic>>[];
@@ -6269,8 +6270,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   );
 
   Future<void> _handleMapTap(LatLng point) async {
-    // A normal map tap must work immediately; long-press timing is not
-    // a prerequisite for choosing a destination.
+    // Require a deliberate two-second hold; quick touches and map drags do nothing.
+    if (_lastMapPointerHoldDuration < const Duration(seconds: 2)) return;
     if (_routeReady && _routeAlternatives.length > 1 &&
         _trySelectAlternativeAt(point)) {
       return;
@@ -7797,11 +7798,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     ? Duration.zero
                     : DateTime.now().difference(startedAt);
                 _mapPointerDownAt = null;
+                final heldPoint = _pendingMapLongPressPoint;
+                _pendingMapLongPressPoint = null;
+                if (heldPoint != null &&
+                    _lastMapPointerHoldDuration >= const Duration(seconds: 2)) {
+                  unawaited(_handleMapTap(heldPoint));
+                }
                 _scheduleHeadingUpReturn();
               },
               onPointerCancel: (_) {
                 _mapPointerDownAt = null;
                 _lastMapPointerHoldDuration = Duration.zero;
+                _pendingMapLongPressPoint = null;
                 _scheduleHeadingUpReturn();
               },
               child: ml.MapLibreMap(
@@ -7817,7 +7825,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               onStyleLoadedCallback: _onMapLibreStyleLoaded,
               onCameraIdle: () => unawaited(_syncMapLibreAnnotations()),
               onMapClick: (_, point) => unawaited(_handleMapTap(LatLng(point.latitude, point.longitude))),
-              onMapLongClick: (_, point) => unawaited(_handleMapTap(LatLng(point.latitude, point.longitude))),
+              onMapLongClick: (_, point) => _pendingMapLongPressPoint = LatLng(point.latitude, point.longitude),
               compassEnabled: false,
               trackCameraPosition: true,
               rotateGesturesEnabled: true,
@@ -7840,11 +7848,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     ? Duration.zero
                     : DateTime.now().difference(startedAt);
                 _mapPointerDownAt = null;
+                final heldPoint = _pendingMapLongPressPoint;
+                _pendingMapLongPressPoint = null;
+                if (heldPoint != null &&
+                    _lastMapPointerHoldDuration >= const Duration(seconds: 2)) {
+                  unawaited(_handleMapTap(heldPoint));
+                }
                 _scheduleHeadingUpReturn();
               },
               onPointerCancel: (_) {
                 _mapPointerDownAt = null;
                 _lastMapPointerHoldDuration = Duration.zero;
+                _pendingMapLongPressPoint = null;
                 _scheduleHeadingUpReturn();
               },
               child: FlutterMap(
@@ -7854,6 +7869,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 initialCenter: _shymkent,
                 initialZoom: 13,
                 onTap: (_, point) => unawaited(_handleMapTap(point)),
+                onLongPress: (_, point) => _pendingMapLongPressPoint = point,
                 onPositionChanged: (camera, hasGesture) {
                   if (hasGesture) _scheduleHeadingUpReturn();
                 },
