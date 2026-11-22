@@ -1872,6 +1872,56 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     });
   }
 
+  Future<void> _setMapLibreAlternativeRouteGeometry(
+    ml.MapLibreMapController controller,
+  ) async {
+    final sourceIds = await controller.getSourceIds();
+    final layerIds = await controller.getLayerIds();
+    for (var index = 0; index < 3; index++) {
+      final sourceId = 'bake-route-alternative-$index-source';
+      final layerId = 'bake-route-alternative-$index-line';
+      if (!sourceIds.contains(sourceId)) {
+        await controller.addGeoJsonSource(sourceId, const {
+          'type': 'FeatureCollection',
+          'features': <Object>[],
+        });
+      }
+      if (!layerIds.contains(layerId)) {
+        await controller.addLineLayer(
+          sourceId,
+          layerId,
+          const ml.LineLayerProperties(
+            lineColor: '#22BFA5',
+            lineWidth: 5,
+            lineOpacity: 0.62,
+          ),
+        );
+      }
+      final routeIndex = index < _selectedRouteIndex ? index : index + 1;
+      final points = routeIndex < _routeAlternatives.length
+          ? _simplifyRouteForDisplay(_routePointsFromDecodedRoute(_routeAlternatives[routeIndex]))
+          : <LatLng>[];
+      final features = points.length < 2
+          ? <Object>[]
+          : <Object>[
+              {
+                'type': 'Feature',
+                'properties': const <String, Object>{'alternative': true},
+                'geometry': {
+                  'type': 'LineString',
+                  'coordinates': points
+                      .map((point) => <double>[point.longitude, point.latitude])
+                      .toList(growable: false),
+                },
+              },
+            ];
+      await controller.setGeoJsonSource(sourceId, {
+        'type': 'FeatureCollection',
+        'features': features,
+      });
+    }
+  }
+
   Future<void> _syncMapLibreAnnotations({bool updateRoute = false}) async {
     // GPS updates can arrive while the previous annotation update is still
     // clearing and recreating symbols. Serialize those updates and run once
@@ -1897,6 +1947,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           // Keep one GeoJSON source and its three style layers for this map
           // style. Updates replace source data without recreating the layers.
           await _setMapLibreRouteGeometry(controller, visibleRoutePoints);
+          await _setMapLibreAlternativeRouteGeometry(controller);
         }
         await controller.clearSymbols();
         await controller.clearCircles();
@@ -7502,10 +7553,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                   )
                 else
                   TileLayer(tileProvider: _offlineTileProvider!),
+                if (_routeAlternatives.length > 1)
+                  PolylineLayer(
+                    polylines: [
+                      for (var i = 0; i < _routeAlternatives.length; i++)
+                        if (i != _selectedRouteIndex)
+                          Polyline(
+                            points: _routePointsFromDecodedRoute(_routeAlternatives[i]),
+                            strokeWidth: 5,
+                            color: const Color(0x9922BFA5),
+                          ),
+                    ],
+                  ),
                 if (visibleRoutePoints.isNotEmpty)
                   PolylineLayer(
                     polylines: [
-                      Polyline(points: visibleRoutePoints, strokeWidth: 7, color: const Color(0xFF2378C8)),
+                      Polyline(points: visibleRoutePoints, strokeWidth: 8, color: const Color(0xFF0878F9)),
                     ],
                   ),
                 MarkerLayer(markers: markers),
