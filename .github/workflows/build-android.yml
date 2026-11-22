@@ -299,19 +299,19 @@ jobs:
 
           # Restrict packaged native libraries to the Samsung Galaxy A33's ARM64 ABI.
           # This filters transitive AAR .so files as well as Flutter plugin binaries.
-          if re.search(r"(?m)^\\s*abiFilters\\b", app_content):
+          if re.search(r"(?m)^\s*abiFilters\b", app_content):
               raise SystemExit("Unexpected existing ABI filter; refusing to overwrite it")
           if app_gradle.suffix == ".kts":
               app_content, abi_count = re.subn(
-                  r"(defaultConfig\\s*\\{)",
-                  r'\\1\\n        ndk {\\n            abiFilters += setOf("arm64-v8a")\\n        }',
+                  r"(defaultConfig\s*\{)",
+                  r'\1\n        ndk {\n            abiFilters += setOf("arm64-v8a")\n        }',
                   app_content,
                   count=1,
               )
           else:
               app_content, abi_count = re.subn(
-                  r"(defaultConfig\\s*\\{)",
-                  r"\\1\\n        ndk {\\n            abiFilters 'arm64-v8a'\\n        }",
+                  r"(defaultConfig\s*\{)",
+                  r"\1\n        ndk {\n            abiFilters 'arm64-v8a'\n        }",
                   app_content,
                   count=1,
               )
