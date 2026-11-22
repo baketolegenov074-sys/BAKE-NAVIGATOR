@@ -6251,9 +6251,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   bool _trySelectAlternativeAt(LatLng point) {
-    // Alternatives can be selected as soon as route calculation finishes,
-    // before the driver presses "Go".
-    if (_mapPointerMoved || _lastMapPointerHoldDuration >= const Duration(seconds: 1)) return false;
+    // MapLibre/FlutterMap call this only for a recognized tap. Do not reject
+    // it because the outer pointer listener saw small finger drift; that made
+    // ordinary taps fail on real phones. A deliberate one-second hold remains
+    // reserved for choosing a new destination.
+    if (_lastMapPointerHoldDuration >= const Duration(seconds: 1)) return false;
     if (!_routeReady || _routeAlternatives.length < 2) return false;
     var bestIndex = -1;
     var bestDistance = double.infinity;
@@ -6266,9 +6268,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         bestIndex = i;
       }
     }
-    // Wider geographic hit corridor makes a finger tap practical on both
-    // MapLibre and FlutterMap, including when the visible line is narrow.
-    if (bestIndex < 0 || bestDistance > 35) return false;
+    // Use a finger-sized hit target in screen pixels. A fixed 35 m corridor
+    // was only a couple of pixels at normal city zoom and was too hard to tap.
+    final metersPerPixel = 156543.03392 *
+        math.cos(point.latitude * math.pi / 180) /
+        math.pow(2, _mapCameraZoom);
+    final hitToleranceMeters = math.max(35.0, metersPerPixel * 26.0);
+    if (bestIndex < 0 || bestDistance > hitToleranceMeters) return false;
     _selectRouteAlternative(bestIndex);
     setState(() => _message = AppLocale.tr(
       _navigationActive
@@ -7929,8 +7935,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             ),
             ),
           Positioned(
-            top: 342,
-            right: 14,
+            // Place the route action beside, not underneath, the zoom/compass
+            // column. Keep it aligned with that column as its bottom changes.
+            bottom: _navigationActive ? 150 : (_routeReady ? 250 : 144),
+            right: 78,
             child: SafeArea(
               bottom: false,
               child: Material(
