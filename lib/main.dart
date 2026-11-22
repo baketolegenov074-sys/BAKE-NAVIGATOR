@@ -4659,9 +4659,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     // GPS providers can report a moving vehicle a little late. Predict only
     // the distance along the current heading for maneuver guidance; never
     // shift the stored GPS fix or the vehicle marker.
-    final gpsLatencyCompensation = (position.speed.isFinite
-        ? position.speed.clamp(0.0, 45.0) * 2.0
-        : 0.0);
+    final gpsSpeedMetersPerSecond = _currentSpeedKmh / 3.6;
+    final gpsLatencyCompensation =
+        gpsSpeedMetersPerSecond.clamp(0.0, 45.0) * 2.0;
     final meters = math.max(0.0, measuredMeters - gpsLatencyCompensation);
 
     // Announce the upcoming maneuver in stages instead of speaking only once.
