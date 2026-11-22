@@ -1119,6 +1119,101 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
 
+
+  Future<void> _syncTomTomTrafficLayer({bool replaceSource = false}) async {
+    final controller = _mapLibreController;
+    if (!mounted || controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final apiKey = (prefs.getString('tomtom_traffic_api_key') ?? '').trim();
+      final enabled = _trafficLayerEnabled && apiKey.isNotEmpty;
+      const flowSource = 'bake-tomtom-flow-source';
+      const flowLayer = 'bake-tomtom-flow-layer';
+      const incidentsSource = 'bake-tomtom-incidents-source';
+      const incidentsLayer = 'bake-tomtom-incidents-layer';
+      final layerIds = (await controller.getLayerIds()).map((value) => value.toString()).toSet();
+      final sourceIds = (await controller.getSourceIds()).toSet();
+
+      if (!enabled) {
+        if (layerIds.contains(flowLayer)) await controller.setLayerVisibility(flowLayer, false);
+        if (layerIds.contains(incidentsLayer)) await controller.setLayerVisibility(incidentsLayer, false);
+        return;
+      }
+      if (replaceSource) {
+        if (layerIds.contains(flowLayer)) await controller.removeLayer(flowLayer);
+        if (layerIds.contains(incidentsLayer)) await controller.removeLayer(incidentsLayer);
+        if (sourceIds.contains(flowSource)) await controller.removeSource(flowSource);
+        if (sourceIds.contains(incidentsSource)) await controller.removeSource(incidentsSource);
+      }
+
+      final currentSources = (await controller.getSourceIds()).toSet();
+      if (!currentSources.contains(flowSource)) {
+        await controller.addSource(
+          flowSource,
+          ml.RasterSourceProperties(
+            tiles: [
+              'https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=$apiKey',
+            ],
+            tileSize: 256,
+            attribution: 'Traffic data © TomTom',
+          ),
+        );
+      }
+      if (!currentSources.contains(incidentsSource)) {
+        await controller.addSource(
+          incidentsSource,
+          ml.RasterSourceProperties(
+            tiles: [
+              'https://api.tomtom.com/traffic/map/4/tile/incidents/s0/{z}/{x}/{y}.png?key=$apiKey&t=-1',
+            ],
+            tileSize: 256,
+            attribution: 'Traffic incidents © TomTom',
+          ),
+        );
+      }
+
+      final currentLayers = (await controller.getLayerIds()).map((value) => value.toString()).toSet();
+      String? labelsLayer;
+      final styleText = await controller.getStyle();
+      if (styleText != null) {
+        final style = jsonDecode(styleText);
+        final layers = style is Map ? style['layers'] : null;
+        if (layers is List) {
+          for (final layer in layers) {
+            if (layer is Map && layer['type'] == 'symbol' && layer['id'] is String) {
+              labelsLayer = layer['id'] as String;
+              break;
+            }
+          }
+        }
+      }
+      if (!currentLayers.contains(flowLayer)) {
+        await controller.addRasterLayer(
+          flowSource,
+          flowLayer,
+          const ml.RasterLayerProperties(rasterOpacity: 0.88),
+          belowLayerId: labelsLayer,
+        );
+      } else {
+        await controller.setLayerVisibility(flowLayer, true);
+      }
+      final afterFlowLayers = (await controller.getLayerIds()).map((value) => value.toString()).toSet();
+      if (!afterFlowLayers.contains(incidentsLayer)) {
+        await controller.addRasterLayer(
+          incidentsSource,
+          incidentsLayer,
+          const ml.RasterLayerProperties(rasterOpacity: 0.95),
+          belowLayerId: labelsLayer,
+        );
+      } else {
+        await controller.setLayerVisibility(incidentsLayer, true);
+      }
+    } catch (error, stackTrace) {
+      debugPrint('BAKE TomTom traffic layer failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
   Future<void> _loadTrafficLayerPreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -1609,6 +1704,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (!mounted || !_mapLibreStyleReady || _isOfflineMapActive) return;
     try {
       await _syncMapLibreAnnotations(updateRoute: true);
+      await _syncTomTomTrafficLayer();
     } catch (error, stackTrace) {
       debugPrint('BAKE map annotations recovery failed: $error');
       debugPrintStack(stackTrace: stackTrace);
@@ -5818,6 +5914,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     var traffic = prefs.getBool('layer_traffic') ?? false;
+    final trafficKeyController = TextEditingController(
+      text: prefs.getString('tomtom_traffic_api_key') ?? '',
+    );
     var roadEvents = prefs.getBool('layer_road_events') ?? true;
     var parking = prefs.getBool('layer_parking') ?? false;
     var satellite = prefs.getBool('layer_satellite') ?? false;
@@ -5839,7 +5938,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 'Setting saved. This layer does not have a connected data source yet.',
               );
       });
-      if (key == 'layer_traffic') unawaited(_syncMapLibreAnnotations());
+      if (key == 'layer_traffic') {
+        unawaited(_syncMapLibreAnnotations());
+        unawaited(_syncTomTomTrafficLayer());
+      }
     }
 
     await Navigator.of(context).push<void>(
@@ -5869,6 +5971,46 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     refresh(() => traffic = value);
                     await saveLayer('layer_traffic', value);
                   },
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        AppLocale.pick(
+                          'Реальные пробки и скорость движения TomTom. Введите API-ключ TomTom:',
+                          'TomTom нақты кептелістер мен қозғалыс жылдамдығы. TomTom API кілтін енгізіңіз:',
+                          'TomTom live traffic flow and incidents. Enter your TomTom API key:',
+                        ),
+                        style: const TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: trafficKeyController,
+                        obscureText: true,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        decoration: InputDecoration(
+                          hintText: 'TomTom API key',
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            tooltip: AppLocale.tr('Сохранить ключ'),
+                            icon: const Icon(Icons.save_outlined),
+                            onPressed: () async {
+                              final key = trafficKeyController.text.trim();
+                              await prefs.setString('tomtom_traffic_api_key', key);
+                              if (!mounted) return;
+                              setState(() => _message = key.isEmpty
+                                  ? AppLocale.tr('Ключ TomTom удалён.')
+                                  : AppLocale.tr('Ключ TomTom сохранён на телефоне.'));
+                              await _syncTomTomTrafficLayer(replaceSource: true);
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -5959,9 +6101,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         ),
       ),
     );
+    trafficKeyController.dispose();
   }
 
-  Future<void> _openProfileMenu() async {
+  Future<void> _openProfileMenu async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
