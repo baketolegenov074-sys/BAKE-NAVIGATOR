@@ -4060,9 +4060,30 @@ _navigationMatchedLocation = null;
     return result;
   }
 
+  void _setNavigationProgressAnchor(double progress) {
+    if (_routeCumulativeMeters.length != _routePoints.length || _routePoints.length < 2) return;
+    final bounded = progress.clamp(0.0, _routeCumulativeMeters.last).toDouble();
+    var index = 0;
+    while (index < _routePoints.length - 2 && _routeCumulativeMeters[index + 1] < bounded) {
+      index++;
+    }
+    final segmentLength = _routeCumulativeMeters[index + 1] - _routeCumulativeMeters[index];
+    final t = segmentLength <= 0 ? 0.0 : ((bounded - _routeCumulativeMeters[index]) / segmentLength).clamp(0.0, 1.0).toDouble();
+    _routeProgressSegmentIndex = index;
+    _navigationFixSegmentIndex = index;
+    _navigationFixSegmentT = t;
+    _navigationFixProgressMeters = bounded;
+    _navigationProgressMeters = bounded;
+  }
+
   void _prepareNavigationProgress(List<LatLng> points, List<RouteInstruction> instructions) {
     _routeCumulativeMeters = _buildRouteCumulativeMeters(points);
     _instructionProgressMeters = _buildInstructionProgressMeters(points, instructions);
+    _navigationFixMatchedLocation = null;
+    _navigationFixTimestamp = null;
+    _navigationFixSpeedMetersPerSecond = 0;
+    _navigationFixSegmentIndex = 0;
+    _navigationFixSegmentT = 0;
     _navigationFixProgressMeters = 0;
     _navigationProgressMeters = 0;
   }
@@ -5769,8 +5790,9 @@ _navigationMatchedLocation = null;
       _instructions = instructions;
       _prepareNavigationProgress(points, instructions);
       if (wasNavigating && _currentLocation != null && _routeCumulativeMeters.isNotEmpty) {
-        _navigationProgressMeters = _projectRouteProgress(points, _routeCumulativeMeters, _currentLocation!);
-        _navigationFixProgressMeters = _navigationProgressMeters;
+        _setNavigationProgressAnchor(
+          _projectRouteProgress(points, _routeCumulativeMeters, _currentLocation!),
+        );
         nearestInstructionIndex = _instructionProgressMeters.indexWhere(
           (progress) => progress >= _navigationProgressMeters - 8,
         );
