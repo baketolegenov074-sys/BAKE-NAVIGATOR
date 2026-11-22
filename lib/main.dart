@@ -184,15 +184,15 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         'type': 'symbol',
         'source': 'openmaptiles',
         'source-layer': 'transportation_name',
-        // BBBike basic tiles store street names in the plain "name" field.
-        // Keep this additional layer as a direct fallback so empty regional
-        // name:* fields cannot suppress otherwise valid street labels.
+        // The inspected BBBike MBTiles schema exposes street names as
+        // "name:latin" in transportation_name (not as plain "name").
+        // Read that exact field directly as a fallback label layer.
         'minzoom': 8,
-        'filter': ['has', 'name'],
+        'filter': ['has', 'name:latin'],
         'layout': {
           'symbol-placement': 'line',
           'text-anchor': 'center',
-          'text-field': '{name}',
+          'text-field': '{name:latin}',
           'text-font': ['Roboto'],
           'text-size': 13,
           'text-max-width': 12,
