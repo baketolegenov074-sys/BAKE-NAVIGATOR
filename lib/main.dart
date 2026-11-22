@@ -40,11 +40,11 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
       {'id': 'bake_transportation_casing', 'type': 'line', 'source': 'openmaptiles', 'source-layer': 'transportation', 'minzoom': 13,
        'filter': ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'residential', 'unclassified', 'service', 'living_street'],
        'layout': {'line-cap': 'round', 'line-join': 'round'},
-       'paint': {'line-color': '#FFFFFF', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 6.2, 14, 7.4, 15, 9.0, 16, 11.0, 17, 13.2, 18, 15.5]}},
+       'paint': {'line-color': '#FFFFFF', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 6.8, 14, 8.1, 15, 9.8, 16, 12.0, 17, 14.4, 18, 17.0]}},
       {'id': 'bake_transportation_wide', 'type': 'line', 'source': 'openmaptiles', 'source-layer': 'transportation', 'minzoom': 13,
        'filter': ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'residential', 'unclassified', 'service', 'living_street'],
        'layout': {'line-cap': 'round', 'line-join': 'round'},
-       'paint': {'line-color': '#B7C2CE', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 3.4, 14, 4.4, 15, 5.8, 16, 7.2, 17, 9.0, 18, 10.8]}},
+       'paint': {'line-color': '#B7C2CE', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 3.8, 14, 4.9, 15, 6.4, 16, 7.9, 17, 9.9, 18, 11.9]}},
     ],
   });
   final labels = vtr.ThemeReader().read({
