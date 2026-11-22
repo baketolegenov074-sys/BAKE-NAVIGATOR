@@ -5998,22 +5998,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   );
 
   Future<void> _handleMapTap(LatLng point) async {
-    if (_navigationActive && _trySelectAlternativeAt(point)) return;
-    if (_lastMapPointerHoldDuration < const Duration(milliseconds: 2500)) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(AppLocale.tr('Удерживайте палец на карте 2,5 секунды, чтобы выбрать новую точку.')),
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
+    // A normal map tap must work immediately; long-press timing is not
+    // a prerequisite for choosing a destination.
+    if (_routeReady && _routeAlternatives.length > 1 &&
+        _trySelectAlternativeAt(point)) {
       return;
     }
     await _selectMapDestination(point);
   }
 
   bool _trySelectAlternativeAt(LatLng point) {
-    if (!_navigationActive || _routeAlternatives.length < 2) return false;
+    // Alternatives can be selected as soon as route calculation finishes,
+    // before the driver presses "Go".
+    if (!_routeReady || _routeAlternatives.length < 2) return false;
     var bestIndex = -1;
     var bestDistance = double.infinity;
     for (var i = 0; i < _routeAlternatives.length; i++) {
@@ -6025,10 +6022,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         bestIndex = i;
       }
     }
-    if (bestIndex < 0 || bestDistance > 24) return false;
+    // Wider geographic hit corridor makes a finger tap practical on both
+    // MapLibre and FlutterMap, including when the visible line is narrow.
+    if (bestIndex < 0 || bestDistance > 45) return false;
     _selectRouteAlternative(bestIndex);
-    setState(() => _message = AppLocale.tr('Выбран альтернативный маршрут. Продолжаем движение по нему.'));
-    unawaited(_speakCurrentInstruction());
+    setState(() => _message = AppLocale.tr(
+      _navigationActive
+          ? 'Выбран альтернативный маршрут. Продолжаем движение по нему.'
+          : 'Выбран альтернативный маршрут.',
+    ));
+    if (_navigationActive) unawaited(_speakCurrentInstruction());
     return true;
   }
 
