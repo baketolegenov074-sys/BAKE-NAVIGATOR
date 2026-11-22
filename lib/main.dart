@@ -1012,6 +1012,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _loadSavedRoutePoints();
     unawaited(_loadMapViewPreference());
     unawaited(_loadSatelliteMapPreference());
+    unawaited(_loadTrafficLayerPreference());
     // Ask for location after the first frame so the permission dialog has a valid context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1114,6 +1115,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       await _apply3DLayerVisibility();
     } catch (error) {
       debugPrint('BAKE satellite preference load failed: $error');
+    }
+  }
+
+
+  Future<void> _loadTrafficLayerPreference() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('layer_traffic') ?? false;
+      if (!mounted || _trafficLayerEnabled == enabled) return;
+      setState(() => _trafficLayerEnabled = enabled);
+      unawaited(_syncMapLibreAnnotations());
+    } catch (error) {
+      debugPrint('BAKE traffic layer preference load failed: $error');
     }
   }
 
@@ -5812,8 +5826,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       await prefs.setBool(key, value);
       if (!mounted) return;
       setState(() {
-        _message = AppLocale.pick('Настройка сохранена. Для отображения этого слоя нужен подключённый источник данных.', 'Баптау сақталды. Бұл қабатты көрсету үшін деректер көзі қосылуы керек.', 'Setting saved. A connected data source is required to display this layer.');
+        if (key == 'layer_traffic') _trafficLayerEnabled = value;
+        _message = key == 'layer_traffic'
+            ? AppLocale.pick(
+                'Слой дорожных сообщений включён. Показываются подтверждённые отметки пользователей.',
+                'Жол хабарламалары қабаты қосылды. Расталған пайдаланушы белгілері көрсетіледі.',
+                'Road reports layer enabled. Confirmed user reports are shown.',
+              )
+            : AppLocale.pick(
+                'Настройка сохранена. Для этого слоя источник данных ещё не подключён.',
+                'Баптау сақталды. Бұл қабатқа дерек көзі әлі қосылмаған.',
+                'Setting saved. This layer does not have a connected data source yet.',
+              );
       });
+      if (key == 'layer_traffic') unawaited(_syncMapLibreAnnotations());
     }
 
     await Navigator.of(context).push<void>(
