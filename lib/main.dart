@@ -2012,9 +2012,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           sourceId,
           layerId,
           const ml.LineLayerProperties(
-            lineColor: '#22BFA5',
-            lineWidth: 7,
-            lineOpacity: 0.72,
+            lineColor: const ['#FF9800', '#9C27B0', '#00A6A6'][index],
+            lineWidth: 8,
+            lineOpacity: 0.9,
           ),
         );
       }
@@ -6250,7 +6250,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
     // Wider geographic hit corridor makes a finger tap practical on both
     // MapLibre and FlutterMap, including when the visible line is narrow.
-    if (bestIndex < 0 || bestDistance > 75) return false;
+    if (bestIndex < 0 || bestDistance > 35) return false;
     _selectRouteAlternative(bestIndex);
     setState(() => _message = AppLocale.tr(
       _navigationActive
@@ -7773,9 +7773,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     ? Duration.zero
                     : DateTime.now().difference(startedAt);
                 _mapPointerDownAt = null;
+                _mapPointerDownPosition = null;
                 final heldPoint = _pendingMapLongPressPoint;
                 _pendingMapLongPressPoint = null;
-                if (heldPoint != null &&
+                if (heldPoint != null && !_mapPointerMoved &&
                     _lastMapPointerHoldDuration >= const Duration(seconds: 1)) {
                   unawaited(_handleMapTap(heldPoint));
                 }
@@ -7831,8 +7832,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 _mapPointerDownAt = null;
                 final heldPoint = _pendingMapLongPressPoint;
                 _pendingMapLongPressPoint = null;
-                if (heldPoint != null &&
-                    _lastMapPointerHoldDuration >= const Duration(seconds: 2)) {
+                if (heldPoint != null && !_mapPointerMoved &&
+                    _lastMapPointerHoldDuration >= const Duration(seconds: 1)) {
                   unawaited(_handleMapTap(heldPoint));
                 }
                 _scheduleHeadingUpReturn();
