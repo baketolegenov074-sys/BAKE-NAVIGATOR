@@ -4111,10 +4111,10 @@ _navigationMatchedLocation = null;
     });
     try {
       _navigationFixMatchedLocation = null;
-    _navigationFixTimestamp = null;
-    _navigationFixSpeedMetersPerSecond = 0;
-    _startNavigationPredictionTicker();
-    // Keep the location stream active without blocking route start on first fix.
+      _navigationFixTimestamp = null;
+      _navigationFixSpeedMetersPerSecond = 0;
+      _startNavigationPredictionTicker();
+      // Keep the location stream active without blocking route start on first fix.
       await _startLiveLocationUpdates(
         backgroundNavigation: true,
         waitForFirstFix: false,
