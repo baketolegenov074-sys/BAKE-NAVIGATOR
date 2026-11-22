@@ -296,8 +296,14 @@ Future<void> main() async {
       ),
     );
   };
+  final startupWatch = Stopwatch()..start();
+  // Start local preferences loading alongside cloud SDK initialization so
+  // independent startup work does not run sequentially.
+  final prefsFuture = SharedPreferences.getInstance();
   try {
+    final cloudInitWatch = Stopwatch()..start();
     await RoadReportSyncService.initialize();
+    debugPrint('BAKE STARTUP phase=supabase_init duration_ms=${cloudInitWatch.elapsedMilliseconds}');
   } catch (error) {
     debugPrint('BAKE road report cloud sync is unavailable: $error');
     debugPrint(
@@ -305,7 +311,8 @@ Future<void> main() async {
       'problem=${RoadReportSyncService.configurationProblem ?? 'none'}',
     );
   }
-  final prefs = await SharedPreferences.getInstance();
+  final prefs = await prefsFuture;
+  debugPrint('BAKE STARTUP phase=before_run_app duration_ms=${startupWatch.elapsedMilliseconds}');
   // One-time migration: make Kazakh the default app and navigation language.
   if (!(prefs.getBool('kazakh_primary_language_v1') ?? false)) {
     await prefs.setString('app_language', 'kk');
