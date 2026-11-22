@@ -1559,9 +1559,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       for (final layer in layers) {
         final id = layer['id']?.toString() ?? '';
         final sourceLayer = layer['source-layer']?.toString() ?? '';
-        final isRoadLine = layer['type'] == 'line' && (sourceLayer == 'transportation' || RegExp(r'^(road|transportation|bridge|tunnel)').hasMatch(id));
+        final isRoadLine = layer['type'] == 'line' && sourceLayer == 'transportation';
+        final isRail = RegExp(r'(rail|one_way_arrow)', caseSensitive: false).hasMatch(id);
         final isCasing = RegExp(r'(casing|outline|border)', caseSensitive: false).hasMatch(id);
-        if (isRoadLine && !isCasing) {
+        if (isRoadLine && !isRail) {
+          // Liberty's default major-road palette uses orange (#e9ac77/#fea/#fc8).
+          // Keep the road hierarchy and widths, but use neutral road strokes.
+          final paint = Map<String, dynamic>.from((layer['paint'] as Map?) ?? <String, dynamic>{});
+          paint['line-color'] = isCasing ? '#D6DCE3' : '#FFFFFF';
+          layer['paint'] = paint;
+        }
+        if (isRoadLine && !isCasing && !isRail) {
           final paint = Map<String, dynamic>.from((layer['paint'] as Map?) ?? <String, dynamic>{});
           final width = paint['line-width'];
           if (width != null) {
@@ -1612,6 +1620,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         ['get', 'name:ru'],
         ['get', 'name'],
         ['get', 'name:kk'],
+        ['get', 'name:latin'],
+        ['get', 'name:nonlatin'],
         ['get', 'name_ru'],
         ['get', 'name_kk'],
       ];
