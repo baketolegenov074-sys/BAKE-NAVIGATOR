@@ -180,6 +180,32 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         },
       },
       {
+        'id': 'bake_transportation_name_direct_fallback',
+        'type': 'symbol',
+        'source': 'openmaptiles',
+        'source-layer': 'transportation_name',
+        // BBBike basic tiles store street names in the plain "name" field.
+        // Keep this additional layer as a direct fallback so empty regional
+        // name:* fields cannot suppress otherwise valid street labels.
+        'minzoom': 8,
+        'filter': ['has', 'name'],
+        'layout': {
+          'symbol-placement': 'line',
+          'text-anchor': 'center',
+          'text-field': '{name}',
+          'text-font': ['Roboto'],
+          'text-size': 13,
+          'text-max-width': 12,
+          'text-offset': [0, 0.15],
+          'text-allow-overlap': false,
+        },
+        'paint': {
+          'text-color': '#111111',
+          'text-halo-color': '#FFFFFF',
+          'text-halo-width': 2.5,
+        },
+      },
+      {
         'id': 'bake_house_numbers',
         'type': 'symbol',
         'source': 'openmaptiles',
@@ -238,7 +264,7 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         ];
   return vtr.Theme(
     id: 'bake-shymkent-offline',
-    version: '4',
+    version: '5',
     layers: orderedLayers,
   );
 }
