@@ -949,6 +949,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   String _selectedMapPointAddress = 'Адрес определяется…';
   int _routeRequestGeneration = 0;
   DateTime? _mapPointerDownAt;
+  Offset? _mapPointerDownPosition;
+  bool _mapPointerMoved = false;
   Duration _lastMapPointerHoldDuration = Duration.zero;
   LatLng? _pendingMapLongPressPoint;
   LatLng? _routeOrigin;
@@ -5357,11 +5359,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (_voiceMode >= 3) await _speakText(_localized('Маршрут построен. Расстояние $distanceKm километра. Примерное время в пути $minutes минут.', 'Маршрут құрылды. Қашықтық $distanceKm километр. Жол уақыты шамамен $minutes минут.', 'Route built. Distance $distanceKm kilometers. Estimated travel time $minutes minutes.'));
         // Keep the map's persistent «Поехали» control unchanged.
       }
-      // Present the available options immediately after a manual route search.
-      // Automatic reroutes stay quiet and do not interrupt active navigation.
-      if (!automaticReroute && mounted) {
-        await _openRouteAlternatives();
-      }
+      // Route alternatives remain visible on the map; select a line directly.
     } catch (error) {
       if (!mounted || requestGeneration != _routeRequestGeneration) return;
       final failure = error.toString().replaceFirst('Exception: ', '');
@@ -5457,94 +5455,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _updateNavigationCamera(_currentLocation!, 17, heading);
       }
     }
-  }
-
-  Future<void> _openRouteAlternatives() async {
-    if (_routeAlternatives.isEmpty) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: StatefulBuilder(
-          builder: (sheetContext, refreshSheet) => Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 38,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD5D9DE),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  AppLocale.tr('Адрес назначения'),
-                  style: const TextStyle(fontSize: 13, color: Colors.black54),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '$_selectedMapPointAddress\\n${_destination?.latitude.toStringAsFixed(6)}, ${_destination?.longitude.toStringAsFixed(6)}',
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  AppLocale.tr('Варианты маршрута'),
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 8),
-                ...List.generate(_routeAlternatives.length, (index) {
-                  final route = _routeAlternatives[index];
-                  final km = ((route['distance'] as num).toDouble() / 1000).toStringAsFixed(1);
-                  final minutes = (((route['duration'] as num).toDouble()) / 60).round();
-                  final selected = index == _selectedRouteIndex;
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    leading: Icon(
-                      selected ? Icons.radio_button_checked : Icons.radio_button_off,
-                      color: selected ? const Color(0xFFB88A00) : const Color(0xFF69737D),
-                    ),
-                    title: Text(
-                      _routeAlternativeLabel(index),
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    subtitle: Text('$minutes мин · $km км'),
-                    onTap: () {
-                      _selectRouteAlternative(index);
-                      refreshSheet(() {});
-                    },
-                  );
-                }),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _routeReady
-                        ? () {
-                            Navigator.pop(sheetContext);
-                            unawaited(_startNavigation());
-                          }
-                        : null,
-                    icon: const Icon(Icons.navigation),
-                    label: Text(AppLocale.tr('Поехали')),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   Future<void> _addRouteStop(LatLng point) async {
@@ -6317,15 +6227,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   );
 
   Future<void> _handleMapTap(LatLng point) async {
-    // This handler is called only after a deliberate two-second hold.
-    // A hold selects an address; alternative routes use a separate short tap.
-    if (_lastMapPointerHoldDuration < const Duration(seconds: 2)) return;
+    // Address selection requires a deliberate one-second hold.
+    if (_lastMapPointerHoldDuration < const Duration(seconds: 1)) return;
     await _selectMapDestination(point);
   }
 
   bool _trySelectAlternativeAt(LatLng point) {
     // Alternatives can be selected as soon as route calculation finishes,
     // before the driver presses "Go".
+    if (_mapPointerMoved || _lastMapPointerHoldDuration >= const Duration(seconds: 1)) return false;
     if (!_routeReady || _routeAlternatives.length < 2) return false;
     var bestIndex = -1;
     var bestDistance = double.infinity;
@@ -7503,7 +7413,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             _menuTile(sheetContext, Icons.edit_road_outlined, AppLocale.tr('Планирование маршрута'), () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
             _menuTile(sheetContext, Icons.edit_location_alt_outlined, AppLocale.tr('Изменить маршрут'), () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
             _menuTile(sheetContext, Icons.add_location_alt_outlined, AppLocale.tr('Добавить точку'), () { Navigator.pop(sheetContext); _openRoutePlanner(); }),
-            _menuTile(sheetContext, Icons.alt_route, AppLocale.tr('Варианты маршрута'), () { Navigator.pop(sheetContext); _openRouteAlternatives(); }),
+            _menuTile(sheetContext, Icons.alt_route, AppLocale.tr('Построить маршрут'), () { Navigator.pop(sheetContext); if (_destination == null) { _openRoutePlanner(); } else { unawaited(_buildRoute()); } }),
             _menuTile(sheetContext, Icons.tune, AppLocale.tr('Параметры маршрута'), () { Navigator.pop(sheetContext); _openRoutePreferences(); }),
             _menuTile(sheetContext, Icons.share_outlined, AppLocale.tr('Поделиться маршрутом'), () { Navigator.pop(sheetContext); _shareRoute(); }),
             _menuTile(sheetContext, Icons.flag_outlined, AppLocale.tr('Сообщить об ошибке'), () { Navigator.pop(sheetContext); _reportRouteIssue(); }),
@@ -7843,10 +7753,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         children: [
           if (!_isOfflineMapActive)
             Listener(
-              onPointerDown: (_) {
+              onPointerDown: (event) {
                 _mapPointerDownAt = DateTime.now();
+                _mapPointerDownPosition = event.localPosition;
+                _mapPointerMoved = false;
+                _lastMapPointerHoldDuration = Duration.zero;
                 _headingUpGestureActive = true;
                 _headingUpResumeTimer?.cancel();
+              },
+              onPointerMove: (event) {
+                final start = _mapPointerDownPosition;
+                if (start != null && (event.localPosition - start).distance > 12) {
+                  _mapPointerMoved = true;
+                }
               },
               onPointerUp: (_) {
                 final startedAt = _mapPointerDownAt;
@@ -7857,13 +7776,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 final heldPoint = _pendingMapLongPressPoint;
                 _pendingMapLongPressPoint = null;
                 if (heldPoint != null &&
-                    _lastMapPointerHoldDuration >= const Duration(seconds: 2)) {
+                    _lastMapPointerHoldDuration >= const Duration(seconds: 1)) {
                   unawaited(_handleMapTap(heldPoint));
                 }
                 _scheduleHeadingUpReturn();
               },
               onPointerCancel: (_) {
                 _mapPointerDownAt = null;
+                _mapPointerDownPosition = null;
+                _mapPointerMoved = false;
                 _lastMapPointerHoldDuration = Duration.zero;
                 _pendingMapLongPressPoint = null;
                 _scheduleHeadingUpReturn();
@@ -7882,7 +7803,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               onCameraIdle: () => unawaited(_syncMapLibreAnnotations()),
               onMapClick: (_, point) {
                 // Short taps are reserved for choosing a visible alternative route.
-                // Address selection is handled only by the two-second hold above.
+                // Address selection is handled only by the one-second hold above.
                 _trySelectAlternativeAt(LatLng(point.latitude, point.longitude));
               },
               onMapLongClick: (_, point) => _pendingMapLongPressPoint = LatLng(point.latitude, point.longitude),
@@ -7955,8 +7876,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                         if (i != _selectedRouteIndex)
                           Polyline(
                             points: _routePointsFromDecodedRoute(_routeAlternatives[i]),
-                            strokeWidth: 7,
-                            color: const Color(0xAA22BFA5),
+                            strokeWidth: 8,
+                            color: const [Color(0xFFFF9800), Color(0xFF9C27B0), Color(0xFF00A6A6)][i % 3].withOpacity(0.9),
                           ),
                     ],
                   ),
@@ -7973,6 +7894,37 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               ],
             ),
             ),
+          Positioned(
+            top: 286,
+            right: 14,
+            child: SafeArea(
+              bottom: false,
+              child: Material(
+                color: _isBuildingRoute ? const Color(0xFFFFF1C2) : Colors.white,
+                elevation: 5,
+                shape: const CircleBorder(),
+                child: IconButton(
+                  tooltip: 'Построить и показать маршруты',
+                  onPressed: _isBuildingRoute
+                      ? null
+                      : () {
+                          if (_destination == null) {
+                            _openRoutePlanner();
+                          } else {
+                            unawaited(_buildRoute());
+                          }
+                        },
+                  icon: Icon(
+                    Icons.alt_route,
+                    color: _isBuildingRoute
+                        ? const Color(0xFFB88A00)
+                        : const Color(0xFF1769AA),
+                    size: 25,
+                  ),
+                ),
+              ),
+            ),
+          ),
           Positioned(
             top: 238,
             right: 14,
