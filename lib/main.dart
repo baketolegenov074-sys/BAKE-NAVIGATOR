@@ -1563,9 +1563,33 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   ml.LatLng _toMapLibrePoint(LatLng point) => ml.LatLng(point.latitude, point.longitude);
 
-  LatLng? get _gpsDisplayLocation => _navigationActive
-      ? _currentLocation
-      : (_freeDriveDisplayLocation ?? _currentLocation);
+  // One vehicle marker is used in both map renderers. During navigation
+  // prefer the road-matched/predicted position; keep raw GPS for routing,
+  // alerts and off-route detection.
+  LatLng? get _vehicleDisplayLocation {
+    if (_navigationActive) {
+      final matched = _navigationMatchedLocation;
+      final raw = _currentLocation;
+      if (matched != null && raw != null &&
+          _routePoints.length > 1 &&
+          _distanceToRouteMeters(raw) <= 100) {
+        return matched;
+      }
+      return raw;
+    }
+    return _freeDriveDisplayLocation ?? _currentLocation;
+  }
+
+  double get _vehicleDisplayBearing {
+    if (_navigationActive && _vehicleDisplayLocation != null &&
+        _routePoints.length > 1 &&
+        _currentLocation != null &&
+        _distanceToRouteMeters(_currentLocation!) <= 100) {
+      return _routeBearingAt(_vehicleDisplayLocation!);
+    }
+    return (_gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0) *
+        math.pi / 180.0;
+  }
 
   // Reject stale/inaccurate fixes and impossible jumps only for free-drive display.
   // Raw coordinates remain untouched for reports, cameras, speed limits and routing.
@@ -2288,80 +2312,45 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             fillOutlineColor: '#FFFFFF',
           ));
         }
-      // The navigation bird belongs to route progress, not to the raw GPS fix.
-      // It follows the projected position on the planned line only while the
-      // vehicle remains near that route; it never changes _currentLocation.
-      if (_navigationActive &&
-          _routePoints.length > 1 &&
-          _currentLocation != null &&
-          _distanceToRouteMeters(_currentLocation!) <= 100) {
-        final remaining = _remainingRoutePoints();
-        if (remaining.isNotEmpty) {
-          final routeBirdPosition = remaining.first;
-          final routeBirdBearing = _routeBearingAt(routeBirdPosition);
-          final haloOptions = ml.FillOptions(
-            geometry: [_directionArrowPolygon(
-              routeBirdPosition,
-              routeBirdBearing,
-              lengthMeters: 17,
-              halfWidthMeters: 6.5,
-            )],
-            fillColor: '#FFFFFF',
-            fillOpacity: 1,
-            fillOutlineColor: '#FFFFFF',
-          );
-          final existingHalo = _routePositionHaloFill;
-          if (existingHalo == null) {
-            _routePositionHaloFill = await controller.addFill(haloOptions);
-          } else {
-            await controller.updateFill(existingHalo, haloOptions);
-          }
-          final birdOptions = ml.FillOptions(
-            geometry: [_directionArrowPolygon(
-              routeBirdPosition,
-              routeBirdBearing,
-              lengthMeters: 14,
-              halfWidthMeters: 5.2,
-            )],
-            fillColor: '#0878F9',
-            fillOpacity: 1,
-            fillOutlineColor: '#FFFFFF',
-          );
-          final existingBird = _routePositionFill;
-          if (existingBird == null) {
-            _routePositionFill = await controller.addFill(birdOptions);
-          } else {
-            await controller.updateFill(existingBird, birdOptions);
-          }
-        }
-      }
-
-      // GPS is shown independently as a small blue dot at the exact fix.
-      final gpsDisplayPoint = _gpsDisplayLocation;
-      if (gpsDisplayPoint != null) {
-        final gpsHaloOptions = ml.FillOptions(
-          geometry: [_circlePolygon(gpsDisplayPoint, 7)],
+      // Render exactly one vehicle marker. Its position is the smoothed GPS
+      // fix in free drive and the road-matched/predicted GPS position during
+      // navigation. Do not draw a second GPS dot underneath the route arrow.
+      final vehiclePoint = _vehicleDisplayLocation;
+      if (vehiclePoint != null) {
+        final vehicleBearing = _vehicleDisplayBearing * 180.0 / math.pi;
+        final haloOptions = ml.FillOptions(
+          geometry: [_directionArrowPolygon(
+            vehiclePoint,
+            vehicleBearing,
+            lengthMeters: 18,
+            halfWidthMeters: 7,
+          )],
           fillColor: '#FFFFFF',
           fillOpacity: 1,
           fillOutlineColor: '#FFFFFF',
         );
-        final existingGpsHalo = _gpsPositionHaloFill;
-        if (existingGpsHalo == null) {
-          _gpsPositionHaloFill = await controller.addFill(gpsHaloOptions);
+        final existingHalo = _routePositionHaloFill;
+        if (existingHalo == null) {
+          _routePositionHaloFill = await controller.addFill(haloOptions);
         } else {
-          await controller.updateFill(existingGpsHalo, gpsHaloOptions);
+          await controller.updateFill(existingHalo, haloOptions);
         }
-        final gpsDotOptions = ml.FillOptions(
-          geometry: [_circlePolygon(gpsDisplayPoint, 4.5)],
+        final arrowOptions = ml.FillOptions(
+          geometry: [_directionArrowPolygon(
+            vehiclePoint,
+            vehicleBearing,
+            lengthMeters: 14,
+            halfWidthMeters: 5.5,
+          )],
           fillColor: '#0878F9',
           fillOpacity: 1,
           fillOutlineColor: '#FFFFFF',
         );
-        final existingGpsDot = _gpsPositionDotFill;
-        if (existingGpsDot == null) {
-          _gpsPositionDotFill = await controller.addFill(gpsDotOptions);
+        final existingArrow = _routePositionFill;
+        if (existingArrow == null) {
+          _routePositionFill = await controller.addFill(arrowOptions);
         } else {
-          await controller.updateFill(existingGpsDot, gpsDotOptions);
+          await controller.updateFill(existingArrow, arrowOptions);
         }
       }
       if (rebuildStaticAnnotations) {
@@ -8298,38 +8287,28 @@ _navigationMatchedLocation = null;
             child: _buildManeuverDistanceCue(),
           ),
         ),
-      if (_navigationActive &&
-          _routePoints.length > 1 &&
-          _currentLocation != null &&
-          _distanceToRouteMeters(_currentLocation!) <= 100 &&
-          visibleRoutePoints.isNotEmpty)
+      if (_vehicleDisplayLocation != null)
         Marker(
-          point: visibleRoutePoints.first,
-          width: 38,
-          height: 38,
+          point: _vehicleDisplayLocation!,
+          width: 40,
+          height: 40,
           child: Transform.rotate(
-            angle: _routeBearingAt(visibleRoutePoints.first) * math.pi / 180,
-            child: const Icon(
-              Icons.navigation,
-              color: Color(0xFF0878F9),
-              size: 32,
-              shadows: [Shadow(color: Colors.white, blurRadius: 5)],
-            ),
-          ),
-        ),
-      if (_currentLocation != null)
-        Marker(
-          point: _currentLocation!,
-          width: 14,
-          height: 14,
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF0878F9),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: const [
-                BoxShadow(color: Color(0x66000000), blurRadius: 3, offset: Offset(0, 1)),
-              ],
+            angle: _vehicleDisplayBearing,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF0878F9), width: 2),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x55000000), blurRadius: 4, offset: Offset(0, 1)),
+                ],
+              ),
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.navigation,
+                color: Color(0xFF0878F9),
+                size: 27,
+              ),
             ),
           ),
         ),
