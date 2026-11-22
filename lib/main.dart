@@ -946,6 +946,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   LatLng? _currentLocation;
+  // Smoothed marker/camera position for free-drive mode; raw GPS remains in _currentLocation.
+  LatLng? _freeDriveDisplayLocation;
+  DateTime? _freeDriveFixTimestamp;
   LatLng? _destination;
   String _selectedMapPointAddress = 'Адрес определяется…';
   int _routeRequestGeneration = 0;
@@ -1543,6 +1546,57 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   ml.LatLng _toMapLibrePoint(LatLng point) => ml.LatLng(point.latitude, point.longitude);
+
+  LatLng? get _gpsDisplayLocation => _navigationActive
+      ? _currentLocation
+      : (_freeDriveDisplayLocation ?? _currentLocation);
+
+  // Reject stale/inaccurate fixes and impossible jumps only for free-drive display.
+  // Raw coordinates remain untouched for reports, cameras, speed limits and routing.
+  LatLng _updateFreeDriveDisplayPosition(Position fix, LatLng rawPoint) {
+    final now = DateTime.now();
+    final fixAge = now.difference(fix.timestamp);
+    if (fixAge.isNegative || fixAge > const Duration(seconds: 10) ||
+        !fix.accuracy.isFinite || fix.accuracy > 60) {
+      return _freeDriveDisplayLocation ?? rawPoint;
+    }
+
+    final previous = _freeDriveDisplayLocation;
+    if (previous == null) {
+      _freeDriveDisplayLocation = rawPoint;
+      _freeDriveFixTimestamp = fix.timestamp;
+      return rawPoint;
+    }
+
+    final previousTimestamp = _freeDriveFixTimestamp;
+    final elapsed = previousTimestamp == null
+        ? 1.0
+        : (fix.timestamp.difference(previousTimestamp).inMilliseconds / 1000)
+            .clamp(0.25, 5.0).toDouble();
+    final distance = Geolocator.distanceBetween(
+      previous.latitude, previous.longitude,
+      rawPoint.latitude, rawPoint.longitude,
+    );
+    final reportedSpeed = fix.speed.isFinite && fix.speed > 0
+        ? fix.speed.clamp(0.0, 45.0).toDouble()
+        : 0.0;
+    final plausibleTravel = reportedSpeed * elapsed;
+    final jumpLimit = math.max(25.0, plausibleTravel * 2.0 +
+        math.min(fix.accuracy, 35.0) * 0.8);
+    if (distance > jumpLimit) {
+      return previous;
+    }
+
+    // Follow accepted fixes promptly while softening small coordinate jitter.
+    final factor = distance < 5 ? 0.75 : 0.60;
+    final smoothed = LatLng(
+      previous.latitude + (rawPoint.latitude - previous.latitude) * factor,
+      previous.longitude + (rawPoint.longitude - previous.longitude) * factor,
+    );
+    _freeDriveDisplayLocation = smoothed;
+    _freeDriveFixTimestamp = fix.timestamp;
+    return smoothed;
+  }
 
   LatLng get _mapCameraCenter {
     if (_isOfflineMapActive) {
@@ -2244,9 +2298,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
 
       // GPS is shown independently as a small blue dot at the exact fix.
-      if (_currentLocation != null) {
+      final gpsDisplayPoint = _gpsDisplayLocation;
+      if (gpsDisplayPoint != null) {
         final gpsHaloOptions = ml.FillOptions(
-          geometry: [_circlePolygon(_currentLocation!, 7)],
+          geometry: [_circlePolygon(gpsDisplayPoint, 7)],
           fillColor: '#FFFFFF',
           fillOpacity: 1,
           fillOutlineColor: '#FFFFFF',
@@ -2258,7 +2313,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           await controller.updateFill(existingGpsHalo, gpsHaloOptions);
         }
         final gpsDotOptions = ml.FillOptions(
-          geometry: [_circlePolygon(_currentLocation!, 4.5)],
+          geometry: [_circlePolygon(gpsDisplayPoint, 4.5)],
           fillColor: '#0878F9',
           fillOpacity: 1,
           fillOutlineColor: '#FFFFFF',
@@ -3097,6 +3152,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
       final point = LatLng(position.latitude, position.longitude);
       if (!mounted) return;
+      _freeDriveDisplayLocation = point;
+      _freeDriveFixTimestamp = position.timestamp;
       _mapFollowEnabled = true;
       setState(() {
         _currentLocation = point;
@@ -3202,6 +3259,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final wasWaitingForNavigationFix =
             _navigationActive && _currentLocation == null;
         final point = LatLng(position.latitude, position.longitude);
+        final displayPoint = _navigationActive
+            ? point
+            : _updateFreeDriveDisplayPosition(position, point);
         final navigationPoint = _navigationActive
             ? _matchNavigationPosition(position, point)
             : point;
@@ -3278,7 +3338,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (_appInForeground && cameraUpdateDue && _mapFollowEnabled && !_headingUpGestureActive) {
           _lastCameraUpdateAt = cameraNow;
           final cameraCenter = _mapCameraCenter;
-          final cameraTarget = _navigationActive ? navigationPoint : point;
+          final cameraTarget = _navigationActive ? navigationPoint : displayPoint;
           final shouldRecenter = Geolocator.distanceBetween(
                 cameraCenter.latitude, cameraCenter.longitude,
                 cameraTarget.latitude, cameraTarget.longitude,
