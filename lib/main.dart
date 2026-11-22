@@ -961,6 +961,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   List<LatLng> _routePoints = [];
   int _routeProgressSegmentIndex = 0;
   LatLng? _navigationMatchedLocation;
+  LatLng? _navigationFixMatchedLocation;
+  DateTime? _navigationFixTimestamp;
+  double _navigationFixSpeedMetersPerSecond = 0;
+  int _navigationFixSegmentIndex = 0;
+  double _navigationFixSegmentT = 0;
+  Timer? _navigationPredictionTimer;
   List<RouteInstruction> _instructions = [];
   int _instructionIndex = 0;
   bool _navigationActive = false;
@@ -1588,7 +1594,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         bearing: heading,
         tilt: _is3DMap ? 40 : 0,
       ),
-    ), duration: const Duration(milliseconds: 420)));
+    ), duration: Duration(milliseconds: _navigationActive ? 180 : 420)));
   }
 
   void _rotateMapCamera(double rotation) {
@@ -2101,7 +2107,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         // GPS refreshes must never remove the already-rendered route line.
         // Only route/style changes are allowed to replace route geometry.
         if (syncRoute) {
-          _lastRouteLineSyncPoint = _currentLocation;
+          _lastRouteLineSyncPoint = _navigationActive
+              ? (_navigationMatchedLocation ?? _currentLocation)
+              : _currentLocation;
           // Keep one GeoJSON source and its three style layers for this map
           // style. Updates replace source data without recreating the layers.
           await _setMapLibreRouteGeometry(controller, visibleRoutePoints);
@@ -2413,6 +2421,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _roadReportRetryTimer?.cancel();
     _positionSubscription?.cancel();
     _headingUpResumeTimer?.cancel();
+    _navigationPredictionTimer?.cancel();
     _disposeOfflineMap();
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -3203,13 +3212,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           }
         });
         final lastRouteLineSyncPoint = _lastRouteLineSyncPoint;
+        final routeDisplayPoint = _navigationActive ? navigationPoint : point;
         final shouldRefreshRouteLine = _navigationActive &&
             (lastRouteLineSyncPoint == null ||
                 Geolocator.distanceBetween(
                   lastRouteLineSyncPoint.latitude,
                   lastRouteLineSyncPoint.longitude,
-                  point.latitude,
-                  point.longitude,
+                  routeDisplayPoint.latitude,
+                  routeDisplayPoint.longitude,
                 ) >= 20);
         final annotationNow = DateTime.now();
         final shouldRefreshAnnotations = shouldRefreshRouteLine ||
@@ -4100,7 +4110,11 @@ _navigationMatchedLocation = null;
           : AppLocale.pick('Включаем фоновый GPS и голосовые подсказки…', 'Фондық GPS пен дауыстық нұсқаулар қосылуда…', 'Enabling background GPS and voice guidance…');
     });
     try {
-      // Keep the location stream active without blocking route start on first fix.
+      _navigationFixMatchedLocation = null;
+    _navigationFixTimestamp = null;
+    _navigationFixSpeedMetersPerSecond = 0;
+    _startNavigationPredictionTicker();
+    // Keep the location stream active without blocking route start on first fix.
       await _startLiveLocationUpdates(
         backgroundNavigation: true,
         waitForFirstFix: false,
@@ -5011,6 +5025,102 @@ _navigationMatchedLocation = null;
     }
   }
 
+  // Advance the last accepted route match between GPS callbacks. This is a
+  // short-horizon dead-reckoning estimate, not a replacement for raw GPS.
+  void _startNavigationPredictionTicker() {
+    _navigationPredictionTimer?.cancel();
+    _navigationPredictionTimer = Timer.periodic(
+      const Duration(milliseconds: 250),
+      (_) {
+        if (!mounted) return;
+        if (!_navigationActive) {
+          _navigationPredictionTimer?.cancel();
+          _navigationPredictionTimer = null;
+          return;
+        }
+        if (!_appInForeground) return;
+        final predicted = _predictNavigationPosition();
+        if (predicted == null) return;
+        _navigationMatchedLocation = predicted;
+
+        if (_mapFollowEnabled && !_headingUpGestureActive) {
+          final center = _mapCameraCenter;
+          final cameraDistance = Geolocator.distanceBetween(
+            center.latitude, center.longitude,
+            predicted.latitude, predicted.longitude,
+          );
+          if (cameraDistance >= 1.5) {
+            final heading = _routeBearingAt(predicted) ??
+                _gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0;
+            _updateNavigationCamera(
+              predicted,
+              math.max(_mapCameraZoom, 17.0).toDouble(),
+              heading,
+            );
+          }
+        }
+
+        final lastRouteSync = _lastRouteLineSyncPoint;
+        final refreshRoute = lastRouteSync == null ||
+            Geolocator.distanceBetween(
+              lastRouteSync.latitude, lastRouteSync.longitude,
+              predicted.latitude, predicted.longitude,
+            ) >= 20;
+        final now = DateTime.now();
+        if (refreshRoute || _lastMapAnnotationUpdateAt == null ||
+            now.difference(_lastMapAnnotationUpdateAt!) >=
+                const Duration(milliseconds: 250)) {
+          _lastMapAnnotationUpdateAt = now;
+          unawaited(_syncMapLibreAnnotations(updateRoute: refreshRoute));
+        }
+        _updateNavigationProgress(predicted);
+      },
+    );
+  }
+
+  LatLng? _predictNavigationPosition() {
+    final anchor = _navigationFixMatchedLocation;
+    final timestamp = _navigationFixTimestamp;
+    if (!_navigationActive || anchor == null || timestamp == null ||
+        _routePoints.length < 2) {
+      return _navigationMatchedLocation ?? anchor;
+    }
+    final ageSeconds = DateTime.now().difference(timestamp).inMilliseconds /
+        1000.0;
+    final predictionSeconds = ageSeconds.clamp(0.0, 4.0).toDouble();
+    final speed = _navigationFixSpeedMetersPerSecond.clamp(0.0, 40.0).toDouble();
+    var remainingMeters = speed * predictionSeconds;
+    if (remainingMeters < 0.5) return anchor;
+
+    var index = _navigationFixSegmentIndex
+        .clamp(0, _routePoints.length - 2).toInt();
+    var t = _navigationFixSegmentT.clamp(0.0, 1.0).toDouble();
+    while (index < _routePoints.length - 1) {
+      final a = _routePoints[index];
+      final b = _routePoints[index + 1];
+      final segmentMeters = Geolocator.distanceBetween(
+        a.latitude, a.longitude, b.latitude, b.longitude,
+      );
+      if (segmentMeters < 0.1) {
+        index++;
+        t = 0;
+        continue;
+      }
+      final availableMeters = segmentMeters * (1.0 - t);
+      if (remainingMeters <= availableMeters) {
+        final predictedT = t + remainingMeters / segmentMeters;
+        return LatLng(
+          a.latitude + (b.latitude - a.latitude) * predictedT,
+          a.longitude + (b.longitude - a.longitude) * predictedT,
+        );
+      }
+      remainingMeters -= availableMeters;
+      index++;
+      t = 0;
+    }
+    return _routePoints.last;
+  }
+
   // Snap accepted GPS fixes to the active route. Raw GPS remains untouched
   // for road alerts and off-route detection; only guidance and map-follow use
   // this road-matched position.
@@ -5078,10 +5188,17 @@ _navigationMatchedLocation = null;
     }
     final a = _routePoints[bestIndex];
     final b = _routePoints[bestIndex + 1];
-    return LatLng(
+    final matched = LatLng(
       a.latitude + (b.latitude - a.latitude) * bestT,
       a.longitude + (b.longitude - a.longitude) * bestT,
     );
+    _navigationFixMatchedLocation = matched;
+    _navigationFixTimestamp = fix.timestamp;
+    _navigationFixSpeedMetersPerSecond =
+        fix.speed.isFinite ? math.max(0.0, fix.speed).toDouble() : 0.0;
+    _navigationFixSegmentIndex = bestIndex;
+    _navigationFixSegmentT = bestT;
+    return matched;
   }
 
   void _updateNavigationProgress(LatLng position) {
