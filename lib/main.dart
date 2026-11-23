@@ -9130,53 +9130,6 @@ _navigationMatchedLocation = null;
               ),
             ),
           ),
-          if (!_isOfflineMapActive)
-            Positioned(
-              top: 334,
-              right: 14,
-              child: SafeArea(
-                bottom: false,
-                child: Material(
-                  color: _flutterMapExperimentEnabled
-                      ? const Color(0xFFE8F5E9)
-                      : Colors.white,
-                  elevation: 5,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: _flutterMapExperimentLoading
-                        ? null
-                        : _toggleFlutterMapExperiment,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_flutterMapExperimentLoading)
-                            const SizedBox(
-                              width: 15,
-                              height: 15,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          else
-                            const Icon(Icons.science_outlined, size: 18, color: Color(0xFF202020)),
-                          const SizedBox(width: 6),                          Text(
-                            _flutterMapExperimentEnabled
-                                ? 'FLUTTERMAP · ТЕСТ'
-                                : 'MAPLIBRE · ОСНОВНАЯ',
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF202020),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
           if (!_isOfflineMapActive && !_flutterMapExperimentEnabled)
             Positioned(
               top: 286,
