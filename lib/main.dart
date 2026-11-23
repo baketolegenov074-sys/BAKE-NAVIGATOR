@@ -6567,9 +6567,12 @@ _navigationMatchedLocation = null;
       final house = first(const ['house_number']);
       final city = first(const ['city', 'town', 'village', 'municipality']);
       final district = first(const ['suburb', 'city_district', 'district', 'neighbourhood']);
-      final name = (decoded['name'] ?? decoded['namedetails'] is Map
-          ? (decoded['namedetails'] as Map)['name']
-          : null)?.toString().trim() ?? '';
+      final namedetails = decoded['namedetails'];
+      final namedName = namedetails is Map
+          ? namedetails['name']?.toString().trim() ?? ''
+          : '';
+      final rawName = decoded['name']?.toString().trim() ?? '';
+      final name = rawName.isNotEmpty ? rawName : namedName;
       final parts = <String>[
         if (name.isNotEmpty && name != street && name != house) name,
         if (street.isNotEmpty) street,
