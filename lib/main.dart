@@ -3322,7 +3322,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       final records = prefs.getStringList('map_address_history_v1') ?? <String>[];
       final normalizedNeedle = needle.toLowerCase().replaceAll('ё', 'е')
           .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ').trim();
-      final tokens = normalizedNeedle.split(RegExp(r'\\s+')).where((v) => v.isNotEmpty).toList();
+      final tokens = normalizedNeedle.split(RegExp(r'\s+')).where((v) => v.isNotEmpty).toList();
       for (final rawRecord in records) {
         try {
           final record = jsonDecode(rawRecord);
