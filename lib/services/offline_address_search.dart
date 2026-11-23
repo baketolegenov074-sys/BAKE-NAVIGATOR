@@ -352,10 +352,36 @@ class OfflineAddressSearch {
       if (haystack.contains(normalizedQuery)) score += 60;
 
       final house = item['_houseFolded']?.toString() ?? '';
-      if (house.isNotEmpty && queryTokens.contains(house)) score += 45;
       final name = item['_nameFolded']?.toString() ?? '';
-      if (name.isNotEmpty && queryTokens.every((token) => name.contains(token))) score += 25;
       final street = item['_streetFolded']?.toString() ?? '';
+
+      // Address records must match their structured street/name and house
+      // number. The alias blob can contain unrelated POI names and postcodes.
+      if (house.isNotEmpty) {
+        final numericTokens = queryTokens
+            .where((token) => RegExp(r'^\\d').hasMatch(token))
+            .toList(growable: false);
+        if (numericTokens.isNotEmpty) {
+          final requestedHouse = numericTokens.join(' ');
+          final houseMatches = house == requestedHouse ||
+              house == numericTokens.last ||
+              house.endsWith(' $requestedHouse');
+          if (!houseMatches) continue;
+        }
+        final textTokens = queryTokens
+            .where((token) => !numericTokens.contains(token))
+            .toList(growable: false);
+        final addressWords = ('$street $name')
+            .split(' ')
+            .where((word) => word.isNotEmpty)
+            .toSet();
+        if (textTokens.isNotEmpty &&
+            !textTokens.every((token) => addressWords.contains(token))) {
+          continue;
+        }
+        if (numericTokens.isNotEmpty) score += 45;
+      }
+      if (name.isNotEmpty && queryTokens.every((token) => name.contains(token))) score += 25;
       if (street.isNotEmpty && queryTokens.every((token) => street.contains(token))) score += 18;
 
       final lat = (item['lat'] as num?)?.toDouble();
@@ -424,7 +450,7 @@ class OfflineAddressSearch {
       r'(?:^|\s)(?:участок|уч\.?)(?:\s|$)',
     ).hasMatch(normalized);
     normalized = normalized.replaceAll(
-      RegExp(r'(?:^|\s)(?:участок|уч\.?|дом|д\.?|кв\.?)(?=\s|$)'),
+      RegExp(r'(?:^|\\s)(?:участок|уч\\.?|дом|д\\.?|кв\\.?|улица|ул\\.?|проспект|пр-т|пр\\.?|переулок|пер\\.?|шоссе|бульвар|бул\\.?)(?=\\s|$)'),
       ' ',
     );
     if (hasParcelQualifier) {
