@@ -5884,8 +5884,8 @@ _navigationMatchedLocation = null;
           .join(';');
       Map<String, dynamic>? routeData;
 
-      // Valhalla currently supports a direct A→B request in this bridge.
-      // Keep OSRM for trips with intermediate stops and as an internet fallback.
+      // Valhalla handles direct Shymkent routes for both car and pedestrian
+      // costing. OSRM remains the fallback and handles intermediate stops.
       final destination = _destination!;
       final isInsideShymkentGraph =
           routeOrigin.latitude >= 42.12 &&
@@ -5896,7 +5896,7 @@ _navigationMatchedLocation = null;
           destination.latitude <= 42.53 &&
           destination.longitude >= 69.35 &&
           destination.longitude <= 69.90;
-      if (!_walkingMode && _routeStops.isEmpty && isInsideShymkentGraph) {
+      if (_routeStops.isEmpty && isInsideShymkentGraph) {
         if (!_valhallaReady) {
           // Never block route calculation on downloading or initializing the graph.
           // It continues in the background for the next route.
