@@ -3310,9 +3310,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
       _moveMapCamera(point, 16);
       final address = _photonFeatureAddress(selected);
-      setState(() => _message = address.isEmpty
-          ? AppLocale.pick('Адрес найден.', 'Мекенжай табылды.', 'Address found.')
-          : address);
+      setState(() {
+        if (!selectAsOrigin) {
+          // Keep the exact resolved destination address visible for the
+          // entire route lifecycle, including active navigation.
+          _selectedMapPointAddress = address.isEmpty ? query : address;
+        }
+        _message = address.isEmpty
+            ? AppLocale.pick('Адрес найден.', 'Мекенжай табылды.', 'Address found.')
+            : address;
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
@@ -3800,6 +3807,7 @@ _navigationMatchedLocation = null;
     setState(() {
       _routeReady = false;
       _routeActionDismissed = true;
+      _selectedMapPointAddress = '';
       _routeProgressSegmentIndex = 0;
 _navigationMatchedLocation = null;
       _routePoints = <LatLng>[];
@@ -3829,6 +3837,7 @@ _navigationMatchedLocation = null;
       _navigationActive = false;
       _routeActionDismissed = true;
       _routeReady = false;
+      _selectedMapPointAddress = '';
       _routeProgressSegmentIndex = 0;
 _navigationMatchedLocation = null;
       _routePoints = <LatLng>[];
@@ -8227,6 +8236,20 @@ _navigationMatchedLocation = null;
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              if (_destination != null && _selectedMapPointAddress.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 4),
+                                  child: Text(
+                                    'B · $_selectedMapPointAddress',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF202020),
+                                    ),
+                                  ),
+                                ),
                               Text(
                                 _routeDistanceMeters == null ? '— км' : '${(_routeDistanceMeters! / 1000).toStringAsFixed(1)} км',
                                 style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
@@ -8401,13 +8424,6 @@ _navigationMatchedLocation = null;
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (_selectedMapPointAddress.isNotEmpty)
-                            Text(
-                              'B · $_selectedMapPointAddress',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF202020)),
-                            ),
                           Text(
                             _routeSummary(),
                             maxLines: 1,
