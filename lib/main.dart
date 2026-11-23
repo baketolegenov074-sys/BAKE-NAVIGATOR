@@ -3721,6 +3721,56 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return Geolocator.distanceBetween(origin.latitude, origin.longitude, lat, lon);
   }
 
+  int _searchFeatureRelevanceScore(
+    Map<String, dynamic> feature,
+    String query,
+  ) {
+    final needle = query.trim().toLowerCase().replaceAll(RegExp(r'\\s+'), ' ');
+    if (needle.isEmpty) return 0;
+    final raw = feature['properties'];
+    final properties = raw is Map
+        ? Map<String, dynamic>.from(raw)
+        : <String, dynamic>{};
+    String value(String key) =>
+        (properties[key] ?? '').toString().trim().toLowerCase();
+    final name = value('name');
+    final label = value('display_label').isNotEmpty
+        ? value('display_label')
+        : _photonFeatureAddress(feature).toLowerCase();
+    var score = 0;
+    if (name == needle) {
+      score += 1200;
+    } else if (name.startsWith(needle)) {
+      score += 800;
+    } else if (name.contains(needle)) {
+      score += 500;
+    }
+    if (label == needle) {
+      score += 400;
+    } else if (label.startsWith(needle)) {
+      score += 250;
+    } else if (label.contains(needle)) {
+      score += 100;
+    }
+    if (_isLikelyCityQuery(query) && _isPhotonCityFeature(feature)) {
+      score += 180;
+    }
+    return score;
+  }
+
+  void _sortSearchFeatures(
+    List<Map<String, dynamic>> features,
+    String query,
+  ) {
+    features.sort((left, right) {
+      final relevance = _searchFeatureRelevanceScore(right, query)
+          .compareTo(_searchFeatureRelevanceScore(left, query));
+      if (relevance != 0) return relevance;
+      return (_photonFeatureDistanceMeters(left) ?? double.infinity)
+          .compareTo(_photonFeatureDistanceMeters(right) ?? double.infinity);
+    });
+  }
+
   String _formatSearchDistance(Map<String, dynamic> feature) {
     final distance = _photonFeatureDistanceMeters(feature);
     if (distance == null) return '—';
@@ -3778,7 +3828,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       requestUris.add(Uri.https('photon.komoot.io', '/api/', {
         'q': trimmed,
         'lang': 'ru',
-        'limit': '20',
+        'limit': '50',
         'countrycode': 'KZ',
         'location_bias_scale': '0.0',
       }));
@@ -3787,7 +3837,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       requestUris.add(Uri.https('photon.komoot.io', '/api/', {
         'q': apiQuery,
         'lang': 'ru',
-        'limit': '15',
+        'limit': '50',
+        if (includeCitySearch) 'countrycode': 'KZ',
       }));
     }
 
@@ -3801,18 +3852,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         'district': district,
         'housenumber': house,
         'lang': 'ru',
-        'limit': '15',
+        'limit': '30',
       }));
       requestUris.add(Uri.https('photon.komoot.io', '/structured', {
         'street': areaOrStreet,
         'housenumber': house,
         'lang': 'ru',
-        'limit': '15',
+        'limit': '30',
       }));
       requestUris.add(Uri.https('photon.komoot.io', '/api/', {
         'q': '$district $house',
         'lang': 'ru',
-        'limit': '15',
+        'limit': '30',
       }));
     }
 
@@ -3834,7 +3885,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (seen.add(identity)) merged.add(feature);
       }
     }
-    return merged.take(20).toList();
+    return merged.take(100).toList();
   }
 
   Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near}) async {
@@ -3885,13 +3936,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           query,
           includeCitySearch: true,
         ).timeout(const Duration(seconds: 8));
-        final cityResults = onlineResults.where(_isPhotonCityFeature);
-        final otherOnlineResults = onlineResults.where((feature) => !_isPhotonCityFeature(feature));
         final merged = <Map<String, dynamic>>[];
         final seen = <String>{};
         // Keep exact city matches ahead of the Shymkent local index so a
         // request such as "Тараз" cannot be buried under nearby local hits.
-        for (final feature in [...cityResults, ...localResults, ...otherOnlineResults]) {
+        for (final feature in onlineResults.toList()
+          ..sort((left, right) {
+            final relevance = _searchFeatureRelevanceScore(right, query)
+                .compareTo(_searchFeatureRelevanceScore(left, query));
+            if (relevance != 0) return relevance;
+            return (_photonFeatureDistanceMeters(left) ?? double.infinity)
+                .compareTo(_photonFeatureDistanceMeters(right) ?? double.infinity);
+          })) {
           final rawProperties = feature['properties'];
           final properties = rawProperties is Map
               ? Map<String, dynamic>.from(rawProperties)
@@ -3903,7 +3959,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               : '${properties['name'] ?? ''}:${coordinates is List && coordinates.length >= 2 ? coordinates[0] : ''}:${coordinates is List && coordinates.length >= 2 ? coordinates[1] : ''}';
           if (seen.add(identity)) merged.add(feature);
         }
-        return <Map<String, dynamic>>[...reportFeatures, ...merged];
+        final combined = <Map<String, dynamic>>[...reportFeatures, ...merged];
+        _sortSearchFeatures(combined, query);
+        return combined;
       } catch (error) {
         debugPrint('BAKE Photon address search unavailable: $error');
         return <Map<String, dynamic>>[...reportFeatures, ...localResults];
@@ -3943,6 +4001,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           ? (_currentLocation ?? _routeOrigin ?? _shymkent)
           : (_routeOrigin ?? _currentLocation ?? _shymkent);
       final results = await _fetchAddressFeatures(query, near: anchor);
+      if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
+        _sortSearchFeatures(results, query);
+      }
       if (!mounted) return;
       if (results.isEmpty) {
         setState(() => _message = AppLocale.pick(
@@ -6289,16 +6350,13 @@ _navigationMatchedLocation = null;
                                 );
                                 if (!searchContext.mounted) return;
                                 if (requestVersion != photonRequestVersion) return;
-                                final citySearch = _isLikelyCityQuery(value);
-                                found.sort((left, right) {
-                                  if (citySearch) {
-                                    final cityOrder = (_isPhotonCityFeature(right) ? 1 : 0)
-                                        .compareTo(_isPhotonCityFeature(left) ? 1 : 0);
-                                    if (cityOrder != 0) return cityOrder;
-                                  }
-                                  return (_photonFeatureDistanceMeters(left) ?? double.infinity)
-                                      .compareTo(_photonFeatureDistanceMeters(right) ?? double.infinity);
-                                });
+                                if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
+                                  _sortSearchFeatures(found, value);
+                                } else {
+                                  found.sort((left, right) =>
+                                      (_photonFeatureDistanceMeters(left) ?? double.infinity)
+                                          .compareTo(_photonFeatureDistanceMeters(right) ?? double.infinity));
+                                }
                                 refreshSearch(() {
                                   photonSuggestions = found;
                                   photonLoadingSuggestions = false;
@@ -7019,15 +7077,24 @@ _navigationMatchedLocation = null;
     if (!_routeReady || _routeAlternatives.length < 2) return false;
     var bestIndex = -1;
     var bestDistance = double.infinity;
+    var selectedDistance = double.infinity;
     for (var i = 0; i < _routeAlternatives.length; i++) {
       final points = _routePointsFromDecodedRoute(_routeAlternatives[i]);
       final distance = _distanceToPolylineMeters(point, points);
-      if (distance < bestDistance) {
+      if (i == _selectedRouteIndex) {
+        selectedDistance = distance;
+      } else if (distance < bestDistance) {
         bestDistance = distance;
         bestIndex = i;
       }
     }
-    if (bestIndex < 0 || bestIndex == _selectedRouteIndex) return false;
+    // A map tap away from the route must not switch to an arbitrary alternative.
+    // Prefer an alternative only when the finger is close to it and it is
+    // meaningfully closer than the currently selected route.
+    if (bestIndex < 0 || bestDistance > 45 ||
+        selectedDistance + 6 < bestDistance) {
+      return false;
+    }
     _applyAlternativeRouteTap(bestIndex);
     return true;
   }
