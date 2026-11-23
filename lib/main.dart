@@ -928,6 +928,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   final Map<String, int> _announcedRoadFeatureStages = <String, int>{};
   Timer? _roadReportRetryTimer;
   bool _roadReportRetryInProgress = false;
+  bool _confirmedRoadReportsLoadInProgress = false;
   final OfflineAddressSearch _offlineAddressSearch = OfflineAddressSearch();
   List<RoadAlert> _roadAlerts = <RoadAlert>[];
   List<RoadAlert> _bundledRoadAlerts = <RoadAlert>[];
@@ -5319,6 +5320,8 @@ _navigationMatchedLocation = null;
   }
 
   Future<void> _loadConfirmedRoadReports() async {
+    if (_confirmedRoadReportsLoadInProgress) return;
+    _confirmedRoadReportsLoadInProgress = true;
     try {
       final prefs = await SharedPreferences.getInstance();
       final rows = prefs.getStringList('bake_road_reports_v1') ?? <String>[];
@@ -5377,6 +5380,8 @@ _navigationMatchedLocation = null;
       unawaited(_syncMapLibreAnnotations());
     } catch (error) {
       debugPrint('Не удалось загрузить подтверждённые дорожные отметки: $error');
+    } finally {
+      _confirmedRoadReportsLoadInProgress = false;
     }
   }
 
