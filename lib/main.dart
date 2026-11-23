@@ -939,6 +939,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _roadAlertLookupInProgress = false;
   bool _showShymkentCamerasOnMap = true;
   int _kazakhVoiceId = 0;
+  bool _kazakhVoiceEnabled = false;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   DateTime? _lastNominatimRequestAt;
@@ -1437,6 +1438,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _selectedVoiceName = prefs.getString('voice_name');
       _selectedVoiceLocale = prefs.getString('voice_locale');
       _kazakhVoiceId = (prefs.getInt('kazakh_voice_sid') ?? 0).clamp(0, 5).toInt();
+      _kazakhVoiceEnabled = prefs.getBool('kazakh_voice_enabled') ?? false;
       await _tts.setLanguage(_navigationLanguage);
       await _tts.setSpeechRate(rate);
       await _tts.setVolume(volume);
@@ -1516,6 +1518,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       // Kazakh navigation speech is provided by BAKE's bundled ISSAI engine.
       // It must never depend on a Kazakh voice installed in Android.
       if (_navigationLanguage == 'kk-KZ') {
+        if (!_kazakhVoiceEnabled) return;
         await _kazakhVoiceService.speak(
           text: text,
           speakerId: _kazakhVoiceId,
@@ -2816,6 +2819,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     var rate = prefs.getDouble('voice_rate') ?? 0.48;
     var language = prefs.getString('navigation_language') ?? _navigationLanguage;
     var kazakhVoiceId = (prefs.getInt('kazakh_voice_sid') ?? _kazakhVoiceId).clamp(0, 5).toInt();
+    var kazakhVoiceEnabled = prefs.getBool('kazakh_voice_enabled') ?? false;
     var offlineVoiceBusy = false;
     var offlineVoiceReady = await _kazakhVoiceService.isInstalled;
     var offlineVoiceStatus = offlineVoiceReady ? 'Голос Иса уже скачан и доступен без интернета.' : '';
@@ -2849,6 +2853,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       progressTotal = -1;
       refreshSheet(() {});
       try {
+        kazakhVoiceEnabled = true;
+        _kazakhVoiceEnabled = true;
+        await prefs.setBool('kazakh_voice_enabled', true);
+        refreshSheet(() {});
         await _kazakhVoiceService.speak(
           text: 'Сәлем, мен Иса, жолға дайынмын!',
           speakerId: kazakhVoiceId,
@@ -2963,6 +2971,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                         _selectedVoiceLocale = null;
                         selectedKey = '';
                         await prefs.setString('navigation_language', value);
+                        if (value != 'kk-KZ') {
+                          kazakhVoiceEnabled = false;
+                          _kazakhVoiceEnabled = false;
+                          await prefs.setBool('kazakh_voice_enabled', false);
+                          await _kazakhVoiceService.stopAndUnload();
+                        }
                         await prefs.remove('voice_name');
                         await prefs.remove('voice_locale');
                         await _tts.setLanguage(value);
@@ -2975,6 +2989,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                   if (language == 'kk-KZ') ...[
                     const SizedBox(height: 14),
                     Text('Қазақша офлайн дауысы · ISSAI', style: const TextStyle(fontWeight: FontWeight.w700)),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Использовать голос Исай'),
+                      subtitle: const Text('Выключено — модель не загружается и не запускается автоматически.'),
+                      value: kazakhVoiceEnabled,
+                      onChanged: (value) async {
+                        kazakhVoiceEnabled = value;
+                        _kazakhVoiceEnabled = value;
+                        await prefs.setBool('kazakh_voice_enabled', value);
+                        if (!value) {
+                          await _kazakhVoiceService.stopAndUnload();
+                          offlineVoiceStatus = 'Голос Исай выключен. Файл модели сохранён на телефоне.';
+                        } else {
+                          offlineVoiceStatus = 'Голос Исай включён. Загрузка начнётся при проверке голоса или навигационной подсказке.';
+                        }
+                        refresh(() {});
+                      },
+                    ),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<int>(
                       value: kazakhVoiceId,
