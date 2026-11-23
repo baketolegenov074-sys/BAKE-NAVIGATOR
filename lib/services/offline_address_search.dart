@@ -200,6 +200,7 @@ class OfflineAddressSearch {
             record['_nameFolded'] = _fold(record['name']?.toString() ?? '');
             record['_streetFolded'] = _fold(record['street']?.toString() ?? '');
             record['_houseFolded'] = _fold(record['house']?.toString() ?? '');
+            record['_districtFolded'] = _fold(record['district']?.toString() ?? '');
             return record;
           })
           .toList(growable: false);
@@ -368,10 +369,12 @@ class OfflineAddressSearch {
               house.endsWith(' $requestedHouse');
           if (!houseMatches) continue;
         }
+        final houseWords = house.split(' ').where((word) => word.isNotEmpty).toSet();
         final textTokens = queryTokens
-            .where((token) => !numericTokens.contains(token))
+            .where((token) => !(numericTokens.contains(token) && houseWords.contains(token)))
             .toList(growable: false);
-        final addressWords = ('$street $name')
+        final district = item['_districtFolded']?.toString() ?? '';
+        final addressWords = ('$street $name $district')
             .split(' ')
             .where((word) => word.isNotEmpty)
             .toSet();
@@ -409,6 +412,7 @@ class OfflineAddressSearch {
           'name': name,
           'street': street,
           'housenumber': house,
+          'district': item['district']?.toString() ?? '',
           'city': 'Шымкент',
           'label': label,
           'type': item['kind']?.toString() ?? 'place',
