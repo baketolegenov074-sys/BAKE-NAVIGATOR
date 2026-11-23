@@ -2857,24 +2857,41 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         : <String, dynamic>{};
     String value(String key) =>
         (properties[key] ?? '').toString().trim().toLowerCase();
-    final name = value('name');
-    final label = value('display_label').isNotEmpty
-        ? value('display_label')
-        : _photonFeatureAddress(feature).toLowerCase();
+    String normalize(String value) => value
+        .replaceAll('ё', 'е')
+        .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ')
+        .replaceAll(RegExp(r'\\s+'), ' ')
+        .trim();
+    final normalizedNeedle = normalize(needle);
+    final name = normalize(value('name'));
+    final label = normalize([
+      value('display_label'),
+      value('label'),
+      value('address'),
+      value('street'),
+      value('housenumber'),
+      value('house_number'),
+      value('district'),
+      value('suburb'),
+      value('city'),
+      value('name'),
+    ].where((part) => part.isNotEmpty).join(' '));
     var score = 0;
-    if (name == needle) {
+    if (name == normalizedNeedle) {
       score += 1200;
-    } else if (name.startsWith(needle)) {
+    } else if (name.startsWith(normalizedNeedle)) {
       score += 800;
-    } else if (name.contains(needle)) {
+    } else if (name.contains(normalizedNeedle)) {
       score += 500;
     }
-    if (label == needle) {
-      score += 400;
-    } else if (label.startsWith(needle)) {
-      score += 250;
-    } else if (label.contains(needle)) {
-      score += 100;
+    if (label == normalizedNeedle) {
+      score += 600;
+    } else if (label.contains(normalizedNeedle)) {
+      score += 350;
+    }
+    final queryTokens = normalizedNeedle.split(' ').where((token) => token.isNotEmpty);
+    if (queryTokens.isNotEmpty && queryTokens.every(label.contains)) {
+      score += 300;
     }
     if (_isLikelyCityQuery(query) && _isPhotonCityFeature(feature)) {
       // A countrywide settlement match must outrank nearby Shymkent POIs
@@ -3173,11 +3190,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final searchable = [
           properties['name'],
           properties['display_label'],
+          properties['label'],
+          properties['address'],
           properties['street'],
+          properties['housenumber'],
+          properties['house_number'],
           properties['district'],
+          properties['suburb'],
+          properties['city'],
         ].whereType<Object>().join(' ').toLowerCase()
             .replaceAll('ё', 'е')
-            .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ');
+            .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ')
+            .replaceAll(RegExp(r'\\s+'), ' ')
+            .trim();
         return queryTokens.isNotEmpty &&
             queryTokens.every((token) => searchable.contains(token));
       });
