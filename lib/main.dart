@@ -2834,7 +2834,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       score += 100;
     }
     if (_isLikelyCityQuery(query) && _isPhotonCityFeature(feature)) {
-      score += 180;
+      // A countrywide settlement match must outrank nearby Shymkent POIs
+      // returned by the local index for the same short city-name query.
+      score += 1000;
     }
     return score;
   }
