@@ -131,6 +131,7 @@ class KazakhVoiceService {
   Isolate? _isolate;
   SendPort? _workerPort;
   Completer<void>? _ready;
+  Completer<void>? _disposed;
   Future<void>? _starting;
   int _requestId = 0;
   Future<void> _speechQueue = Future<void>.value();
@@ -326,10 +327,12 @@ class KazakhVoiceService {
     final token = CancelToken();
     _downloadCancelToken = token;
     final modelDir = await _downloadAndExtractModel(cancelToken: token, onProgress: onProgress, onStage: onStage);
+    token.throwIfCancelled();
     onStage?.call('initializing');
     // sherpa-onnx 2.x no longer embeds eSpeak/Piper phonemization.
     if (!_phonemizerInitialized) {
       await piper.initBindingsAsync();
+      token.throwIfCancelled();
       final result = piper.PiperPhonemize.initialize('$modelDir/espeak-ng-data');
       if (result < 0) throw Exception('Не удалось инициализировать казахский фонетизатор eSpeak-NG.');
       _phonemizerInitialized = true;
@@ -346,7 +349,9 @@ class KazakhVoiceService {
       }
       if (message is! Map) return;
       final type = message['type'];
-      if (type == 'ready') {
+      if (type == 'disposed') {
+        if (!(_disposed?.isCompleted ?? true)) _disposed!.complete();
+      } else if (type == 'ready') {
         final modelVoice = message['lang']?.toString().trim() ?? '';
         _phonemizerVoice = modelVoice.isEmpty ? 'kk' : modelVoice;
         if (!(_ready?.isCompleted ?? true)) _ready!.complete();
@@ -492,8 +497,27 @@ class KazakhVoiceService {
     _downloadCancelToken?.cancel('Kazakh voice disabled or language changed');
     _downloadCancelToken = null;
     await _player.stop();
-    _workerPort?.send({'command': 'dispose'});
-    _isolate?.kill(priority: Isolate.immediate);
+
+    // Ask Sherpa to release its native model before terminating the worker.
+    // A short timeout prevents a stuck native call from blocking language changes.
+    final worker = _workerPort;
+    final isolate = _isolate;
+    if (worker != null && isolate != null) {
+      final disposed = Completer<void>();
+      _disposed = disposed;
+      worker.send({'command': 'dispose'});
+      try {
+        await disposed.future.timeout(const Duration(seconds: 2));
+      } on TimeoutException {
+        // The isolate is force-terminated below if native cleanup stalls.
+      }
+      _disposed = null;
+    }
+
+    if (_ready != null && !_ready!.isCompleted) {
+      _ready!.completeError(StateError('Kazakh voice stopped'));
+    }
+    isolate?.kill(priority: Isolate.immediate);
     _isolate = null;
     _workerPort = null;
     _receivePort?.close();
@@ -613,6 +637,7 @@ void _kazakhTtsWorker(SendPort mainPort) {
     } else if (command == 'dispose') {
       engine?.free();
       engine = null;
+      mainPort.send({'type': 'disposed'});
       receivePort.close();
     }
   });
