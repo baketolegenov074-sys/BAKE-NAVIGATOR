@@ -6039,16 +6039,47 @@ _navigationMatchedLocation = null;
   bool _alternativeTapInProgress = false;
 
   bool _trySelectAlternativeAt(LatLng point) {
-    // Keep the offline FlutterMap hit test unchanged.
     if (_lastMapPointerHoldDuration >= const Duration(seconds: 1)) return false;
     if (!_routeReady || _routeAlternatives.length < 2) return false;
+
+    final hitTestRoutes = _cachedAlternativeHitTestPoints();
+
+    // Preserve the existing offline-map hit test. The online map uses
+    // screen-space distances so the touch target stays usable at every zoom.
+    if (_isOfflineMapActive) {
+      var bestIndex = -1;
+      var bestDistance = double.infinity;
+      var selectedDistance = double.infinity;
+      for (var i = 0; i < _routeAlternatives.length; i++) {
+        final distance = _distanceToPolylineMeters(point, hitTestRoutes[i]);
+        if (i == _selectedRouteIndex) {
+          selectedDistance = distance;
+        } else if (distance < bestDistance) {
+          bestDistance = distance;
+          bestIndex = i;
+        }
+      }
+      if (bestIndex < 0 || bestDistance > 45 ||
+          selectedDistance + 6 < bestDistance) {
+        return false;
+      }
+      _applyAlternativeRouteTap(bestIndex);
+      return true;
+    }
+
+    if (!_offlineMapReady) return false;
+    final camera = _mapController.camera;
+    final tapPosition = camera.latLngToScreenPoint(point);
     var bestIndex = -1;
     var bestDistance = double.infinity;
     var selectedDistance = double.infinity;
-    final hitTestRoutes = _cachedAlternativeHitTestPoints();
-    for (var i = 0; i < _routeAlternatives.length; i++) {
-      final points = hitTestRoutes[i];
-      final distance = _distanceToPolylineMeters(point, points);
+
+    for (var i = 0; i < hitTestRoutes.length; i++) {
+      final distance = _distanceToPolylineScreenPixels(
+        tapPosition,
+        hitTestRoutes[i],
+        camera,
+      );
       if (i == _selectedRouteIndex) {
         selectedDistance = distance;
       } else if (distance < bestDistance) {
@@ -6056,18 +6087,45 @@ _navigationMatchedLocation = null;
         bestIndex = i;
       }
     }
-    // A map tap away from the route must not switch to an arbitrary alternative.
-    // Prefer an alternative only when the finger is close to it and it is
-    // meaningfully closer than the currently selected route.
-    // A map tap away from the route must not switch to an arbitrary alternative.
-    // Prefer an alternative only when the finger is close to it and it is
-    // meaningfully closer than the currently selected route.
-    if (bestIndex < 0 || bestDistance > 45 ||
-        selectedDistance + 6 < bestDistance) {
+
+    // 40 logical pixels gives the finger a forgiving target without
+    // changing the visible route width. At near-equal crossings keep the
+    // current route to avoid an arbitrary switch.
+    if (bestIndex < 0 || bestDistance > 40 ||
+        selectedDistance <= bestDistance + 3) {
       return false;
     }
+
     _applyAlternativeRouteTap(bestIndex);
     return true;
+  }
+
+  double _distanceToPolylineScreenPixels(
+    math.Point<double> position,
+    List<LatLng> points,
+    MapCamera camera,
+  ) {
+    if (points.length < 2) return double.infinity;
+    var best = double.infinity;
+    for (var i = 0; i < points.length - 1; i++) {
+      final a = camera.latLngToScreenPoint(points[i]);
+      final b = camera.latLngToScreenPoint(points[i + 1]);
+      final dx = b.x - a.x;
+      final dy = b.y - a.y;
+      final lengthSquared = dx * dx + dy * dy;
+      final t = lengthSquared == 0
+          ? 0.0
+          : (((position.x - a.x) * dx + (position.y - a.y) * dy) /
+                  lengthSquared)
+              .clamp(0.0, 1.0)
+              .toDouble();
+      final offsetX = position.x - a.x - t * dx;
+      final offsetY = position.y - a.y - t * dy;
+      best = math.min(best, math.sqrt(
+        offsetX * offsetX + offsetY * offsetY,
+      ));
+    }
+    return best;
   }
 
   // FlutterMap uses the map-local tap coordinate to project each
