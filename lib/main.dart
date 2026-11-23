@@ -2886,7 +2886,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
         'Accept': 'application/json',
         'Accept-Language': 'ru,kk,en',
-      }).timeout(const Duration(seconds: 6));
+      }).timeout(const Duration(seconds: 5));
       if (response.statusCode != 200) {
         debugPrint('BAKE Nominatim city search: HTTP ${response.statusCode}; query="${query.trim()}"; bytes=${response.bodyBytes.length}');
         return <Map<String, dynamic>>[];
@@ -2939,24 +2939,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false}) async {
     Future<List<Map<String, dynamic>>> request(Uri uri) async {
-      final response = await http.get(uri, headers: const {
-        'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
-        'Accept': 'application/geo+json, application/json',
-      }).timeout(const Duration(seconds: 7));
-      if (response.statusCode != 200) return <Map<String, dynamic>>[];
-      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      if (decoded is! Map) return <Map<String, dynamic>>[];
-      final rawFeatures = decoded['features'];
-      if (rawFeatures is! List) return <Map<String, dynamic>>[];
-      return rawFeatures.whereType<Map>().map(
-        (item) => Map<String, dynamic>.from(item),
-      ).where((feature) {
-        final geometry = feature['geometry'];
-        final coordinates = geometry is Map ? geometry['coordinates'] : null;
-        return coordinates is List && coordinates.length >= 2 &&
-            double.tryParse(coordinates[0].toString()) != null &&
-            double.tryParse(coordinates[1].toString()) != null;
-      }).toList();
+      try {
+        final response = await http.get(uri, headers: const {
+          'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+          'Accept': 'application/geo+json, application/json',
+        }).timeout(const Duration(seconds: 7));
+        if (response.statusCode != 200) {
+          debugPrint('BAKE Photon search: HTTP ${response.statusCode}; path=${uri.path}');
+          return <Map<String, dynamic>>[];
+        }
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        if (decoded is! Map) return <Map<String, dynamic>>[];
+        final rawFeatures = decoded['features'];
+        if (rawFeatures is! List) return <Map<String, dynamic>>[];
+        return rawFeatures.whereType<Map>().map(
+          (item) => Map<String, dynamic>.from(item),
+        ).where((feature) {
+          final geometry = feature['geometry'];
+          final coordinates = geometry is Map ? geometry['coordinates'] : null;
+          return coordinates is List && coordinates.length >= 2 &&
+              double.tryParse(coordinates[0].toString()) != null &&
+              double.tryParse(coordinates[1].toString()) != null;
+        }).toList();
+      } catch (error) {
+        debugPrint('BAKE Photon search failed: path=${uri.path}; error=$error');
+        return <Map<String, dynamic>>[];
+      }
     }
 
     final trimmed = query.trim();
