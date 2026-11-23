@@ -109,22 +109,115 @@ def coordinate_pairs(value: Any) -> Iterator[tuple[float, float]]:
             yield from coordinate_pairs(child)
 
 
+def _valid_point(value: Any) -> tuple[float, float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        return None
+    if not isinstance(value[0], (int, float)) or not isinstance(value[1], (int, float)):
+        return None
+    lon, lat = float(value[0]), float(value[1])
+    if not (math.isfinite(lon) and math.isfinite(lat)):
+        return None
+    return lon, lat
+
+
+def _line_midpoint(line: Any) -> tuple[float, float] | None:
+    if not isinstance(line, (list, tuple)):
+        return None
+    points = [point for point in (_valid_point(value) for value in line) if point]
+    if len(points) < 2:
+        return points[0] if points else None
+    mean_lat = sum(point[1] for point in points) / len(points)
+    x_scale = max(0.01, math.cos(math.radians(mean_lat)))
+    lengths = [
+        math.hypot((b[0] - a[0]) * x_scale, b[1] - a[1])
+        for a, b in zip(points, points[1:])
+    ]
+    total = sum(lengths)
+    if total <= 1e-15:
+        return points[0]
+    target = total / 2
+    travelled = 0.0
+    for a, b, length in zip(points, points[1:], lengths):
+        if travelled + length >= target and length > 0:
+            fraction = (target - travelled) / length
+            return (
+                a[0] + (b[0] - a[0]) * fraction,
+                a[1] + (b[1] - a[1]) * fraction,
+            )
+        travelled += length
+    return points[-1]
+
+
+def _polygon_centroid(polygon: Any) -> tuple[float, float, float] | None:
+    if not isinstance(polygon, (list, tuple)) or not polygon:
+        return None
+    ring = polygon[0]  # outer ring; holes do not affect the representative point
+    if not isinstance(ring, (list, tuple)):
+        return None
+    points = [point for point in (_valid_point(value) for value in ring) if point]
+    if len(points) > 1 and points[0] == points[-1]:
+        points.pop()
+    if len(points) < 3:
+        return None
+    cross_sum = 0.0
+    cx_sum = 0.0
+    cy_sum = 0.0
+    for a, b in zip(points, points[1:] + points[:1]):
+        cross = a[0] * b[1] - b[0] * a[1]
+        cross_sum += cross
+        cx_sum += (a[0] + b[0]) * cross
+        cy_sum += (a[1] + b[1]) * cross
+    if abs(cross_sum) <= 1e-15:
+        return None
+    lon = cx_sum / (3.0 * cross_sum)
+    lat = cy_sum / (3.0 * cross_sum)
+    return lon, lat, abs(cross_sum) / 2.0
+
+
 def feature_point(feature: dict[str, Any]) -> tuple[float, float] | None:
     geometry = feature.get("geometry") or {}
-    coordinates = geometry.get("coordinates")
-    if geometry.get("type") == "Point":
-        pairs = list(coordinate_pairs(coordinates))
-        if not pairs:
-            return None
-        return pairs[0]
-    pairs = list(coordinate_pairs(coordinates))
-    if not pairs:
+    if not isinstance(geometry, dict):
         return None
-    # For a building polygon or a named road, the average of its vertices is
-    # a stable searchable point and avoids adding a geometry dependency.
-    lon = sum(point[0] for point in pairs) / len(pairs)
-    lat = sum(point[1] for point in pairs) / len(pairs)
-    return lon, lat
+    geometry_type = geometry.get("type")
+    coordinates = geometry.get("coordinates")
+    if geometry_type == "Point":
+        return _valid_point(coordinates)
+    if geometry_type == "LineString":
+        return _line_midpoint(coordinates)
+    if geometry_type == "MultiLineString":
+        lines = coordinates if isinstance(coordinates, (list, tuple)) else []
+        midpoint_candidates = [
+            (_line_midpoint(line), line) for line in lines
+        ]
+        best: tuple[float, float] | None = None
+        best_length = -1.0
+        for midpoint, line in midpoint_candidates:
+            if midpoint is None:
+                continue
+            points = [point for point in (_valid_point(value) for value in line) if point]
+            mean_lat = sum(point[1] for point in points) / len(points)
+            x_scale = max(0.01, math.cos(math.radians(mean_lat)))
+            length = sum(
+                math.hypot((b[0] - a[0]) * x_scale, b[1] - a[1])
+                for a, b in zip(points, points[1:])
+            )
+            if length > best_length:
+                best, best_length = midpoint, length
+        return best
+    if geometry_type == "Polygon":
+        centroid = _polygon_centroid(coordinates)
+        return (centroid[0], centroid[1]) if centroid else None
+    if geometry_type == "MultiPolygon":
+        polygons = coordinates if isinstance(coordinates, (list, tuple)) else []
+        centroids = [
+            centroid for centroid in (_polygon_centroid(polygon) for polygon in polygons)
+            if centroid is not None
+        ]
+        if not centroids:
+            return None
+        largest = max(centroids, key=lambda item: item[2])
+        return largest[0], largest[1]
+    return None
 
 
 def values_for(properties: dict[str, Any], keys: tuple[str, ...]) -> list[str]:
@@ -183,13 +276,11 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
         ).capitalize()
 
     if house and street:
+        # An address must be displayed from its address tags, not a nearby
+        # business brand/operator name attached to the same OSM feature.
         label = f"{street}, {house}"
-        if primary_name and primary_name != street:
-            label = f"{primary_name}, {street}, {house}"
     elif house and district:
         label = f"{district}, {house}"
-        if primary_name:
-            label = f"{primary_name}, {district}, {house}"
     elif primary_name:
         label = primary_name
         if street and street != primary_name:
