@@ -2881,15 +2881,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       'countrycodes': 'kz',
       'featureType': 'city',
     });
-    final response = await http.get(uri, headers: const {
-      'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
-      'Accept': 'application/json',
-    }).timeout(const Duration(seconds: 8));
-    if (response.statusCode != 200) return <Map<String, dynamic>>[];
+    try {
+      final response = await http.get(uri, headers: const {
+        'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+        'Accept': 'application/json',
+        'Accept-Language': 'ru,kk,en',
+      }).timeout(const Duration(seconds: 6));
+      if (response.statusCode != 200) {
+        debugPrint('BAKE Nominatim city search: HTTP ${response.statusCode}; query="${query.trim()}"; bytes=${response.bodyBytes.length}');
+        return <Map<String, dynamic>>[];
+      }
 
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-    if (decoded is! List) return <Map<String, dynamic>>[];
-    return decoded.whereType<Map>().map((item) {
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! List) {
+        debugPrint('BAKE Nominatim city search: unexpected JSON type ${decoded.runtimeType}');
+        return <Map<String, dynamic>>[];
+      }
+      final features = decoded.whereType<Map>().map((item) {
       final result = Map<String, dynamic>.from(item);
       final addressRaw = result['address'];
       final address = addressRaw is Map
@@ -2920,7 +2928,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           'coordinates': <double>[lon, lat],
         },
       };
-    }).where((feature) => feature.isNotEmpty).toList();
+      }).where((feature) => feature.isNotEmpty).toList();
+      debugPrint('BAKE Nominatim city search: HTTP 200; query="${query.trim()}"; results=${features.length}');
+      return features;
+    } catch (error) {
+      debugPrint('BAKE Nominatim city search failed: query="${query.trim()}"; error=$error');
+      return <Map<String, dynamic>>[];
+    }
   }
 
   Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false}) async {
@@ -2968,11 +2982,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       caseSensitive: false,
     ).firstMatch(trimmed);
     final requestUris = <Uri>[];
-    // Intercity settlement lookup uses Nominatim; all ordinary Photon
-    // address and POI requests below remain unchanged.
-    final nominatimCityResults = includeCitySearch && _isLikelyCityQuery(trimmed)
-        ? await _fetchNominatimCityFeatures(trimmed)
-        : <Map<String, dynamic>>[];
+    // Start the city lookup alongside Photon so a slow Nominatim response
+    // cannot consume the entire online-search timeout before Photon starts.
+    final nominatimCityFuture = includeCitySearch && _isLikelyCityQuery(trimmed)
+        ? _fetchNominatimCityFeatures(trimmed)
+        : Future<List<Map<String, dynamic>>>.value(<Map<String, dynamic>>[]);
     for (final apiQuery in apiQueries.take(3)) {
       requestUris.add(Uri.https('photon.komoot.io', '/api/', {
         'q': apiQuery,
@@ -3010,6 +3024,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final groups = await Future.wait(
       requestUris.toSet().map(request),
     );
+    final nominatimCityResults = await nominatimCityFuture;
     final merged = <Map<String, dynamic>>[...nominatimCityResults];
     final seen = <String>{};
     for (final group in groups) {
