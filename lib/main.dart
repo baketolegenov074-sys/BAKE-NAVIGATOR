@@ -2798,6 +2798,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       if (district.isNotEmpty) district].join(', ');
   }
 
+  String _photonDestinationAddress(Map<String, dynamic> feature) {
+    final streetAddress = _photonFeatureStreetAddress(feature);
+    return streetAddress.isNotEmpty ? streetAddress : _photonFeatureAddress(feature);
+  }
+
   double? _photonFeatureDistanceMeters(Map<String, dynamic> feature) {
     final origin = _currentLocation;
     final geometry = feature['geometry'];
@@ -3309,7 +3314,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         shouldBuildRoute = true;
       }
       _moveMapCamera(point, 16);
-      final address = _photonFeatureAddress(selected);
+      final address = _photonDestinationAddress(selected);
       setState(() {
         if (!selectAsOrigin) {
           // Keep the exact resolved destination address visible for the
@@ -6404,7 +6409,7 @@ _navigationMatchedLocation = null;
       return 'Адрес не найден.';
     }
     final feature = Map<String, dynamic>.from(rawFeatures.first as Map);
-    final address = _photonFeatureAddress(feature);
+    final address = _photonDestinationAddress(feature);
     return address.isEmpty ? 'Адрес не найден.' : address;
   }
 
