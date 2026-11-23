@@ -5761,8 +5761,14 @@ _navigationMatchedLocation = null;
     final lonScale = 111320.0 * math.cos(position.latitude * math.pi / 180);
     final px = position.longitude * lonScale;
     final py = position.latitude * latScale;
+    // Only compare against the route still ahead of the vehicle. Including
+    // already-driven segments can hide a missed turn on a nearby parallel road.
+    final firstSegment = math.max(
+      _routeProgressSegmentIndex,
+      _navigationFixSegmentIndex,
+    ).clamp(0, _routePoints.length - 2).toInt();
     var best = double.infinity;
-    for (var i = 0; i < _routePoints.length - 1; i++) {
+    for (var i = firstSegment; i < _routePoints.length - 1; i++) {
       final a = _routePoints[i];
       final b = _routePoints[i + 1];
       final ax = a.longitude * lonScale;
@@ -5789,8 +5795,12 @@ _navigationMatchedLocation = null;
 
   void _checkForOffRoute(Position position) {
     if (!_navigationActive || _isBuildingRoute || _destination == null) return;
-    // Ignore poor fixes; a bad GPS point must not trigger a false reroute.
-    if (position.accuracy > 35 || _routePoints.length < 2) return;
+    // Allow normal urban GPS variation, but reject stale/very inaccurate fixes.
+    // Two consecutive off-route fixes are still required to avoid false reroutes.
+    if (!position.accuracy.isFinite ||
+        position.accuracy <= 0 ||
+        position.accuracy > 60 ||
+        _routePoints.length < 2) return;
     final now = DateTime.now();
     if (_lastAutomaticReroute != null &&
         now.difference(_lastAutomaticReroute!) < const Duration(seconds: 4)) {
