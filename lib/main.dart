@@ -6045,29 +6045,9 @@ _navigationMatchedLocation = null;
 
     final hitTestRoutes = _cachedAlternativeHitTestPoints();
 
-    // Preserve the existing offline-map hit test. The online map uses
-    // screen-space distances so the touch target stays usable at every zoom.
-    if (_isOfflineMapActive) {
-      var bestIndex = -1;
-      var bestDistance = double.infinity;
-      var selectedDistance = double.infinity;
-      for (var i = 0; i < _routeAlternatives.length; i++) {
-        final distance = _distanceToPolylineMeters(point, hitTestRoutes[i]);
-        if (i == _selectedRouteIndex) {
-          selectedDistance = distance;
-        } else if (distance < bestDistance) {
-          bestDistance = distance;
-          bestIndex = i;
-        }
-      }
-      if (bestIndex < 0 || bestDistance > 45 ||
-          selectedDistance + 6 < bestDistance) {
-        return false;
-      }
-      _applyAlternativeRouteTap(bestIndex);
-      return true;
-    }
-
+    // Use the same screen-space hit test in online and offline modes.
+    // The map is rendered by FlutterMap in both cases, so this keeps the
+    // touch target consistent regardless of the active tile provider.
     if (!_offlineMapReady) return false;
     final camera = _mapController.camera;
     final tapPosition = camera.latLngToScreenPoint(point);
@@ -6089,9 +6069,8 @@ _navigationMatchedLocation = null;
       }
     }
 
-    // 40 logical pixels gives the finger a forgiving target without
-    // changing the visible route width. At near-equal crossings keep the
-    // current route to avoid an arbitrary switch.
+    // A 40 logical-pixel touch radius works at every zoom level.
+    // At route crossings, keep the current route when distances are close.
     if (bestIndex < 0 || bestDistance > 40 ||
         selectedDistance <= bestDistance + 3) {
       return false;
