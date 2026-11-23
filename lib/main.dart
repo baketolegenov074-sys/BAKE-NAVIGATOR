@@ -6886,7 +6886,7 @@ _navigationMatchedLocation = null;
       }
     }
     if (bestIndex < 0 || bestIndex == _selectedRouteIndex) return false;
-    _applyAlternativeRouteTap(bestAlternativeIndex);
+    _applyAlternativeRouteTap(bestIndex);
     return true;
   }
 
@@ -6957,7 +6957,7 @@ _navigationMatchedLocation = null;
           activeRouteDistance + 6 < bestAlternativeDistance) {
         return;
       }
-      _applyAlternativeRouteTap(bestIndex);
+      _applyAlternativeRouteTap(bestAlternativeIndex);
     } catch (error) {
       debugPrint('BAKE Navigator: online alternative route hit-test failed: $error');
     } finally {
