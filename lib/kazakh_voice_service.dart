@@ -287,6 +287,7 @@ class KazakhVoiceService {
         onStage?.call('extracting');
         return await _extractArchive(archiveFile);
       } catch (error) {
+        if (cancelToken.isCancelled) rethrow;
         if (attempt == 4) {
           if (error is DioException) {
             final status = error.response?.statusCode;
