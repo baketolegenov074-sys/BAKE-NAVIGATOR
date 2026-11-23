@@ -93,6 +93,8 @@ class ValhallaRoutingBridge(
                     result.error("INVALID_ARGUMENT", "Four finite coordinates are required", null)
                     return
                 }
+                val requestedCosting = call.argument<String>("costing") ?: "auto"
+                val costing = if (requestedCosting == "pedestrian") "pedestrian" else "auto"
                 worker.execute {
                     try {
                         val activeEngine = engine
@@ -100,17 +102,17 @@ class ValhallaRoutingBridge(
                         val locations = JSONArray()
                             .put(JSONObject().put("lat", startLat).put("lon", startLon).put("type", "break"))
                             .put(JSONObject().put("lat", endLat).put("lon", endLon).put("type", "break"))
+                        val costingOptions = JSONObject()
+                        if (costing == "auto") {
+                            costingOptions.put("auto", JSONObject().put("shortest", true))
+                        } else {
+                            costingOptions.put("pedestrian", JSONObject())
+                        }
                         val request = JSONObject()
                             .put("locations", locations)
                             .put("alternates", 2)
-                            .put("costing", "auto")
-                            .put(
-                                "costing_options",
-                                JSONObject().put(
-                                    "auto",
-                                    JSONObject().put("shortest", true)
-                                )
-                            )
+                            .put("costing", costing)
+                            .put("costing_options", costingOptions)
                             .put("format", "osrm")
                             .put("shape_format", "geojson")
                             .toString()
