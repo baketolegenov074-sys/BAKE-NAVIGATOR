@@ -26,7 +26,6 @@ import 'services/offline_address_search.dart';
 import 'screens/road_report_center.dart';
 import 'services/road_report_sync_service.dart';
 import 'services/valhalla_archive_validator.dart';
-import 'screens/openfreemap_experiment.dart';
 
 
 // Offline label layers for the OpenMapTiles schema in shymkent.mbtiles.
@@ -5885,12 +5884,6 @@ _navigationMatchedLocation = null;
                   },
                 ),
 
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 18),
-                  child: Text(
-                    style: TextStyle(fontSize: 12, color: Colors.black54),
-                  ),
-                ),
                 const Divider(),
                 const SizedBox(height: 10),
                 Text(
@@ -7882,8 +7875,6 @@ _navigationMatchedLocation = null;
               ),
             ),
           ),
-,
-,
           Positioned(
             top: 0,
             right: 14,
@@ -8799,22 +8790,6 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
               child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.public),
-                    title: const Text('Экспериментальная карта OpenFreeMap'),
-                    subtitle: const Text('Отдельная карта и независимый поиск городов'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const OpenFreeMapExperimentScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 4),
                 Text(AppLocale.tr('Автомобиль'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
                 Text(AppLocale.tr('Эти сведения сохраняются только на этом телефоне.')),
