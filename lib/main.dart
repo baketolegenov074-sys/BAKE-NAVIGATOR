@@ -3085,6 +3085,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     } else if (includeCitySearch && !_isLikelyCityQuery(trimmed) &&
         !trimmed.toLowerCase().contains('шымкент')) {
       apiQueries.add('$trimmed Шымкент');
+      // OSM/Photon often stores large shopping centres under an English
+      // brand name rather than the Russian generic "мегацентр".
+      if (RegExp(r'мега\s*центр|мегацентр', caseSensitive: false).hasMatch(trimmed)) {
+        apiQueries
+          ..add('MEGA Planet Шымкент')
+          ..add('Mega Center Шымкент');
+      }
     }
 
     final addressMatch = RegExp(
@@ -3132,7 +3139,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
 
     final groups = await Future.wait(
-      requestUris.toSet().map(request),
+      requestUris.toSet().take(4).map(request),
     );
     final nominatimCityResults = await nominatimCityFuture;
     final merged = <Map<String, dynamic>>[...nominatimCityResults];
@@ -3150,9 +3157,39 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (seen.add(identity)) merged.add(feature);
       }
     }
-    if (merged.isEmpty && !_isLikelyCityQuery(trimmed)) {
-      // Photon may omit a valid street/house result; query OSM directly as a fallback.
-      merged.addAll(await _fetchNominatimAddressFeatures(trimmed));
+    if (!_isLikelyCityQuery(trimmed)) {
+      final queryTokens = trimmed.toLowerCase()
+          .replaceAll('ё', 'е')
+          .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ')
+          .split(RegExp(r'\s+'))
+          .where((token) => token.length > 1 &&
+              token != 'шымкент' && token != 'город' && token != 'г')
+          .toList();
+      final hasStrongMatch = merged.any((feature) {
+        final raw = feature['properties'];
+        final properties = raw is Map
+            ? Map<String, dynamic>.from(raw)
+            : <String, dynamic>{};
+        final searchable = [
+          properties['name'],
+          properties['display_label'],
+          properties['street'],
+          properties['district'],
+        ].whereType<Object>().join(' ').toLowerCase()
+            .replaceAll('ё', 'е')
+            .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ');
+        return queryTokens.isNotEmpty &&
+            queryTokens.every((token) => searchable.contains(token));
+      });
+      if (merged.isEmpty || !hasStrongMatch) {
+        // Photon can return nearby but unrelated objects and suppress a valid
+        // OSM match. Retry the full place/street phrase through Nominatim.
+        final fallbackQuery = includeCitySearch &&
+                !trimmed.toLowerCase().contains('шымкент')
+            ? '$trimmed Шымкент'
+            : trimmed;
+        merged.addAll(await _fetchNominatimAddressFeatures(fallbackQuery));
+      }
     }
     return merged.take(150).toList();
   }
@@ -8055,7 +8092,9 @@ _navigationMatchedLocation = null;
           Positioned(
             // Place the route action beside, not underneath, the zoom/compass
             // column. Keep it aligned with that column as its bottom changes.
-            bottom: _navigationActive ? 150 : (_routeReady ? 250 : 144),
+            // Keep the route control lifted beside the map controls so the
+            // compact destination dashboard cannot cover its touch target.
+            bottom: _navigationActive ? 190 : (_routeReady ? 250 : 144),
             right: 78,
             child: SafeArea(
               bottom: false,
@@ -8421,9 +8460,11 @@ _navigationMatchedLocation = null;
                                   padding: const EdgeInsets.only(bottom: 4),
                                   child: Text(
                                     'B · ${_selectedMapPointAddress.trim().isNotEmpty ? _selectedMapPointAddress : (_searchController.text.trim().isNotEmpty ? _searchController.text.trim() : 'Адрес определяется…')}',
-                                    softWrap: true,
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 11,
                                       fontWeight: FontWeight.w800,
                                       color: Color(0xFF202020),
                                     ),
