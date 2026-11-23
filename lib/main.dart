@@ -2937,7 +2937,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
-  Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false}) async {
+  Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false, bool includeNominatimCitySearch = true}) async {
     Future<List<Map<String, dynamic>>> request(Uri uri) async {
       try {
         final response = await http.get(uri, headers: const {
@@ -2992,7 +2992,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final requestUris = <Uri>[];
     // Start the city lookup alongside Photon so a slow Nominatim response
     // cannot consume the entire online-search timeout before Photon starts.
-    final nominatimCityFuture = includeCitySearch && _isLikelyCityQuery(trimmed)
+    final nominatimCityFuture = includeCitySearch && includeNominatimCitySearch && _isLikelyCityQuery(trimmed)
         ? _fetchNominatimCityFeatures(trimmed)
         : Future<List<Map<String, dynamic>>>.value(<Map<String, dynamic>>[]);
     for (final apiQuery in apiQueries.take(3)) {
@@ -3051,7 +3051,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return merged.take(100).toList();
   }
 
-  Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near}) async {
+  Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near, bool includeNominatimCitySearch = true}) async {
     final needle = query.trim().toLowerCase();
     final reportFeatures = <Map<String, dynamic>>[];
     final seenReports = <String>{};
@@ -3098,6 +3098,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final onlineResults = await _fetchPhotonFeatures(
           query,
           includeCitySearch: true,
+          includeNominatimCitySearch: includeNominatimCitySearch,
         ).timeout(const Duration(seconds: 8));
         final merged = <Map<String, dynamic>>[];
         final seen = <String>{};
@@ -3134,7 +3135,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     var otherResults = localResults;
     if (otherResults.isEmpty) {
       try {
-        otherResults = await _fetchPhotonFeatures(query).timeout(const Duration(seconds: 8));
+        otherResults = await _fetchPhotonFeatures(
+          query,
+          includeNominatimCitySearch: includeNominatimCitySearch,
+        ).timeout(const Duration(seconds: 8));
       } catch (error) {
         debugPrint('BAKE Photon address search unavailable: $error');
         otherResults = <Map<String, dynamic>>[];
@@ -5395,11 +5399,15 @@ _navigationMatchedLocation = null;
                               return;
                             }
                             refreshSearch(() => photonLoadingSuggestions = true);
-                            photonDebounce = Timer(const Duration(milliseconds: 350), () async {
+                            // Live autocomplete starts at two characters. Use Photon
+                            // for suggestions, but reserve Nominatim city lookup for
+                            // an explicitly submitted search to respect its 1 req/s policy.
+                            photonDebounce = Timer(const Duration(milliseconds: 500), () async {
                               try {
                                 final found = await _fetchAddressFeatures(
                                   value,
                                   near: _currentLocation ?? _shymkent,
+                                  includeNominatimCitySearch: false,
                                 );
                                 if (!searchContext.mounted) return;
                                 if (requestVersion != photonRequestVersion) return;
