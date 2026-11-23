@@ -1001,6 +1001,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   DateTime? _lastMapAnnotationUpdateAt;
   bool _speedingVoiceActive = false;
   bool _trafficLayerEnabled = false;
+  bool _roadEventsLayerEnabled = true;
+  String _tomtomTrafficApiKey = '';
   String? _activeConfirmedCameraId;
   double? _activeConfirmedCameraDistance;
   final Set<String> _passedConfirmedCameraIds = <String>{};
@@ -1124,8 +1126,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     try {
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool('layer_traffic') ?? false;
-      if (!mounted || _trafficLayerEnabled == enabled) return;
-      setState(() => _trafficLayerEnabled = enabled);
+      final roadEventsEnabled = prefs.getBool('layer_road_events') ?? true;
+      final trafficKey = (prefs.getString('tomtom_traffic_api_key') ?? '').trim();
+      if (!mounted) return;
+      if (_trafficLayerEnabled == enabled &&
+          _roadEventsLayerEnabled == roadEventsEnabled &&
+          _tomtomTrafficApiKey == trafficKey) return;
+      setState(() {
+        _trafficLayerEnabled = enabled;
+        _roadEventsLayerEnabled = roadEventsEnabled;
+        _tomtomTrafficApiKey = trafficKey;
+      });
     } catch (error) {
       debugPrint('BAKE traffic layer preference load failed: $error');
     }
@@ -6047,6 +6058,7 @@ _navigationMatchedLocation = null;
       if (!mounted) return;
       setState(() {
         if (key == 'layer_traffic') _trafficLayerEnabled = value;
+        if (key == 'layer_road_events') _roadEventsLayerEnabled = value;
         _message = key == 'layer_traffic'
             ? AppLocale.pick(
                 'Слой дорожных сообщений включён. Показываются подтверждённые отметки пользователей.',
@@ -6118,9 +6130,12 @@ _navigationMatchedLocation = null;
                               final key = trafficKeyController.text.trim();
                               await prefs.setString('tomtom_traffic_api_key', key);
                               if (!mounted) return;
-                              setState(() => _message = key.isEmpty
-                                  ? AppLocale.tr('Ключ TomTom удалён.')
-                                  : AppLocale.tr('Ключ TomTom сохранён на телефоне.'));
+                              setState(() {
+                                _tomtomTrafficApiKey = key;
+                                _message = key.isEmpty
+                                    ? AppLocale.tr('Ключ TomTom удалён.')
+                                    : AppLocale.tr('Ключ TomTom сохранён на телефоне.');
+                              });
                             },
                           ),
                         ),
@@ -8028,7 +8043,8 @@ _navigationMatchedLocation = null;
         height: 30,
         child: _buildRoadAlertMapMarker(alert),
       )),
-      ..._confirmedRoadReports.where(_isRoadWarningReport).map((report) => Marker(
+      if (_roadEventsLayerEnabled)
+        ..._confirmedRoadReports.where(_isRoadWarningReport).map((report) => Marker(
         point: LatLng((report['latitude'] as num).toDouble(), (report['longitude'] as num).toDouble()),
         width: 28,
         height: 28,
@@ -8190,6 +8206,20 @@ _navigationMatchedLocation = null;
                   TileLayer(tileProvider: _offlineTileProvider!)
                 else
                   const SizedBox.expand(),
+                if (!_isOfflineMapActive &&
+                    _trafficLayerEnabled &&
+                    _tomtomTrafficApiKey.isNotEmpty)
+                  TileLayer(
+                    urlTemplate: 'https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key={key}',
+                    additionalOptions: {'key': _tomtomTrafficApiKey},
+                    userAgentPackageName: 'kz.bake.bake_navigator',
+                    minZoom: 5,
+                    maxZoom: 22,
+                    maxNativeZoom: 22,
+                    tileDimension: 256,
+                    keepBuffer: 2,
+                    panBuffer: 0,
+                  ),
                 if (_routeAlternatives.length > 1)
                   PolylineLayer(
                     polylines: [
@@ -8210,7 +8240,13 @@ _navigationMatchedLocation = null;
                   ),
                 MarkerLayer(markers: markers),
                 const RichAttributionWidget(
-                  attributions: [TextSourceAttribution('© OpenStreetMap contributors')],
+                  attributions: [
+                    TextSourceAttribution('© OpenStreetMap contributors'),
+                    if (!_isOfflineMapActive &&
+                        _trafficLayerEnabled &&
+                        _tomtomTrafficApiKey.isNotEmpty)
+                      TextSourceAttribution('Traffic data © TomTom'),
+                  ],
                 ),
               ],
             ),
@@ -8260,16 +8296,19 @@ _navigationMatchedLocation = null;
                 elevation: 5,
                 shape: const CircleBorder(),
                 child: IconButton(
-                  tooltip: 'Подтверждённые дорожные события',
+                  tooltip: 'Пробки TomTom и дорожные события',
                   onPressed: () {
                     setState(() => _trafficLayerEnabled = !_trafficLayerEnabled);
                     unawaited(SharedPreferences.getInstance().then(
                       (prefs) => prefs.setBool('layer_traffic', _trafficLayerEnabled),
                     ));
                     if (_trafficLayerEnabled && _trafficReports.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Подтверждённых отметок о пробках или перекрытиях пока нет.'),
-                        duration: Duration(seconds: 2),
+                      final hasTomTomKey = _tomtomTrafficApiKey.isNotEmpty;
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(hasTomTomKey
+                            ? 'Поток TomTom включён. Подтверждённых отметок о дорожных событиях пока нет.'
+                            : 'Для отображения реальных пробок добавьте ключ TomTom в настройках слоёв.'),
+                        duration: const Duration(seconds: 3),
                         behavior: SnackBarBehavior.floating,
                       ));
                     }
