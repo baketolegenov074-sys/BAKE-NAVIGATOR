@@ -4127,22 +4127,22 @@ _navigationMatchedLocation = null;
 
   double _routeBearingAt(LatLng point) {
     if (_routePoints.length < 2) return _gpsHeadingDegrees ?? 0.0;
-    var nearestIndex = 0;
     var nearestDistance = double.infinity;
-    for (var i = 0; i < _routePoints.length; i++) {
-      final routePoint = _routePoints[i];
-      final distance = Geolocator.distanceBetween(
-        point.latitude,
-        point.longitude,
-        routePoint.latitude,
-        routePoint.longitude,
-      );
+    // Restrict heading lookup to the active progress window. A nearby parallel
+    // leg elsewhere on the route must not rotate the map ahead of the vehicle.
+    final anchorIndex = _navigationActive ? _navigationFixSegmentIndex : 0;
+    final firstSegment = math.max(0, anchorIndex - 2);
+    final lastSegment = math.min(_routePoints.length - 2, anchorIndex + 12);
+    var segmentIndex = firstSegment;
+    for (var i = firstSegment; i <= lastSegment; i++) {
+      final a = _routePoints[i];
+      final b = _routePoints[i + 1];
+      final distance = _distanceToSegmentMeters(point, a, b);
       if (distance < nearestDistance) {
         nearestDistance = distance;
-        nearestIndex = i;
+        segmentIndex = i;
       }
     }
-    final segmentIndex = math.min(nearestIndex, _routePoints.length - 2).toInt();
     return Geolocator.bearingBetween(
       _routePoints[segmentIndex].latitude,
       _routePoints[segmentIndex].longitude,
@@ -5377,7 +5377,7 @@ _navigationMatchedLocation = null;
   void _startNavigationPredictionTicker() {
     _navigationPredictionTimer?.cancel();
     _navigationPredictionTimer = Timer.periodic(
-      const Duration(milliseconds: 250),
+      const Duration(milliseconds: 400),
       (_) {
         if (!mounted) return;
         if (!_navigationActive) {
@@ -5392,7 +5392,7 @@ _navigationMatchedLocation = null;
         if (_routeCumulativeMeters.length == _routePoints.length && _navigationFixTimestamp != null) {
           final ageSeconds = DateTime.now().difference(_navigationFixTimestamp!).inMilliseconds / 1000.0;
           final predictedProgress = _navigationFixProgressMeters +
-              _navigationFixSpeedMetersPerSecond.clamp(0.0, 40.0) * ageSeconds.clamp(0.0, 4.0).toDouble();
+              _navigationFixSpeedMetersPerSecond.clamp(0.0, 40.0) * ageSeconds.clamp(0.0, 1.0).toDouble();
           _navigationProgressMeters = math.max(
             _navigationProgressMeters,
             predictedProgress.clamp(0.0, _routeCumulativeMeters.last).toDouble(),
@@ -5405,7 +5405,7 @@ _navigationMatchedLocation = null;
             center.latitude, center.longitude,
             predicted.latitude, predicted.longitude,
           );
-          if (cameraDistance >= 1.5) {
+          if (cameraDistance >= 3.0) {
             final heading = _routeBearingAt(predicted) ??
                 _gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0;
             _updateNavigationCamera(
@@ -5425,7 +5425,7 @@ _navigationMatchedLocation = null;
         final now = DateTime.now();
         if (refreshRoute || _lastMapAnnotationUpdateAt == null ||
             now.difference(_lastMapAnnotationUpdateAt!) >=
-                const Duration(milliseconds: 250)) {
+                const Duration(milliseconds: 750)) {
           _lastMapAnnotationUpdateAt = now;
           unawaited(_syncMapLibreAnnotations(updateRoute: refreshRoute));
         }
@@ -5443,7 +5443,7 @@ _navigationMatchedLocation = null;
     }
     final ageSeconds = DateTime.now().difference(timestamp).inMilliseconds /
         1000.0;
-    final predictionSeconds = ageSeconds.clamp(0.0, 4.0).toDouble();
+    final predictionSeconds = ageSeconds.clamp(0.0, 1.0).toDouble();
     final speed = _navigationFixSpeedMetersPerSecond.clamp(0.0, 40.0).toDouble();
     var remainingMeters = speed * predictionSeconds;
     if (remainingMeters < 0.5) return anchor;
@@ -6893,9 +6893,16 @@ _navigationMatchedLocation = null;
       final routes = <List<LatLng>>[];
       final routeStartOffsets = <int>[];
       final allRoutePoints = <LatLng>[];
-      for (final alternative in _routeAlternatives) {
+      for (var routeIndex = 0; routeIndex < _routeAlternatives.length; routeIndex++) {
+        // Exclude the active line: on overlapping roads it must not mask a
+        // nearby alternative that the driver is trying to select.
+        if (routeIndex == _selectedRouteIndex) {
+          routes.add(const <LatLng>[]);
+          routeStartOffsets.add(allRoutePoints.length);
+          continue;
+        }
         final routePoints = _simplifyRouteForDisplay(
-          _routePointsFromDecodedRoute(alternative),
+          _routePointsFromDecodedRoute(_routeAlternatives[routeIndex]),
         );
         routes.add(routePoints);
         routeStartOffsets.add(allRoutePoints.length);
