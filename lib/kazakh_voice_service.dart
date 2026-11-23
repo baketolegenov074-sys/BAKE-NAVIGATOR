@@ -492,7 +492,6 @@ class KazakhVoiceService {
     _downloadCancelToken?.cancel('Kazakh voice disabled or language changed');
     _downloadCancelToken = null;
     await _player.stop();
-    await stopAndUnload();
     _workerPort?.send({'command': 'dispose'});
     _isolate?.kill(priority: Isolate.immediate);
     _isolate = null;
@@ -509,13 +508,7 @@ class KazakhVoiceService {
   }
 
   Future<void> dispose() async {
-    _workerPort?.send({'command': 'dispose'});
-    _isolate?.kill(priority: Isolate.immediate);
-    _receivePort?.close();
-    for (final completer in _pending.values) {
-      if (!completer.isCompleted) completer.completeError(StateError('Voice service disposed'));
-    }
-    _pending.clear();
+    await stopAndUnload();
     await _player.dispose();
   }
 }
