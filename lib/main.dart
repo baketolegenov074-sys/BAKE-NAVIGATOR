@@ -6890,14 +6890,31 @@ _navigationMatchedLocation = null;
 
     _alternativeTapInProgress = true;
     try {
+      final routes = <List<LatLng>>[];
+      final routeStartOffsets = <int>[];
+      final allRoutePoints = <LatLng>[];
+      for (final alternative in _routeAlternatives) {
+        final routePoints = _simplifyRouteForDisplay(
+          _routePointsFromDecodedRoute(alternative),
+        );
+        routes.add(routePoints);
+        routeStartOffsets.add(allRoutePoints.length);
+        allRoutePoints.addAll(routePoints);
+      }
+      if (allRoutePoints.isEmpty) return;
+
+      // One platform call projects every alternative at once for a fast tap.
+      final allScreenPoints =
+          await controller.toScreenLocationBatch(allRoutePoints);
       var bestIndex = -1;
       var bestDistance = double.infinity;
-      for (var i = 0; i < _routeAlternatives.length; i++) {
-        final routePoints = _simplifyRouteForDisplay(
-          _routePointsFromDecodedRoute(_routeAlternatives[i]),
-        );
-        if (routePoints.length < 2) continue;
-        final screenPoints = await controller.toScreenLocationBatch(routePoints);
+      for (var i = 0; i < routes.length; i++) {
+        if (routes[i].length < 2) continue;
+        final start = routeStartOffsets[i];
+        final screenPoints = allScreenPoints
+            .skip(start)
+            .take(routes[i].length)
+            .toList(growable: false);
         final distance = _distanceToScreenPolyline(tapPoint, screenPoints);
         if (distance < bestDistance) {
           bestDistance = distance;
