@@ -28,6 +28,7 @@ class _OpenFreeMapExperimentScreenState
   List<Map<String, dynamic>> _results = [];
   LatLng? _selectedPoint;
   bool _styleLoading = true;
+  bool _mapReady = false;
   bool _searchLoading = false;
   String? _error;
   DateTime? _lastSearchAt;
@@ -133,7 +134,7 @@ class _OpenFreeMapExperimentScreenState
       _selectedPoint = point;
       _results = [];
     });
-    _mapController.move(point, 14);
+    if (_mapReady) _mapController.move(point, 14);
   }
 
   @override
@@ -152,7 +153,7 @@ class _OpenFreeMapExperimentScreenState
                 _selectedPoint = null;
                 _error = null;
               });
-              _mapController.move(_initialTarget, 4);
+              if (_mapReady) _mapController.move(_initialTarget, 4);
             },
             icon: const Icon(Icons.refresh),
           ),
@@ -198,11 +199,12 @@ class _OpenFreeMapExperimentScreenState
                 if (style != null)
                   FlutterMap(
                     mapController: _mapController,
-                    options: const MapOptions(
+                    options: MapOptions(
                       initialCenter: _initialTarget,
                       initialZoom: 4,
                       minZoom: 2,
                       maxZoom: 18,
+                      onMapReady: () => _mapReady = true,
                     ),
                     children: [
                       VectorTileLayer(
