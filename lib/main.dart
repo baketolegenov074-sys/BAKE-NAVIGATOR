@@ -1162,7 +1162,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _syncTomTomTrafficLayer({bool replaceSource = false}) async {
     final controller = _mapLibreController;
-    if (!mounted || controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
+    if (!mounted || controller == null || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
     try {
       final prefs = await SharedPreferences.getInstance();
       final apiKey = (prefs.getString('tomtom_traffic_api_key') ?? '').trim();
@@ -1299,7 +1299,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   void _applyMapViewMode() {
-    if (_isOfflineMapActive) return;
+    if (_isFlutterMapDisplayed) return;
     final controller = _mapLibreController;
     if (controller == null || !_mapLibreStyleReady) return;
     unawaited(_apply3DLayerVisibility());
@@ -1316,7 +1316,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _setSatelliteOverlayFillOpacity(bool satelliteVisible) async {
     final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
+    if (controller == null || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
 
     try {
       final styleText = await controller.getStyle();
@@ -1361,7 +1361,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _apply3DLayerVisibility() async {
     final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
+    if (controller == null || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
     try {
       final layerIds = await controller.getLayerIds();
 
@@ -1783,7 +1783,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final point = _currentLocation;
     if (point == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_offlineMapReady || !_isOfflineMapActive) return;
+      if (!mounted || !_offlineMapReady || !_isFlutterMapDisplayed) return;
       _updateNavigationCamera(
         point,
         math.max(_mapCameraZoom, _navigationActive ? 16.0 : 13.0).toDouble(),
@@ -1793,7 +1793,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   Future<void> _toggleOnlineMapPreviewStyle() async {
-    if (_isOfflineMapActive) return;
+    if (_isFlutterMapDisplayed) return;
     final controller = _mapLibreController;
     if (controller == null || !_mapLibreStyleReady) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -1870,7 +1870,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   Future<void> _finishMapLibreStyleLoaded() async {
-    if (!mounted || !_mapLibreStyleReady || _isOfflineMapActive) return;
+    if (!mounted || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
     try {
       await _syncMapLibreAnnotations(updateRoute: true);
       await _syncTomTomTrafficLayer();
@@ -1897,7 +1897,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   void _onMapLibreStyleLoaded() {
     try {
-      if (!mounted || _isOfflineMapActive) return;
+      if (!mounted || _isFlutterMapDisplayed) return;
       _mapLibreStyleReady = true;
       if (!_onlineLabelStylePatched) {
         if (!_onlineLabelStylePatchStarted) unawaited(_patchOnlineMapStyleLabels());
@@ -1933,7 +1933,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   // Diagnostic build: verify the satellite toggle and Esri raster tiles on device.
   Future<void> _ensure3DSatelliteLayer() async {
     final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
+    if (controller == null || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
 
     try {
       final sourceIds = await controller.getSourceIds();
@@ -1981,7 +1981,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _ensure3DBuildingsLayer() async {
     final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
+    if (controller == null || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
 
     try {
       // Preserve 3D building shapes, but make their surfaces translucent so
@@ -2222,7 +2222,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final syncRoute = updateRoute || _mapLibreRouteSyncPending;
         _mapLibreRouteSyncPending = false;
         final controller = _mapLibreController;
-        if (controller == null || !_mapLibreStyleReady || _isOfflineMapActive) return;
+        if (controller == null || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
         final visibleRoutePoints = _remainingRoutePoints();
         final annotationNow = DateTime.now();
         final rebuildStaticAnnotations = syncRoute ||
@@ -3562,7 +3562,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           _headingUpGestureActive = false;
         }
         final cameraNow = DateTime.now();
-        final cameraUpdateInterval = _isOfflineMapActive
+        final cameraUpdateInterval = _isFlutterMapDisplayed
             ? const Duration(milliseconds: 300)
             : const Duration(milliseconds: 450);
         final cameraUpdateDue = _lastCameraUpdateAt == null ||
@@ -3574,7 +3574,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           final shouldRecenter = Geolocator.distanceBetween(
                 cameraCenter.latitude, cameraCenter.longitude,
                 cameraTarget.latitude, cameraTarget.longitude,
-              ) > (_isOfflineMapActive ? 3 : 5);
+              ) > (_isFlutterMapDisplayed ? 3 : 5);
           final routeHeading = _navigationActive && _routePoints.length > 1
               ? _routeBearingAt(cameraTarget)
               : null;
@@ -3586,7 +3586,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           final difference = previousHeading == null
               ? 360.0
               : ((normalizedHeading - previousHeading + 540) % 360) - 180;
-          final shouldRotate = difference.abs() >= (_isOfflineMapActive ? 4 : 6);
+          final shouldRotate = difference.abs() >= (_isFlutterMapDisplayed ? 4 : 6);
           if (shouldRecenter || shouldRotate || wasWaitingForNavigationFix) {
             _updateNavigationCamera(
               cameraTarget,
@@ -8814,7 +8814,7 @@ _navigationMatchedLocation = null;
                 ),
               ),
             ),
-          if (!_isOfflineMapActive)
+          if (!_isOfflineMapActive && !_flutterMapExperimentEnabled)
             Positioned(
               top: 286,
               right: 14,
