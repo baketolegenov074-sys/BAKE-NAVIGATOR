@@ -2853,9 +2853,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       progressTotal = -1;
       refreshSheet(() {});
       try {
-        kazakhVoiceEnabled = true;
-        _kazakhVoiceEnabled = true;
-        await prefs.setBool('kazakh_voice_enabled', true);
+        // Previewing ISSAI must not silently enable navigation voice.
         refreshSheet(() {});
         await _kazakhVoiceService.speak(
           text: 'Сәлем, мен Иса, жолға дайынмын!',
@@ -2965,17 +2963,24 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                       selected: language == entry.key,
                       onSelected: (_) async {
                         final value = entry.key;
+                        // Apply language immediately; native ISSAI shutdown is
+                        // independent and must not block Russian/English selection.
                         language = value;
                         _navigationLanguage = value;
                         _selectedVoiceName = null;
                         _selectedVoiceLocale = null;
                         selectedKey = '';
-                        await prefs.setString('navigation_language', value);
                         if (value != 'kk-KZ') {
                           kazakhVoiceEnabled = false;
                           _kazakhVoiceEnabled = false;
+                        }
+                        refresh(() {});
+                        await prefs.setString('navigation_language', value);
+                        if (value != 'kk-KZ') {
                           await prefs.setBool('kazakh_voice_enabled', false);
-                          await _kazakhVoiceService.stopAndUnload();
+                          unawaited(_kazakhVoiceService.stopAndUnload().catchError((Object error) {
+                            debugPrint('BAKE ISSAI unload after language change failed: $error');
+                          }));
                         }
                         await prefs.remove('voice_name');
                         await prefs.remove('voice_locale');
@@ -7207,6 +7212,22 @@ _navigationMatchedLocation = null;
     await _selectMapDestination(point);
   }
 
+  List<List<LatLng>>? _alternativeHitTestCacheSource;
+  int _alternativeHitTestCacheLength = -1;
+  List<List<LatLng>> _alternativeHitTestCache = const [];
+
+  List<List<LatLng>> _cachedAlternativeHitTestPoints() {
+    if (!identical(_alternativeHitTestCacheSource, _routeAlternatives) ||
+        _alternativeHitTestCacheLength != _routeAlternatives.length) {
+      _alternativeHitTestCacheSource = _routeAlternatives;
+      _alternativeHitTestCacheLength = _routeAlternatives.length;
+      _alternativeHitTestCache = _routeAlternatives
+          .map((route) => _simplifyRouteForDisplay(_routePointsFromDecodedRoute(route)))
+          .toList(growable: false);
+    }
+    return _alternativeHitTestCache;
+  }
+
   bool _alternativeTapInProgress = false;
 
   bool _trySelectAlternativeAt(LatLng point) {
@@ -7216,8 +7237,9 @@ _navigationMatchedLocation = null;
     var bestIndex = -1;
     var bestDistance = double.infinity;
     var selectedDistance = double.infinity;
+    final hitTestRoutes = _cachedAlternativeHitTestPoints();
     for (var i = 0; i < _routeAlternatives.length; i++) {
-      final points = _routePointsFromDecodedRoute(_routeAlternatives[i]);
+      final points = hitTestRoutes[i];
       final distance = _distanceToPolylineMeters(point, points);
       if (i == _selectedRouteIndex) {
         selectedDistance = distance;
@@ -7253,18 +7275,10 @@ _navigationMatchedLocation = null;
 
     _alternativeTapInProgress = true;
     try {
-      final routes = <List<LatLng>>[];
+      final routes = _cachedAlternativeHitTestPoints();
       final routeStartOffsets = <int>[];
       final allRoutePoints = <LatLng>[];
-      for (var routeIndex = 0; routeIndex < _routeAlternatives.length; routeIndex++) {
-        // Project every route, including the active one. The active route is
-        // the reference for rejecting taps that are clearly closer to it;
-        // alternatives retain a small overlap tolerance so coincident lines
-        // can still be selected with a finger.
-        final routePoints = _simplifyRouteForDisplay(
-          _routePointsFromDecodedRoute(_routeAlternatives[routeIndex]),
-        );
-        routes.add(routePoints);
+      for (final routePoints in routes) {
         routeStartOffsets.add(allRoutePoints.length);
         allRoutePoints.addAll(routePoints);
       }
