@@ -8866,75 +8866,7 @@ _navigationMatchedLocation = null;
       backgroundColor: const Color(0xFFF3F6FA),
       body: Stack(
         children: [
-          if (!_isFlutterMapDisplayed)
-            Listener(
-              onPointerDown: (event) {
-                _mapPointerDownAt = DateTime.now();
-                _mapPointerDownPosition = event.localPosition;
-                _mapPointerMoved = false;
-                _lastMapPointerHoldDuration = Duration.zero;
-                _headingUpGestureActive = true;
-                _headingUpResumeTimer?.cancel();
-              },
-              onPointerMove: (event) {
-                final start = _mapPointerDownPosition;
-                if (start != null && (event.localPosition - start).distance > 12) {
-                  _mapPointerMoved = true;
-                  _mapFollowEnabled = false;
-                }
-              },
-              onPointerUp: (_) {
-                final startedAt = _mapPointerDownAt;
-                _lastMapPointerHoldDuration = startedAt == null
-                    ? Duration.zero
-                    : DateTime.now().difference(startedAt);
-                _mapPointerDownAt = null;
-                _mapPointerDownPosition = null;
-                final heldPoint = _pendingMapLongPressPoint;
-                _pendingMapLongPressPoint = null;
-                if (heldPoint != null && !_mapPointerMoved &&
-                    _lastMapPointerHoldDuration >= const Duration(seconds: 1)) {
-                  unawaited(_handleMapTap(heldPoint));
-                }
-                _scheduleHeadingUpReturn();
-              },
-              onPointerCancel: (_) {
-                _mapPointerDownAt = null;
-                _mapPointerDownPosition = null;
-                _mapPointerMoved = false;
-                _lastMapPointerHoldDuration = Duration.zero;
-                _pendingMapLongPressPoint = null;
-                _scheduleHeadingUpReturn();
-              },
-              child: ml.MapLibreMap(
-              initialCameraPosition: ml.CameraPosition(
-                target: ml.LatLng(_shymkent.latitude, _shymkent.longitude),
-                zoom: 13,
-                tilt: _is3DMap ? 40 : 0,
-              ),
-              // Liberty's hosted style supplies the OpenFreeMap glyph endpoint
-              // (tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf) and sprite atlas.
-              styleString: 'https://tiles.openfreemap.org/styles/liberty',
-              onMapCreated: _onMapLibreCreated,
-              onStyleLoadedCallback: _onMapLibreStyleLoaded,
-              onCameraIdle: () => unawaited(_syncMapLibreAnnotations()),
-              onMapClick: (screenPoint, point) {
-                // Use the finger's screen position for reliable route selection
-                // on the tilted online map. Long holds still select point B.
-                unawaited(_trySelectAlternativeAtScreen(screenPoint));
-              },
-              onMapLongClick: (_, point) => _captureMapLongPressPoint(LatLng(point.latitude, point.longitude)),
-              compassEnabled: false,
-              trackCameraPosition: true,
-              rotateGesturesEnabled: true,
-              tiltGesturesEnabled: true,
-              zoomGesturesEnabled: true,
-              scrollGesturesEnabled: true,
-              minMaxZoomPreference: const ml.MinMaxZoomPreference(3, 20),
-              ),
-            )
-          else
-            Listener(
+          Listener(
               onPointerDown: (event) {
                 _mapPointerDownAt = DateTime.now();
                 _mapPointerDownPosition = event.localPosition;
