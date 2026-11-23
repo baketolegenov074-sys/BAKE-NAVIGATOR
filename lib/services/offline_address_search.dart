@@ -359,7 +359,7 @@ class OfflineAddressSearch {
       // number. The alias blob can contain unrelated POI names and postcodes.
       if (house.isNotEmpty) {
         final numericTokens = queryTokens
-            .where((token) => RegExp(r'^\\d').hasMatch(token))
+            .where((token) => RegExp(r'^\d').hasMatch(token))
             .toList(growable: false);
         if (numericTokens.isNotEmpty) {
           final requestedHouse = numericTokens.join(' ');
@@ -450,7 +450,7 @@ class OfflineAddressSearch {
       r'(?:^|\s)(?:участок|уч\.?)(?:\s|$)',
     ).hasMatch(normalized);
     normalized = normalized.replaceAll(
-      RegExp(r'(?:^|\\s)(?:участок|уч\\.?|дом|д\\.?|кв\\.?|улица|ул\\.?|проспект|пр-т|пр\\.?|переулок|пер\\.?|шоссе|бульвар|бул\\.?)(?=\\s|$)'),
+      RegExp(r'(?:^|\s)(?:участок|уч\.?|дом|д\.?|кв\.?|улица|ул\.?|проспект|пр-т|пр\.?|переулок|пер\.?|шоссе|бульвар|бул\.?)(?=\s|$)'),
       ' ',
     );
     if (hasParcelQualifier) {
