@@ -6089,6 +6089,13 @@ _navigationMatchedLocation = null;
       // Valhalla handles direct Shymkent routes for both car and pedestrian
       // costing. OSRM remains the fallback and handles intermediate stops.
       final destination = _destination!;
+      final directDistanceMeters = Geolocator.distanceBetween(
+        routeOrigin.latitude, routeOrigin.longitude,
+        destination.latitude, destination.longitude,
+      );
+      // Keep the proven in-city alternatives request unchanged. Longer car
+      // trips ask OSRM for up to three alternative routes explicitly.
+      final isIntercityDriving = !_walkingMode && directDistanceMeters >= 50000;
       final isInsideShymkentGraph =
           routeOrigin.latitude >= 42.12 &&
           routeOrigin.latitude <= 42.53 &&
@@ -6180,14 +6187,14 @@ _navigationMatchedLocation = null;
             : 'https://router.project-osrm.org/route/v1/driving/';
         final uri = Uri.parse(
           '$routeEndpoint$coordinates'
-          '?overview=full&geometries=geojson&steps=true&alternatives=true',
+          '?overview=full&geometries=geojson&steps=true&alternatives=${isIntercityDriving ? 3 : 'true'}',
         );
         // FOSSGIS provides a separate pedestrian profile. Car routes keep
         // their existing OSRM endpoint and behavior.
         final response = await http.get(
           uri,
           headers: const {'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)'},
-        ).timeout(Duration(seconds: _walkingMode ? 12 : 5));
+        ).timeout(Duration(seconds: _walkingMode ? 12 : (isIntercityDriving ? 15 : 5)));
         if (response.statusCode != 200) throw Exception(AppLocale.pick('Сервис маршрутов временно недоступен.', 'Маршрут қызметі уақытша қолжетімсіз.', 'Route service is temporarily unavailable.'));
         routeData = jsonDecode(response.body) as Map<String, dynamic>;
       }
