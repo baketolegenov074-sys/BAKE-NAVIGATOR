@@ -990,6 +990,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   List<RouteInstruction> _instructions = [];
   int _instructionIndex = 0;
   bool _navigationActive = false;
+  bool _walkingMode = false;
   bool _routeReady = false;
   bool _routeActionDismissed = false;
   double _currentSpeedKmh = 0;
@@ -3835,6 +3836,37 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
     }
     final localResults = await _offlineAddressSearch.search(query, near: near ?? _currentLocation ?? _shymkent);
+
+    // The experimental online FlutterMap search must query Photon even when
+    // the Shymkent-only local index has partial matches. Keep the offline-only
+    // search path unchanged when the experimental online map is not active.
+    if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
+      try {
+        final onlineResults = await _fetchPhotonFeatures(query)
+            .timeout(const Duration(seconds: 8));
+        final merged = <Map<String, dynamic>>[];
+        final seen = <String>{};
+        for (final feature in [...localResults, ...onlineResults]) {
+          final rawProperties = feature['properties'];
+          final properties = rawProperties is Map
+              ? Map<String, dynamic>.from(rawProperties)
+              : <String, dynamic>{};
+          final rawGeometry = feature['geometry'];
+          final coordinates = rawGeometry is Map ? rawGeometry['coordinates'] : null;
+          final identity = properties['osm_id'] != null
+              ? '${properties['osm_type'] ?? ''}:${properties['osm_id']}'
+              : '${properties['name'] ?? ''}:${coordinates is List && coordinates.length >= 2 ? coordinates[0] : ''}:${coordinates is List && coordinates.length >= 2 ? coordinates[1] : ''}';
+          if (seen.add(identity)) merged.add(feature);
+        }
+        return <Map<String, dynamic>>[...reportFeatures, ...merged];
+      } catch (error) {
+        debugPrint('BAKE Photon address search unavailable: $error');
+        return <Map<String, dynamic>>[...reportFeatures, ...localResults];
+      }
+    }
+
+    // Preserve the established offline behavior: use the local Shymkent
+    // index first and contact Photon only when the local index has no match.
     var otherResults = localResults;
     if (otherResults.isEmpty) {
       try {
@@ -5864,7 +5896,7 @@ _navigationMatchedLocation = null;
           destination.latitude <= 42.53 &&
           destination.longitude >= 69.35 &&
           destination.longitude <= 69.90;
-      if (_routeStops.isEmpty && isInsideShymkentGraph) {
+      if (!_walkingMode && _routeStops.isEmpty && isInsideShymkentGraph) {
         if (!_valhallaReady) {
           // Never block route calculation on downloading or initializing the graph.
           // It continues in the background for the next route.
@@ -5883,6 +5915,7 @@ _navigationMatchedLocation = null;
                 'startLon': routeOrigin.longitude,
                 'endLat': destination.latitude,
                 'endLon': destination.longitude,
+                'costing': _walkingMode ? 'pedestrian' : 'auto',
               },
             ).timeout(const Duration(seconds: 2));
             if (raw == null || raw.isEmpty) {
@@ -5932,7 +5965,7 @@ _navigationMatchedLocation = null;
         }
       }
 
-      if (_routeStops.isEmpty && !isInsideShymkentGraph) {
+      if (!_walkingMode && _routeStops.isEmpty && !isInsideShymkentGraph) {
         routingNotice = AppLocale.pick(
           'Точка вне зоны офлайн-графа Шымкента. Используем интернет-маршрут.',
           'Нүкте Шымкент офлайн графы аймағынан тыс. Интернет маршрутын қолданамыз.',
@@ -5941,12 +5974,19 @@ _navigationMatchedLocation = null;
       }
 
       if (routeData == null) {
+        final routeEndpoint = _walkingMode
+            ? 'https://routing.openstreetmap.de/routed-foot/route/v1/driving/'
+            : 'https://router.project-osrm.org/route/v1/driving/';
         final uri = Uri.parse(
-          'https://router.project-osrm.org/route/v1/driving/$coordinates'
+          '$routeEndpoint$coordinates'
           '?overview=full&geometries=geojson&steps=true&alternatives=true',
         );
-        // Public OSRM demo endpoint is for testing, not production traffic.
-        final response = await http.get(uri).timeout(const Duration(seconds: 5));
+        // FOSSGIS provides a separate pedestrian profile. Car routes keep
+        // their existing OSRM endpoint and behavior.
+        final response = await http.get(
+          uri,
+          headers: const {'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)'},
+        ).timeout(Duration(seconds: _walkingMode ? 12 : 5));
         if (response.statusCode != 200) throw Exception(AppLocale.pick('Сервис маршрутов временно недоступен.', 'Маршрут қызметі уақытша қолжетімсіз.', 'Route service is temporarily unavailable.'));
         routeData = jsonDecode(response.body) as Map<String, dynamic>;
       }
@@ -8035,7 +8075,41 @@ _navigationMatchedLocation = null;
                   Center(child: Container(width: 42, height: 5, decoration: BoxDecoration(color: const Color(0xFFD6D9DE), borderRadius: BorderRadius.circular(8)))),
                   const SizedBox(height: 14),
                   Text(AppLocale.tr('Планирование маршрута'), style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(AppLocale.tr('Тип маршрута'), style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                  const SizedBox(height: 7),
+                  SegmentedButton<bool>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment<bool>(
+                        value: false,
+                        icon: Icon(Icons.directions_car_outlined),
+                        label: Text('Автомобиль'),
+                      ),
+                      ButtonSegment<bool>(
+                        value: true,
+                        icon: Icon(Icons.directions_walk),
+                        label: Text('Пешком'),
+                      ),
+                    ],
+                    selected: <bool>{_walkingMode},
+                    onSelectionChanged: (selection) {
+                      setState(() => _walkingMode = selection.first);
+                      refreshSheet(() {});
+                    },
+                  ),
+                  if (_walkingMode)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Text(
+                        'Пешеходный маршрут: тротуары и пешеходные дорожки. Для построения нужен интернет или доступный офлайн-граф.',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF687786)),
+                      ),
+                    ),
+                  const SizedBox(height: 14),
                   Row(
                     children: [
                       const Icon(Icons.my_location, color: Color(0xFF269B68), size: 20),
@@ -8233,7 +8307,7 @@ _navigationMatchedLocation = null;
     }
     final km = (_routeDistanceMeters! / 1000).toStringAsFixed(1);
     final minutes = (_routeDurationSeconds! / 60).round();
-    return '$km км · около $minutes мин';
+    return '${_walkingMode ? 'Пешком · ' : ''}$km км · около $minutes мин';
   }
  
   Future<void> _openStationNetworks() async {
