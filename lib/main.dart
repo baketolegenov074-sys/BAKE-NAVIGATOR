@@ -3656,7 +3656,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final properties = raw is Map
         ? Map<String, dynamic>.from(raw)
         : <String, dynamic>{};
-    return properties['type']?.toString().toLowerCase() == 'city';
+    // Photon returns GeoJSON GeocodeJSON properties: place type is stored
+    // in osm_key/osm_value, not reliably in a generic "type" property.
+    final osmKey = properties['osm_key']?.toString().toLowerCase();
+    final osmValue = properties['osm_value']?.toString().toLowerCase();
+    final legacyType = properties['type']?.toString().toLowerCase();
+    return (osmKey == 'place' && (osmValue == 'city' || osmValue == 'town')) ||
+        legacyType == 'city' ||
+        legacyType == 'town';
   }
 
   String valueForPhotonFeature(Map<String, dynamic> feature) {
