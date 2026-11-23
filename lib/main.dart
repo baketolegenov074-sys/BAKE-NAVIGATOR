@@ -7256,8 +7256,11 @@ _navigationMatchedLocation = null;
     // A map tap away from the route must not switch to an arbitrary alternative.
     // Prefer an alternative only when the finger is close to it and it is
     // meaningfully closer than the currently selected route.
+    // Select the route actually closest to the finger. Do not add a
+    // 6 m preference for the active route: it made nearby alternatives feel
+    // unresponsive when the user tapped directly on their line.
     if (bestIndex < 0 || bestDistance > 45 ||
-        selectedDistance + 6 < bestDistance) {
+        selectedDistance < bestDistance) {
       return false;
     }
     _applyAlternativeRouteTap(bestIndex);
