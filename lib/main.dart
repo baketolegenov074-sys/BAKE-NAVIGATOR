@@ -2978,6 +2978,64 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
+  Future<List<Map<String, dynamic>>> _fetchNominatimAddressFeatures(String query) async {
+    final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+      'q': query.trim(),
+      'format': 'jsonv2',
+      'addressdetails': '1',
+      'namedetails': '1',
+      'limit': '20',
+      'countrycodes': 'kz',
+    });
+    try {
+      final response = await http.get(uri, headers: const {
+        'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+        'Accept': 'application/json',
+        'Accept-Language': 'ru,kk,en',
+      }).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) {
+        debugPrint('BAKE Nominatim address search: HTTP ${response.statusCode}');
+        return <Map<String, dynamic>>[];
+      }
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! List) return <Map<String, dynamic>>[];
+      return decoded.whereType<Map>().map((item) {
+        final result = Map<String, dynamic>.from(item);
+        final lat = double.tryParse(result['lat']?.toString() ?? '');
+        final lon = double.tryParse(result['lon']?.toString() ?? '');
+        if (lat == null || lon == null) return <String, dynamic>{};
+        final rawAddress = result['address'];
+        final address = rawAddress is Map
+            ? Map<String, dynamic>.from(rawAddress)
+            : <String, dynamic>{};
+        final name = (result['name'] ??
+            (result['namedetails'] is Map ? (result['namedetails'] as Map)['name'] : null) ??
+            address['road'] ?? result['display_name'] ?? query).toString();
+        return <String, dynamic>{
+          'type': 'Feature',
+          'properties': <String, dynamic>{
+            'name': name,
+            'street': address['road'] ?? address['pedestrian'] ?? address['residential'] ?? '',
+            'housenumber': address['house_number'] ?? '',
+            'district': address['suburb'] ?? address['city_district'] ?? address['neighbourhood'] ?? '',
+            'city': address['city'] ?? address['town'] ?? address['village'] ?? '',
+            'display_label': result['display_name'] ?? name,
+            'osm_type': result['osm_type'],
+            'osm_id': result['osm_id'],
+            'source': 'nominatim',
+          },
+          'geometry': <String, dynamic>{
+            'type': 'Point',
+            'coordinates': <double>[lon, lat],
+          },
+        };
+      }).where((feature) => feature.isNotEmpty).toList(growable: false);
+    } catch (error) {
+      debugPrint('BAKE Nominatim address search failed: $error');
+      return <Map<String, dynamic>>[];
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false, bool includeNominatimCitySearch = true}) async {
     Future<List<Map<String, dynamic>>> request(Uri uri) async {
       try {
@@ -3091,6 +3149,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             : '${properties['name'] ?? ''}:${coordinates[0]}:${coordinates[1]}';
         if (seen.add(identity)) merged.add(feature);
       }
+    }
+    if (merged.isEmpty && !_isLikelyCityQuery(trimmed)) {
+      // Photon may omit a valid street/house result; query OSM directly as a fallback.
+      merged.addAll(await _fetchNominatimAddressFeatures(trimmed));
     }
     return merged.take(150).toList();
   }
@@ -6422,45 +6484,105 @@ _navigationMatchedLocation = null;
   }
 
   Future<String> _lookupPhotonReverseAddress(LatLng point) async {
-    final uri = Uri.https('photon.komoot.io', '/reverse', {
-      'lon': point.longitude.toString(),
-      'lat': point.latitude.toString(),
-    });
-    final response = await http.get(uri, headers: const {
-      'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
-      'Accept': 'application/geo+json, application/json',
-    }).timeout(const Duration(seconds: 15));
-    if (response.statusCode != 200) {
-      throw Exception('Сервис адресов временно недоступен.');
-    }
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-    if (decoded is! Map) return 'Адрес не найден.';
-    final rawFeatures = decoded['features'];
-    if (rawFeatures is! List || rawFeatures.isEmpty) {
-      return 'Адрес не найден.';
-    }
-    Map<String, dynamic>? bestFeature;
-    var bestScore = -1;
-    for (final item in rawFeatures) {
-      if (item is! Map) continue;
-      final feature = Map<String, dynamic>.from(item);
-      final raw = feature['properties'];
-      final p = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
-      final hasName = (p['name']?.toString().trim().isNotEmpty ?? false);
-      final hasStreet = (p['street']?.toString().trim().isNotEmpty ?? false);
-      final hasHouse = (p['housenumber']?.toString().trim().isNotEmpty ?? false);
-      final hasLabel = (p['display_label']?.toString().trim().isNotEmpty ?? false) ||
-          (p['label']?.toString().trim().isNotEmpty ?? false);
-      final score = (hasStreet ? 4 : 0) +
-          (hasHouse ? 2 : 0) + (hasName ? 2 : 0) + (hasLabel ? 1 : 0);
-      if (score > bestScore) {
-        bestScore = score;
-        bestFeature = feature;
+    // Photon is the primary geocoder. Its reverse endpoint can return an
+    // empty feature list for mapped streets, so fall back to OSM Nominatim.
+    try {
+      final uri = Uri.https('photon.komoot.io', '/reverse', {
+        'lon': point.longitude.toString(),
+        'lat': point.latitude.toString(),
+      });
+      final response = await http.get(uri, headers: const {
+        'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+        'Accept': 'application/geo+json, application/json',
+      }).timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        final rawFeatures = decoded is Map ? decoded['features'] : null;
+        if (rawFeatures is List) {
+          Map<String, dynamic>? bestFeature;
+          var bestScore = -1;
+          for (final item in rawFeatures) {
+            if (item is! Map) continue;
+            final feature = Map<String, dynamic>.from(item);
+            final raw = feature['properties'];
+            final p = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+            final hasName = (p['name']?.toString().trim().isNotEmpty ?? false);
+            final hasStreet = (p['street']?.toString().trim().isNotEmpty ?? false);
+            final hasHouse = (p['housenumber']?.toString().trim().isNotEmpty ?? false);
+            final score = (hasStreet ? 4 : 0) + (hasHouse ? 2 : 0) + (hasName ? 2 : 0);
+            if (score > bestScore) {
+              bestScore = score;
+              bestFeature = feature;
+            }
+          }
+          if (bestFeature != null) {
+            final address = _photonDestinationAddress(bestFeature);
+            if (address.isNotEmpty) return address;
+          }
+        }
+      } else {
+        debugPrint('BAKE Photon reverse: HTTP ${response.statusCode}');
       }
+    } catch (error) {
+      debugPrint('BAKE Photon reverse failed: $error');
     }
-    if (bestFeature == null) return 'Адрес не найден.';
-    final address = _photonDestinationAddress(bestFeature);
-    return address.isEmpty ? 'Адрес не найден.' : address;
+
+    final fallback = await _lookupNominatimReverseAddress(point);
+    return fallback.isEmpty ? 'Адрес не найден.' : fallback;
+  }
+
+  Future<String> _lookupNominatimReverseAddress(LatLng point) async {
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+        'lat': point.latitude.toString(),
+        'lon': point.longitude.toString(),
+        'format': 'jsonv2',
+        'addressdetails': '1',
+        'zoom': '18',
+        'namedetails': '1',
+      });
+      final response = await http.get(uri, headers: const {
+        'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+        'Accept': 'application/json',
+        'Accept-Language': 'ru,kk,en',
+      }).timeout(const Duration(seconds: 8));
+      if (response.statusCode != 200) {
+        debugPrint('BAKE Nominatim reverse: HTTP ${response.statusCode}');
+        return '';
+      }
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! Map) return '';
+      final rawAddress = decoded['address'];
+      final address = rawAddress is Map
+          ? Map<String, dynamic>.from(rawAddress)
+          : <String, dynamic>{};
+      String first(Iterable<String> keys) {
+        for (final key in keys) {
+          final value = address[key]?.toString().trim() ?? '';
+          if (value.isNotEmpty) return value;
+        }
+        return '';
+      }
+      final street = first(const ['road', 'pedestrian', 'residential', 'footway', 'path']);
+      final house = first(const ['house_number']);
+      final city = first(const ['city', 'town', 'village', 'municipality']);
+      final district = first(const ['suburb', 'city_district', 'district', 'neighbourhood']);
+      final name = (decoded['name'] ?? decoded['namedetails'] is Map
+          ? (decoded['namedetails'] as Map)['name']
+          : null)?.toString().trim() ?? '';
+      final parts = <String>[
+        if (name.isNotEmpty && name != street && name != house) name,
+        if (street.isNotEmpty) street,
+        if (house.isNotEmpty) house,
+        if (district.isNotEmpty && district != city) district,
+        if (city.isNotEmpty) city,
+      ];
+      if (parts.isNotEmpty) return parts.join(' · ');
+      return decoded['display_name']?.toString().trim() ?? '';
+    } catch (error) {
+      debugPrint('BAKE Nominatim reverse failed: $error');
+      return '';
+    }
   }
 
   Future<void> _resolveSelectedMapPointAddress(LatLng point) async {
