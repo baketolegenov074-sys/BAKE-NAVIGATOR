@@ -6728,13 +6728,19 @@ _navigationMatchedLocation = null;
       final rawName = decoded['name']?.toString().trim() ?? '';
       final name = rawName.isNotEmpty ? rawName : namedName;
       final parts = <String>[
+        if (district.isNotEmpty && district != city) district,
         if (name.isNotEmpty && name != street && name != house) name,
         if (street.isNotEmpty) street,
-        if (house.isNotEmpty) house,
-        if (district.isNotEmpty && district != city) district,
-        if (city.isNotEmpty) city,
+        if (house.isNotEmpty && house != street) 'дом $house',
+        if (city.isNotEmpty && city != district) city,
       ];
-      if (parts.isNotEmpty) return parts.join(' · ');
+      final uniqueParts = <String>[];
+      for (final part in parts) {
+        if (part.isNotEmpty && !uniqueParts.any((item) => item.toLowerCase() == part.toLowerCase())) {
+          uniqueParts.add(part);
+        }
+      }
+      if (uniqueParts.isNotEmpty) return uniqueParts.join(', ');
       return decoded['display_name']?.toString().trim() ?? '';
     } catch (error) {
       debugPrint('BAKE Nominatim reverse failed: $error');
@@ -6745,7 +6751,9 @@ _navigationMatchedLocation = null;
   Future<void> _resolveSelectedMapPointAddress(LatLng point) async {
     try {
       final address = await _lookupPhotonReverseAddress(point);
-      if (!mounted || _destination != point || address == 'Адрес не найден.') return;
+      if (address == 'Адрес не найден.') return;
+      await _rememberMapAddress(address, point);
+      if (!mounted || _destination != point) return;
       setState(() => _message = 'Метка: $address');
     } catch (error) {
       debugPrint('BAKE Photon reverse lookup failed: $error');
@@ -6755,6 +6763,7 @@ _navigationMatchedLocation = null;
   Future<void> _showPointDetails(LatLng point) async {
     try {
       final address = await _lookupPhotonReverseAddress(point);
+      await _rememberMapAddress(address, point);
       if (!mounted) return;
       await showDialog<void>(
         context: context,
