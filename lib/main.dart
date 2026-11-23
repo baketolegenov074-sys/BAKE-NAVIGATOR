@@ -6886,7 +6886,7 @@ _navigationMatchedLocation = null;
       }
     }
     if (bestIndex < 0 || bestIndex == _selectedRouteIndex) return false;
-    _applyAlternativeRouteTap(bestIndex);
+    _applyAlternativeRouteTap(bestAlternativeIndex);
     return true;
   }
 
@@ -6910,13 +6910,10 @@ _navigationMatchedLocation = null;
       final routeStartOffsets = <int>[];
       final allRoutePoints = <LatLng>[];
       for (var routeIndex = 0; routeIndex < _routeAlternatives.length; routeIndex++) {
-        // Exclude the active line: on overlapping roads it must not mask a
-        // nearby alternative that the driver is trying to select.
-        if (routeIndex == _selectedRouteIndex) {
-          routes.add(const <LatLng>[]);
-          routeStartOffsets.add(allRoutePoints.length);
-          continue;
-        }
+        // Project every route, including the active one. The active route is
+        // the reference for rejecting taps that are clearly closer to it;
+        // alternatives retain a small overlap tolerance so coincident lines
+        // can still be selected with a finger.
         final routePoints = _simplifyRouteForDisplay(
           _routePointsFromDecodedRoute(_routeAlternatives[routeIndex]),
         );
@@ -6932,8 +6929,9 @@ _navigationMatchedLocation = null;
           .toList(growable: false);
       final allScreenPoints =
           await controller.toScreenLocationBatch(mapLibreRoutePoints);
-      var bestIndex = -1;
-      var bestDistance = double.infinity;
+      var bestAlternativeIndex = -1;
+      var bestAlternativeDistance = double.infinity;
+      var activeRouteDistance = double.infinity;
       for (var i = 0; i < routes.length; i++) {
         if (routes[i].length < 2) continue;
         final start = routeStartOffsets[i];
@@ -6942,15 +6940,21 @@ _navigationMatchedLocation = null;
             .take(routes[i].length)
             .toList(growable: false);
         final distance = _distanceToScreenPolyline(tapPoint, screenPoints);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          bestIndex = i;
+        if (i == _selectedRouteIndex) {
+          activeRouteDistance = distance;
+        } else if (distance < bestAlternativeDistance) {
+          bestAlternativeDistance = distance;
+          bestAlternativeIndex = i;
         }
       }
 
-      // 48 logical pixels is a finger-sized hit area, independent of zoom.
-      if (!mounted || bestIndex < 0 || bestIndex == _selectedRouteIndex ||
-          bestDistance > 48) {
+      // 48 px is the finger hit radius. An alternative wins when it is within
+      // that radius and the active route is not clearly closer. A 6 px
+      // tolerance lets the driver select routes that overlap on the map.
+      if (!mounted ||
+          bestAlternativeIndex < 0 ||
+          bestAlternativeDistance > 48 ||
+          activeRouteDistance + 6 < bestAlternativeDistance) {
         return;
       }
       _applyAlternativeRouteTap(bestIndex);
