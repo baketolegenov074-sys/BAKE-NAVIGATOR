@@ -415,7 +415,11 @@ class OfflineAddressSearch {
     var normalized = value.toLowerCase().replaceAll('ё', 'е');
     normalized = normalized
         .replaceAll(RegExp(r'\bдо\s*100\b'), 'достык')
-        .replaceAll(RegExp(r'\bнур\s+сад\b'), 'нурсат');
+        .replaceAll(RegExp(r'\bнур\s+сад\b'), 'нурсат')
+        .replaceAll(RegExp(r'\bщемкент\b'), 'шымкент')
+        .replaceAll(RegExp(r'\bдендро\s+парк\b'), 'дендропарк')
+        .replaceAll(RegExp(r'\bдендросаябак\b'), 'дендропарк')
+        .replaceAll(RegExp(r'\bмол\b'), 'молл');
     final hasParcelQualifier = RegExp(
       r'(?:^|\s)(?:участок|уч\.?)(?:\s|$)',
     ).hasMatch(normalized);
@@ -474,6 +478,7 @@ class OfflineAddressSearch {
       RegExp('[a-z]'),
       (match) => latin[match.group(0)] ?? match.group(0)!,
     );
+    text = text.replaceAll('малл', 'молл');
     text = text.replaceAll(RegExp(r'[^0-9а-я]+'), ' ');
     return text.trim().replaceAll(RegExp(r'\s+'), ' ');
   }

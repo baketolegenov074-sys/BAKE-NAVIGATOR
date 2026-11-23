@@ -23,6 +23,15 @@ NAME_KEYS = (
     "alt_name",
     "brand",
     "operator",
+    "loc_name",
+    "old_name",
+    "alt_name:ru",
+    "alt_name:kk",
+    "name:latin",
+    "int_name",
+    "official_name:ru",
+    "official_name:kk",
+    "brand:ru",
 )
 ADDRESS_KEYS = (
     "addr:street",
@@ -31,8 +40,58 @@ ADDRESS_KEYS = (
     "addr:suburb",
     "addr:district",
     "addr:city",
+    "addr:postcode",
+    "addr:full",
     "ref",
 )
+
+CATEGORY_KEYS = (
+    "amenity", "shop", "healthcare", "healthcare:speciality", "speciality",
+    "tourism", "leisure", "office", "landuse", "building",
+    "public_transport", "railway", "natural", "historic",
+)
+
+CATEGORY_LABELS = {
+    "school": ["школа", "мектеп", "school"],
+    "university": ["университет", "вуз"],
+    "hospital": ["больница", "медицинский центр", "кардиология"],
+    "clinic": ["клиника", "медицинский центр", "кардиология"],
+    "doctors": ["врач", "поликлиника", "кардиология"],
+    "marketplace": ["рынок", "базар"],
+    "mall": ["торговый центр", "молл", "mall"],
+    "department_store": ["универмаг", "торговый центр"],
+    "supermarket": ["супермаркет", "магазин"],
+    "park": ["парк"],
+    "garden": ["сад", "парк"],
+    "nature_reserve": ["заповедник", "парк"],
+    "museum": ["музей"],
+    "attraction": ["достопримечательность"],
+    "bus_station": ["автовокзал", "автобусная станция"],
+    "pharmacy": ["аптека"],
+    "bank": ["банк"],
+    "fuel": ["азс", "заправка"],
+}
+
+
+def category_terms(properties: dict[str, Any]) -> list[str]:
+    terms: list[str] = []
+    for key in CATEGORY_KEYS:
+        raw = properties.get(key)
+        if raw is None:
+            continue
+        value = str(raw).strip().lower()
+        if not value:
+            continue
+        terms.append(value.replace("_", " "))
+        terms.extend(CATEGORY_LABELS.get(value, []))
+    speciality = str(
+        properties.get("healthcare:speciality")
+        or properties.get("speciality")
+        or ""
+    ).lower()
+    if "cardio" in speciality or "кардио" in speciality:
+        terms.extend(["кардиология", "кардиолог", "кардиологический центр"])
+    return list(dict.fromkeys(term for term in terms if term))
 
 
 def coordinate_pairs(value: Any) -> Iterator[tuple[float, float]]:
@@ -101,7 +160,8 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
     ).strip()
     amenity = str(properties.get("amenity") or "").strip().lower()
     reference = str(properties.get("ref") or "").strip()
-    if not names and not house and not (amenity == "school" and reference):
+    categories = category_terms(properties)
+    if not names and not house and not categories:
         return None
 
     point = feature_point(feature)
@@ -116,6 +176,11 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
     primary_name = names[0] if names else ""
     if not primary_name and amenity == "school" and reference:
         primary_name = f"Школа №{reference}"
+    elif not primary_name and categories:
+        primary_name = next(
+            (term for term in categories if any("\u0400" <= char <= "\u04ff" for char in term)),
+            categories[0],
+        ).capitalize()
 
     if house and street:
         label = f"{street}, {house}"
@@ -140,15 +205,13 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
         kind = "address"
     elif properties.get("highway"):
         kind = "street"
-    elif amenity or any(
-        key in properties
-        for key in ("shop", "tourism", "leisure", "office", "healthcare")
-    ):
+    elif categories:
         kind = "poi"
     else:
         kind = "place"
 
     aliases = list(names)
+    aliases.extend(categories)
     if district:
         aliases.append(district)
     if amenity == "school":
@@ -167,7 +230,7 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
                 part.strip() for part in str(raw).split(";") if part.strip()
             )
     aliases = list(dict.fromkeys(aliases))
-    search_text = " ".join([label, *aliases, amenity, reference])
+    search_text = " ".join([label, *aliases, *values_for(properties, CATEGORY_KEYS), reference])
 
     return {
         "label": label,

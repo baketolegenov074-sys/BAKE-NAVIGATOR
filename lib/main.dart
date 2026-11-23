@@ -2724,14 +2724,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   String _photonQuery(String value) => value.trim();
 
   bool _isLikelyCityQuery(String value) {
-    final query = value.trim();
-    if (query.length < 2 || query.length > 48 ||
-        RegExp(r'\d').hasMatch(query) ||
-        RegExp(r'\b(улица|ул\.?|проспект|пр-т|мкр|микрорайон|дом|кв\.?|шоссе|street|avenue|road)\b',
-          caseSensitive: false).hasMatch(query)) {
-      return false;
+    final query = value.trim().toLowerCase().replaceAll('ё', 'е');
+    if (query.length < 2 || query.length > 48) return false;
+    if (RegExp(r'^(?:г\.?\s*|город\s+|қала\s+)', caseSensitive: false).hasMatch(query)) {
+      return true;
     }
-    return query.split(RegExp(r'\s+')).length <= 4;
+    const kazakhstanCities = <String>{
+      'шымкент', 'алматы', 'астана', 'нур-султан', 'тараз', 'туркестан',
+      'сарыагаш', 'кызылорда', 'караганда', 'актобе', 'актау', 'атырау',
+      'павлодар', 'семей', 'усть-каменогорск', 'оскемен', 'костанай',
+      'петропавловск', 'кокшетау', 'жезказган', 'темиртау', 'талдыкорган',
+      'экибастуз', 'рудный', 'жанаозен', 'конаев', 'байконур',
+    };
+    return kazakhstanCities.contains(query);
   }
 
   bool _isPhotonCityFeature(Map<String, dynamic> feature) {
@@ -2983,6 +2988,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         ..add('Школа №$schoolNumber')
         ..add('$schoolNumber школа')
         ..add('Мектеп $schoolNumber');
+    } else if (includeCitySearch && !_isLikelyCityQuery(trimmed) &&
+        !trimmed.toLowerCase().contains('шымкент')) {
+      apiQueries.add('$trimmed Шымкент');
     }
 
     final addressMatch = RegExp(
@@ -3000,7 +3008,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         'q': apiQuery,
         'lang': 'ru',
         'limit': '50',
-        if (includeCitySearch) 'countrycode': 'KZ',
+        'countrycode': 'KZ',
       }));
     }
 
@@ -3048,7 +3056,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (seen.add(identity)) merged.add(feature);
       }
     }
-    return merged.take(100).toList();
+    return merged.take(150).toList();
   }
 
   Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near, bool includeNominatimCitySearch = true}) async {
@@ -3088,6 +3096,50 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         debugPrint('BAKE confirmed address search from Supabase unavailable: $error');
       }
     }
+    // Places created by the user in "Мои места" must be routable from search too.
+    final savedPlaceFeatures = <Map<String, dynamic>>[];
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedPlaces = prefs.getStringList('my_custom_places') ?? <String>[];
+      final savedPoints = prefs.getStringList('my_custom_place_points_v1') ?? <String>[];
+      final normalizedNeedle = needle.replaceAll('ё', 'е')
+          .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ').trim();
+      final queryTokens = normalizedNeedle.split(RegExp(r'\s+'))
+          .where((token) => token.isNotEmpty).toList();
+      for (var index = 0; index < savedPlaces.length; index++) {
+        final parts = savedPlaces[index].split('|');
+        final name = parts.isEmpty ? '' : parts.first.trim();
+        final address = parts.length > 1 ? parts.sublist(1).join('|').trim() : '';
+        final searchable = '$name $address'.toLowerCase().replaceAll('ё', 'е')
+            .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ').trim();
+        if (name.isEmpty || queryTokens.isEmpty ||
+            !queryTokens.every((token) => searchable.contains(token))) continue;
+        if (index >= savedPoints.length || savedPoints[index].trim().isEmpty) continue;
+        final coordinates = savedPoints[index].split(',');
+        if (coordinates.length < 2) continue;
+        final lat = double.tryParse(coordinates[0].trim());
+        final lon = double.tryParse(coordinates[1].trim());
+        if (lat == null || lon == null || !lat.isFinite || !lon.isFinite ||
+            lat < -90 || lat > 90 || lon < -180 || lon > 180) continue;
+        savedPlaceFeatures.add(<String, dynamic>{
+          'type': 'Feature',
+          '_savedPlace': true,
+          'properties': <String, dynamic>{
+            'name': name,
+            'display_label': address.isEmpty ? name : '$name · $address',
+            'address': address,
+            'source': 'BAKE saved places',
+          },
+          'geometry': <String, dynamic>{
+            'type': 'Point',
+            'coordinates': <double>[lon, lat],
+          },
+        });
+      }
+    } catch (error) {
+      debugPrint('BAKE saved places address search unavailable: $error');
+    }
+
     final localResults = await _offlineAddressSearch.search(query, near: near ?? _currentLocation ?? _shymkent);
 
     // The experimental online FlutterMap search must query Photon even when
@@ -3121,12 +3173,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               : '${properties['name'] ?? ''}:${coordinates is List && coordinates.length >= 2 ? coordinates[0] : ''}:${coordinates is List && coordinates.length >= 2 ? coordinates[1] : ''}';
           if (seen.add(identity)) merged.add(feature);
         }
-        final combined = <Map<String, dynamic>>[...reportFeatures, ...merged];
+        final combined = <Map<String, dynamic>>[...reportFeatures, ...savedPlaceFeatures, ...merged];
         _sortSearchFeatures(combined, query);
         return combined;
       } catch (error) {
         debugPrint('BAKE Photon address search unavailable: $error');
-        return <Map<String, dynamic>>[...reportFeatures, ...localResults];
+        return <Map<String, dynamic>>[...reportFeatures, ...savedPlaceFeatures, ...localResults];
       }
     }
 
@@ -3144,7 +3196,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         otherResults = <Map<String, dynamic>>[];
       }
     }
-    return <Map<String, dynamic>>[...reportFeatures, ...otherResults];
+    return <Map<String, dynamic>>[...reportFeatures, ...savedPlaceFeatures, ...otherResults];
   }
 
   Future<void> _searchAddress({bool selectAsOrigin = false}) async {

@@ -65,8 +65,13 @@ jobs:
             shymkent-search.osm.pbf \
             nwr/name nwr/name:ru nwr/name:kk nwr/name:en \
             nwr/official_name nwr/short_name nwr/alt_name nwr/brand \
-            nwr/operator nwr/ref nwr/amenity=school \
-            nwr/addr:housenumber nwr/addr:street nwr/addr:place
+            nwr/operator nwr/ref \
+            nwr/amenity nwr/shop nwr/healthcare nwr/healthcare:speciality \
+            nwr/speciality nwr/tourism nwr/leisure nwr/office \
+            nwr/landuse=retail nwr/building=retail nwr/building=school \
+            nwr/public_transport nwr/railway nwr/natural nwr/historic \
+            nwr/addr:housenumber nwr/addr:street nwr/addr:place \
+            nwr/addr:suburb nwr/addr:district nwr/addr:city nwr/addr:postcode
           osmium export \
             --output-format=geojsonseq \
             --format-option=print_record_separator=false \
