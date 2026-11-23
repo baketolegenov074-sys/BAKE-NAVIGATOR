@@ -2187,8 +2187,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         );
       }
       final routeIndex = index < _selectedRouteIndex ? index : index + 1;
-      final points = routeIndex < _routeAlternatives.length
-          ? _simplifyRouteForDisplay(_routePointsFromDecodedRoute(_routeAlternatives[routeIndex]))
+      final cachedRoutes = _cachedAlternativeHitTestPoints();
+      final points = routeIndex < cachedRoutes.length
+          ? cachedRoutes[routeIndex]
           : <LatLng>[];
       final features = points.length < 2
           ? <Object>[]
@@ -8717,6 +8718,8 @@ _navigationMatchedLocation = null;
   @override
   Widget build(BuildContext context) {
     final visibleRoutePoints = _remainingRoutePoints();
+    // Both renderers draw and hit-test the same cached simplified alternatives.
+    final simplifiedAlternativeRoutePoints = _cachedAlternativeHitTestPoints();
     final visibleRoadAlerts = _roadAlertsVisibleOnMap();
     final markers = <Marker>[
       ..._buildOfflineRouteArrowMarkers(visibleRoutePoints),
@@ -9012,7 +9015,7 @@ _navigationMatchedLocation = null;
                       for (var i = 0; i < _routeAlternatives.length; i++)
                         if (i != _selectedRouteIndex)
                           Polyline(
-                            points: _routePointsFromDecodedRoute(_routeAlternatives[i]),
+                            points: simplifiedAlternativeRoutePoints[i],
                             strokeWidth: 8,
                             color: const [Color(0xFFFF9800), Color(0xFF9C27B0), Color(0xFF00A6A6)][i % 3].withOpacity(0.9),
                           ),
