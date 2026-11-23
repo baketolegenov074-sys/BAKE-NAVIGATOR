@@ -940,6 +940,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   int _kazakhVoiceId = 0;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  DateTime? _lastNominatimRequestAt;
   MbTilesTileProvider? _offlineTileProvider;
   MbTiles? _offlineVectorMbtiles;
   MbTilesVectorTileProvider? _offlineVectorTileProvider;
@@ -3775,6 +3776,78 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return distance < 1000 ? '${distance.round()} м' : '${(distance / 1000).toStringAsFixed(1)} км';
   }
 
+  Future<List<Map<String, dynamic>>> _fetchNominatimFeatures(String query) async {
+    // Public Nominatim policy: explicit searches only, at most one request/sec.
+    final previous = _lastNominatimRequestAt;
+    if (previous != null) {
+      final elapsed = DateTime.now().difference(previous);
+      if (elapsed < const Duration(seconds: 1)) {
+        await Future.delayed(const Duration(seconds: 1) - elapsed);
+      }
+    }
+    _lastNominatimRequestAt = DateTime.now();
+    final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+      'q': query.trim(),
+      'format': 'jsonv2',
+      'limit': '10',
+      'addressdetails': '1',
+      'countrycodes': 'kz',
+      'accept-language': 'ru,kk,en',
+    });
+    final response = await http.get(uri, headers: const {
+      'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+      'Accept': 'application/json',
+    }).timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      debugPrint('BAKE Nominatim search returned HTTP ${response.statusCode}');
+      return <Map<String, dynamic>>[];
+    }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! List) return <Map<String, dynamic>>[];
+    return decoded.whereType<Map>().map((raw) {
+      final item = Map<String, dynamic>.from(raw);
+      final address = item['address'] is Map
+          ? Map<String, dynamic>.from(item['address'] as Map)
+          : <String, dynamic>{};
+      final lat = double.tryParse(item['lat']?.toString() ?? '');
+      final lon = double.tryParse(item['lon']?.toString() ?? '');
+      if (lat == null || lon == null) return <String, dynamic>{};
+      final placeClass = item['class']?.toString() ?? '';
+      final placeType = item['type']?.toString() ?? '';
+      final name = (item['name'] ??
+              address['city'] ??
+              address['town'] ??
+              address['village'] ??
+              address['road'] ??
+              item['display_name'] ??
+              'Место')
+          .toString();
+      return <String, dynamic>{
+        'type': 'Feature',
+        '_nominatim': true,
+        'properties': <String, dynamic>{
+          'name': name,
+          'display_label': item['display_name']?.toString() ?? name,
+          'osm_id': item['osm_id']?.toString(),
+          'osm_type': item['osm_type']?.toString(),
+          'osm_key': placeClass,
+          'osm_value': placeType,
+          'type': placeType,
+          'street': address['road'] ?? address['pedestrian'] ?? '',
+          'housenumber': address['house_number'] ?? '',
+          'district': address['suburb'] ?? address['city_district'] ?? '',
+          'city': address['city'] ?? address['town'] ?? address['village'] ?? '',
+          'address': item['display_name']?.toString() ?? '',
+          'source': 'nominatim',
+        },
+        'geometry': <String, dynamic>{
+          'type': 'Point',
+          'coordinates': <double>[lon, lat],
+        },
+      };
+    }).where((feature) => feature.isNotEmpty).toList();
+  }
+
   Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false}) async {
     Future<List<Map<String, dynamic>>> request(Uri uri) async {
       final response = await http.get(uri, headers: const {
@@ -3996,6 +4069,35 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       final anchor = selectAsOrigin
           ? (_currentLocation ?? _routeOrigin ?? _shymkent)
           : (_routeOrigin ?? _currentLocation ?? _shymkent);      final results = await _fetchAddressFeatures(query, near: anchor);
+      // Nominatim supplements the existing Photon + local results only on an
+      // explicit search submission; it is never called by the autocomplete.
+      try {
+        final nominatimResults = await _fetchNominatimFeatures(query);
+        final seen = <String>{};
+        for (final feature in results) {
+          final properties = feature['properties'];
+          final p = properties is Map ? properties : const <String, dynamic>{};
+          final geometry = feature['geometry'];
+          final coordinates = geometry is Map ? geometry['coordinates'] : null;
+          seen.add(p['osm_id'] != null
+              ? '${p['osm_type'] ?? ''}:${p['osm_id']}'
+              : '${p['name'] ?? ''}:${coordinates is List && coordinates.length > 1 ? coordinates[0] : ''}:${coordinates is List && coordinates.length > 1 ? coordinates[1] : ''}');
+        }
+        for (final feature in nominatimResults) {
+          final p = feature['properties'] as Map;
+          final geometry = feature['geometry'] as Map;
+          final coordinates = geometry['coordinates'] as List;
+          final identity = '${p['osm_type'] ?? ''}:${p['osm_id'] ?? ''}';
+          final fallbackIdentity = '${p['name'] ?? ''}:${coordinates[0]}:${coordinates[1]}';
+          if (seen.add(identity == ':'
+              ? fallbackIdentity
+              : identity)) {
+            results.add(feature);
+          }
+        }
+      } catch (error) {
+        debugPrint('BAKE Nominatim fallback unavailable: $error');
+      }
       if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
         _sortSearchFeatures(results, query);
       }
