@@ -8043,7 +8043,7 @@ _navigationMatchedLocation = null;
         height: 30,
         child: _buildRoadAlertMapMarker(alert),
       )),
-      if (_roadEventsLayerEnabled)
+      if (_isOfflineMapActive || _roadEventsLayerEnabled)
         ..._confirmedRoadReports.where(_isRoadWarningReport).map((report) => Marker(
         point: LatLng((report['latitude'] as num).toDouble(), (report['longitude'] as num).toDouble()),
         width: 28,
