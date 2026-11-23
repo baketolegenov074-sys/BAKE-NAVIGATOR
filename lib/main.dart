@@ -6904,8 +6904,11 @@ _navigationMatchedLocation = null;
       if (allRoutePoints.isEmpty) return;
 
       // One platform call projects every alternative at once for a fast tap.
+      final mapLibreRoutePoints = allRoutePoints
+          .map((point) => ml.LatLng(point.latitude, point.longitude))
+          .toList(growable: false);
       final allScreenPoints =
-          await controller.toScreenLocationBatch(allRoutePoints);
+          await controller.toScreenLocationBatch(mapLibreRoutePoints);
       var bestIndex = -1;
       var bestDistance = double.infinity;
       for (var i = 0; i < routes.length; i++) {
