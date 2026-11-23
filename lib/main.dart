@@ -7235,10 +7235,7 @@ _navigationMatchedLocation = null;
 
   bool _alternativeTapInProgress = false;
 
-  bool _trySelectAlternativeAt(
-    LatLng point, {
-    bool preferClosestAlternative = false,
-  }) {
+  bool _trySelectAlternativeAt(LatLng point) {
     // Keep the offline FlutterMap hit test unchanged.
     if (_lastMapPointerHoldDuration >= const Duration(seconds: 1)) return false;
     if (!_routeReady || _routeAlternatives.length < 2) return false;
@@ -7259,12 +7256,11 @@ _navigationMatchedLocation = null;
     // A map tap away from the route must not switch to an arbitrary alternative.
     // Prefer an alternative only when the finger is close to it and it is
     // meaningfully closer than the currently selected route.
-    // The experimental online FlutterMap selects the closest line directly.
-    // Keep the existing active-route preference for the offline map.
+    // A map tap away from the route must not switch to an arbitrary alternative.
+    // Prefer an alternative only when the finger is close to it and it is
+    // meaningfully closer than the currently selected route.
     if (bestIndex < 0 || bestDistance > 45 ||
-        (preferClosestAlternative
-            ? selectedDistance < bestDistance
-            : selectedDistance + 6 < bestDistance)) {
+        selectedDistance + 6 < bestDistance) {
       return false;
     }
     _applyAlternativeRouteTap(bestIndex);
@@ -8992,11 +8988,7 @@ _navigationMatchedLocation = null;
                 initialZoom: 13,
                 onTap: (_, point) {
                   // A short tap may switch an alternative route, never set an address.
-                  _trySelectAlternativeAt(
-                    point,
-                    preferClosestAlternative:
-                        _flutterMapExperimentEnabled && !_isOfflineMapActive,
-                  );
+                  _trySelectAlternativeAt(point);
                 },
                 onLongPress: (_, point) => _captureMapLongPressPoint(point),
                 onPositionChanged: (camera, hasGesture) {

@@ -327,12 +327,16 @@ class KazakhVoiceService {
     final token = CancelToken();
     _downloadCancelToken = token;
     final modelDir = await _downloadAndExtractModel(cancelToken: token, onProgress: onProgress, onStage: onStage);
-    token.throwIfCancelled();
+    if (token.isCancelled) {
+      throw StateError('Kazakh voice startup cancelled');
+    }
     onStage?.call('initializing');
     // sherpa-onnx 2.x no longer embeds eSpeak/Piper phonemization.
     if (!_phonemizerInitialized) {
       await piper.initBindingsAsync();
-      token.throwIfCancelled();
+      if (token.isCancelled) {
+      throw StateError('Kazakh voice startup cancelled');
+    }
       final result = piper.PiperPhonemize.initialize('$modelDir/espeak-ng-data');
       if (result < 0) throw Exception('Не удалось инициализировать казахский фонетизатор eSpeak-NG.');
       _phonemizerInitialized = true;
