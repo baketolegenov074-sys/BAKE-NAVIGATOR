@@ -3640,6 +3640,25 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   String _photonQuery(String value) => value.trim();
 
+  bool _isLikelyCityQuery(String value) {
+    final query = value.trim();
+    if (query.length < 2 || query.length > 48 ||
+        RegExp(r'\\d').hasMatch(query) ||
+        RegExp(r'\\b(улица|ул\\.?|проспект|пр-т|мкр|микрорайон|дом|кв\\.?|шоссе|street|avenue|road)\\b',
+          caseSensitive: false).hasMatch(query)) {
+      return false;
+    }
+    return query.split(RegExp(r'\\s+')).length <= 4;
+  }
+
+  bool _isPhotonCityFeature(Map<String, dynamic> feature) {
+    final raw = feature['properties'];
+    final properties = raw is Map
+        ? Map<String, dynamic>.from(raw)
+        : <String, dynamic>{};
+    return properties['type']?.toString().toLowerCase() == 'city';
+  }
+
   String valueForPhotonFeature(Map<String, dynamic> feature) {
     final address = _photonFeatureAddress(feature);
     return address.isEmpty ? 'Шымкент' : address;
@@ -3699,7 +3718,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return distance < 1000 ? '${distance.round()} м' : '${(distance / 1000).toStringAsFixed(1)} км';
   }
 
-  Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query) async {
+  Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false}) async {
     Future<List<Map<String, dynamic>>> request(Uri uri) async {
       final response = await http.get(uri, headers: const {
         'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
@@ -3744,6 +3763,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       caseSensitive: false,
     ).firstMatch(trimmed);
     final requestUris = <Uri>[];
+    // City names must not be ranked as nearby Shymkent addresses. Ask Photon
+    // explicitly for Kazakhstan city-layer matches on the online map only.
+    if (includeCitySearch && _isLikelyCityQuery(trimmed)) {
+      requestUris.add(Uri.https('photon.komoot.io', '/api/', {
+        'q': trimmed,
+        'lang': 'ru',
+        'limit': '10',
+        'countrycode': 'KZ',
+        'layer': 'city',
+        'location_bias_scale': '0.0',
+      }));
+    }
     for (final apiQuery in apiQueries.take(3)) {
       requestUris.add(Uri.https('photon.komoot.io', '/api/', {
         'q': apiQuery,
@@ -3842,11 +3873,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     // search path unchanged when the experimental online map is not active.
     if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
       try {
-        final onlineResults = await _fetchPhotonFeatures(query)
-            .timeout(const Duration(seconds: 8));
+        final onlineResults = await _fetchPhotonFeatures(
+          query,
+          includeCitySearch: true,
+        ).timeout(const Duration(seconds: 8));
+        final cityResults = onlineResults.where(_isPhotonCityFeature);
+        final otherOnlineResults = onlineResults.where((feature) => !_isPhotonCityFeature(feature));
         final merged = <Map<String, dynamic>>[];
         final seen = <String>{};
-        for (final feature in [...localResults, ...onlineResults]) {
+        // Keep exact city matches ahead of the Shymkent local index so a
+        // request such as "Тараз" cannot be buried under nearby local hits.
+        for (final feature in [...cityResults, ...localResults, ...otherOnlineResults]) {
           final rawProperties = feature['properties'];
           final properties = rawProperties is Map
               ? Map<String, dynamic>.from(rawProperties)
@@ -6244,9 +6281,16 @@ _navigationMatchedLocation = null;
                                 );
                                 if (!searchContext.mounted) return;
                                 if (requestVersion != photonRequestVersion) return;
-                                found.sort((left, right) =>
-                                  (_photonFeatureDistanceMeters(left) ?? double.infinity).compareTo(
-                                    _photonFeatureDistanceMeters(right) ?? double.infinity));
+                                final citySearch = _isLikelyCityQuery(value);
+                                found.sort((left, right) {
+                                  if (citySearch) {
+                                    final cityOrder = (_isPhotonCityFeature(right) ? 1 : 0)
+                                        .compareTo(_isPhotonCityFeature(left) ? 1 : 0);
+                                    if (cityOrder != 0) return cityOrder;
+                                  }
+                                  return (_photonFeatureDistanceMeters(left) ?? double.infinity)
+                                      .compareTo(_photonFeatureDistanceMeters(right) ?? double.infinity);
+                                });
                                 refreshSearch(() {
                                   photonSuggestions = found;
                                   photonLoadingSuggestions = false;
