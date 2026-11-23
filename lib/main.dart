@@ -2799,8 +2799,39 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   String _photonDestinationAddress(Map<String, dynamic> feature) {
-    final streetAddress = _photonFeatureStreetAddress(feature);
-    return streetAddress.isNotEmpty ? streetAddress : _photonFeatureAddress(feature);
+    final raw = feature['properties'];
+    final p = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+    String value(String key) => (p[key] ?? '').toString().trim();
+    final name = value('name');
+    final street = value('street');
+    final house = value('housenumber');
+    final district = value('district').isNotEmpty ? value('district') : value('suburb');
+    final city = value('city');
+    final address = value('address');
+    final display = value('display_label').isNotEmpty
+        ? value('display_label')
+        : value('label');
+
+    // Keep a POI/landmark name and its street address together. The old
+    // implementation returned the street first and discarded the POI name.
+    final streetParts = <String>[
+      if (street.isNotEmpty) street,
+      if (house.isNotEmpty && house != street) house,
+    ];
+    final streetLine = streetParts.join(', ');
+    final result = <String>[];
+    if (name.isNotEmpty && name != street && name != house) result.add(name);
+    if (streetLine.isNotEmpty) result.add(streetLine);
+    if (streetLine.isEmpty && address.isNotEmpty && !result.contains(address)) {
+      result.add(address);
+    }
+    if (district.isNotEmpty && !result.contains(district)) result.add(district);
+    if (city.isNotEmpty && !result.contains(city)) result.add(city);
+    if (result.isNotEmpty) return result.join(' · ');
+
+    // Photon may return only a formatted label for a road/house feature.
+    if (display.isNotEmpty) return display;
+    return _photonFeatureAddress(feature);
   }
 
   double? _photonFeatureDistanceMeters(Map<String, dynamic> feature) {
@@ -6405,11 +6436,30 @@ _navigationMatchedLocation = null;
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     if (decoded is! Map) return 'Адрес не найден.';
     final rawFeatures = decoded['features'];
-    if (rawFeatures is! List || rawFeatures.isEmpty || rawFeatures.first is! Map) {
+    if (rawFeatures is! List || rawFeatures.isEmpty) {
       return 'Адрес не найден.';
     }
-    final feature = Map<String, dynamic>.from(rawFeatures.first as Map);
-    final address = _photonDestinationAddress(feature);
+    Map<String, dynamic>? bestFeature;
+    var bestScore = -1;
+    for (final item in rawFeatures) {
+      if (item is! Map) continue;
+      final feature = Map<String, dynamic>.from(item);
+      final raw = feature['properties'];
+      final p = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+      final hasName = (p['name']?.toString().trim().isNotEmpty ?? false);
+      final hasStreet = (p['street']?.toString().trim().isNotEmpty ?? false);
+      final hasHouse = (p['housenumber']?.toString().trim().isNotEmpty ?? false);
+      final hasLabel = (p['display_label']?.toString().trim().isNotEmpty ?? false) ||
+          (p['label']?.toString().trim().isNotEmpty ?? false);
+      final score = (hasStreet ? 4 : 0) +
+          (hasHouse ? 2 : 0) + (hasName ? 2 : 0) + (hasLabel ? 1 : 0);
+      if (score > bestScore) {
+        bestScore = score;
+        bestFeature = feature;
+      }
+    }
+    if (bestFeature == null) return 'Адрес не найден.';
+    final address = _photonDestinationAddress(bestFeature);
     return address.isEmpty ? 'Адрес не найден.' : address;
   }
 
