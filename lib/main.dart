@@ -2827,7 +2827,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
     if (district.isNotEmpty && !result.contains(district)) result.add(district);
     if (city.isNotEmpty && !result.contains(city)) result.add(city);
-    if (result.isNotEmpty) return result.join(' · ');
+    if (result.isNotEmpty) {
+      final ordered = <String>[
+        if (district.isNotEmpty) district,
+        if (name.isNotEmpty && name != street && name != house) name,
+        if (street.isNotEmpty) street,
+        if (house.isNotEmpty && house != street) 'дом $house',
+        if (city.isNotEmpty && city != district) city,
+      ];
+      final unique = <String>[];
+      for (final part in ordered) {
+        if (part.isNotEmpty && !unique.any((item) => item.toLowerCase() == part.toLowerCase())) {
+          unique.add(part);
+        }
+      }
+      return unique.join(', ');
+    }
 
     // Photon may return only a formatted label for a road/house feature.
     if (display.isNotEmpty) return display;
@@ -3298,6 +3313,47 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
     } catch (error) {
       debugPrint('BAKE saved places address search unavailable: $error');
+    }
+
+    // Map-selected reverse-geocoded addresses retain exact coordinates and
+    // are searchable later without relying on a fresh geocoder response.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final records = prefs.getStringList('map_address_history_v1') ?? <String>[];
+      final normalizedNeedle = needle.toLowerCase().replaceAll('ё', 'е')
+          .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ').trim();
+      final tokens = normalizedNeedle.split(RegExp(r'\\s+')).where((v) => v.isNotEmpty).toList();
+      for (final rawRecord in records) {
+        try {
+          final record = jsonDecode(rawRecord);
+          if (record is! Map) continue;
+          final address = (record['address'] ?? '').toString().trim();
+          final lat = double.tryParse(record['lat']?.toString() ?? '');
+          final lon = double.tryParse(record['lon']?.toString() ?? '');
+          final searchable = address.toLowerCase().replaceAll('ё', 'е')
+              .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ').trim();
+          if (address.isEmpty || lat == null || lon == null || tokens.isEmpty ||
+              !tokens.every(searchable.contains)) continue;
+          savedPlaceFeatures.add(<String, dynamic>{
+            'type': 'Feature',
+            '_mapAddressHistory': true,
+            'properties': <String, dynamic>{
+              'name': address,
+              'display_label': address,
+              'address': address,
+              'source': 'BAKE map address history',
+            },
+            'geometry': <String, dynamic>{
+              'type': 'Point',
+              'coordinates': <double>[lon, lat],
+            },
+          });
+        } catch (_) {
+          continue;
+        }
+      }
+    } catch (error) {
+      debugPrint('BAKE map address history search unavailable: $error');
     }
 
     final localResults = await _offlineAddressSearch.search(query, near: near ?? _currentLocation ?? _shymkent);
@@ -5752,7 +5808,7 @@ _navigationMatchedLocation = null;
                   ...history.take(4).map((query) => ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.history, color: Color(0xFF69737D)),
-                    title: Text(query, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    title: Text(query, maxLines: 3, softWrap: true, overflow: TextOverflow.ellipsis),
                     trailing: const Icon(Icons.north_west, size: 18),
                     onTap: () {
                       Navigator.pop(pageContext);
@@ -6450,6 +6506,41 @@ _navigationMatchedLocation = null;
     return best;
   }
 
+  Future<void> _rememberMapAddress(String address, LatLng point) async {
+    final value = address.trim();
+    if (value.isEmpty || value == 'Адрес не найден.' || value == 'Адрес определяется…') return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final records = prefs.getStringList('map_address_history_v1') ?? <String>[];
+      records.removeWhere((raw) {
+        try {
+          final item = jsonDecode(raw);
+          if (item is! Map) return false;
+          final oldLat = double.tryParse(item['lat']?.toString() ?? '');
+          final oldLon = double.tryParse(item['lon']?.toString() ?? '');
+          return oldLat != null && oldLon != null &&
+              (oldLat - point.latitude).abs() < 0.00002 &&
+              (oldLon - point.longitude).abs() < 0.00002;
+        } catch (_) {
+          return false;
+        }
+      });
+      records.insert(0, jsonEncode({
+        'address': value,
+        'lat': point.latitude.toStringAsFixed(6),
+        'lon': point.longitude.toStringAsFixed(6),
+      }));
+      await prefs.setStringList('map_address_history_v1', records.take(100).toList());
+
+      final history = prefs.getStringList('search_history') ?? <String>[];
+      history.remove(value);
+      history.insert(0, value);
+      await prefs.setStringList('search_history', history.take(20).toList());
+    } catch (error) {
+      debugPrint('BAKE map address history save failed: $error');
+    }
+  }
+
   Future<void> _selectMapDestination(LatLng point) async {
     if (point.latitude < 40 || point.latitude > 56 ||
         point.longitude < 46 || point.longitude > 88) {
@@ -6486,6 +6577,7 @@ _navigationMatchedLocation = null;
     }
     try {
       final address = await _lookupPhotonReverseAddress(point);
+      await _rememberMapAddress(address, point);
       if (mounted && _destination == point) {
         setState(() => _selectedMapPointAddress = address);
       }
@@ -8485,9 +8577,9 @@ _navigationMatchedLocation = null;
                                   padding: const EdgeInsets.only(bottom: 4),
                                   child: Text(
                                     'B · ${_selectedMapPointAddress.trim().isNotEmpty ? _selectedMapPointAddress : (_searchController.text.trim().isNotEmpty ? _searchController.text.trim() : 'Адрес определяется…')}',
-                                    maxLines: 1,
-                                    softWrap: false,
-                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 3,
+                                    softWrap: true,
+                                    overflow: TextOverflow.fade,
                                     style: const TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w800,
