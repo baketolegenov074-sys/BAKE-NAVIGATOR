@@ -328,6 +328,7 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
         "name": primary_name,
         "street": street,
         "house": house,
+        "district": district,
         "kind": kind,
         "lat": round(lat, 7),
         "lon": round(lon, 7),
