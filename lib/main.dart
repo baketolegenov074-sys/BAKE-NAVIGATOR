@@ -894,6 +894,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   final MapController _mapController = MapController();
   // flutter_map controllers are unusable until MapOptions.onMapReady fires.
   bool _offlineMapReady = false;
+  // Experimental online renderer; MapLibre remains the default and fallback.
+  bool _flutterMapExperimentEnabled = false;
+  bool _flutterMapExperimentLoading = false;
+  Style? _flutterMapOnlineStyle;
+  bool get _isFlutterMapDisplayed => _isOfflineMapActive || _flutterMapExperimentEnabled;
   ml.MapLibreMapController? _mapLibreController;
   bool _mapLibreStyleReady = false;
   bool _onlineLabelStylePatchStarted = false;
@@ -1664,14 +1669,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   LatLng get _mapCameraCenter {
-    if (_isOfflineMapActive) {
+    if (_isFlutterMapDisplayed) {
       return _offlineMapReady ? _mapController.camera.center : (_currentLocation ?? _shymkent);
     }
     final target = _mapLibreController?.cameraPosition?.target;
     return target == null ? (_currentLocation ?? _shymkent) : LatLng(target.latitude, target.longitude);
   }
 
-  double get _mapCameraZoom => _isOfflineMapActive
+  double get _mapCameraZoom => _isFlutterMapDisplayed
       ? (_offlineMapReady ? _mapController.camera.zoom : 13)
       : (_mapLibreController?.cameraPosition?.zoom ?? 13);
 
@@ -1682,7 +1687,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   void _moveMapCamera(LatLng point, double zoom) {
-    if (_isOfflineMapActive) {
+    if (_isFlutterMapDisplayed) {
       if (!_offlineMapReady) return;
       _mapController.move(point, zoom);
       return;
@@ -1697,7 +1702,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   void _updateNavigationCamera(LatLng point, double zoom, double heading) {
     _lastCameraHeadingDegrees = heading;
     if (!_appInForeground) return;
-    if (_isOfflineMapActive) {
+    if (_isFlutterMapDisplayed) {
       if (!_offlineMapReady) return;
       _mapController.move(point, zoom);
       _mapController.rotate(-heading);
@@ -1721,7 +1726,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   void _rotateMapCamera(double rotation) {
-    if (_isOfflineMapActive) {
+    if (_isFlutterMapDisplayed) {
       if (!_offlineMapReady) return;
       _mapController.rotate(rotation);
       return;
@@ -1741,7 +1746,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   void _fitMapCamera(List<LatLng> points) {
     if (points.isEmpty) return;
-    if (_isOfflineMapActive) {
+    if (_isFlutterMapDisplayed) {
       if (!_offlineMapReady) return;
       _mapController.fitCamera(CameraFit.coordinates(
         coordinates: points,
@@ -1773,7 +1778,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   void _onOfflineMapReady() {
-    if (!mounted || !_isOfflineMapActive) return;
+    if (!mounted || !_isFlutterMapDisplayed) return;
     _offlineMapReady = true;
     final point = _currentLocation;
     if (point == null) return;
@@ -2652,6 +2657,41 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
       debugPrint('BAKE automatic Valhalla setup failed: $error');
       return false;
+    }
+  }
+
+  Future<void> _toggleFlutterMapExperiment() async {
+    if (_flutterMapExperimentEnabled) {
+      setState(() {
+        _flutterMapExperimentEnabled = false;
+        _offlineMapReady = false;
+      });
+      return;
+    }
+    if (_flutterMapExperimentLoading) return;
+    setState(() => _flutterMapExperimentLoading = true);
+    try {
+      // Use the same OpenFreeMap Liberty style as MapLibre so the renderer,
+      // not the map data/style, is the primary variable in this experiment.
+      final style = _flutterMapOnlineStyle ?? await StyleReader(
+        uri: 'https://tiles.openfreemap.org/styles/liberty',
+      ).read();
+      if (!mounted) return;
+      setState(() {
+        _flutterMapOnlineStyle = style;
+        _flutterMapExperimentEnabled = true;
+        _offlineMapReady = false;
+      });
+    } catch (error) {
+      debugPrint('BAKE FlutterMap online experiment failed to load style: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Экспериментальная онлайн-карта не загрузилась: $error'),
+          duration: const Duration(seconds: 4),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _flutterMapExperimentLoading = false);
     }
   }
 
@@ -8471,7 +8511,7 @@ _navigationMatchedLocation = null;
       backgroundColor: const Color(0xFFF3F6FA),
       body: Stack(
         children: [
-          if (!_isOfflineMapActive)
+          if (!_isFlutterMapDisplayed)
             Listener(
               onPointerDown: (event) {
                 _mapPointerDownAt = DateTime.now();
@@ -8603,6 +8643,13 @@ _navigationMatchedLocation = null;
                     }),
                     maximumZoom: 18,
                   )
+                else if (_flutterMapExperimentEnabled && _flutterMapOnlineStyle != null)
+                  VectorTileLayer(
+                    theme: _flutterMapOnlineStyle!.theme,
+                    sprites: _flutterMapOnlineStyle!.sprites,
+                    tileProviders: _flutterMapOnlineStyle!.providers,
+                    maximumZoom: 18,
+                  )
                 else
                   TileLayer(tileProvider: _offlineTileProvider!),
                 if (_routeAlternatives.length > 1)
@@ -8721,6 +8768,54 @@ _navigationMatchedLocation = null;
           ),
           if (!_isOfflineMapActive)
             Positioned(
+              top: 334,
+              right: 14,
+              child: SafeArea(
+                bottom: false,
+                child: Material(
+                  color: _flutterMapExperimentEnabled
+                      ? const Color(0xFFE8F5E9)
+                      : Colors.white,
+                  elevation: 5,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: _flutterMapExperimentLoading
+                        ? null
+                        : _toggleFlutterMapExperiment,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_flutterMapExperimentLoading)
+                            const SizedBox(
+                              width: 15,
+                              height: 15,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          else
+                            const Icon(Icons.science_outlined, size: 18, color: Color(0xFF202020)),
+                          const SizedBox(width: 6),
+                          Text(
+                            _flutterMapExperimentEnabled
+                                ? 'FLUTTERMAP · ТЕСТ'
+                                : 'MAPLIBRE · ОСНОВНАЯ',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF202020),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (!_isOfflineMapActive)
+            Positioned(
               top: 286,
               right: 14,
               child: SafeArea(
@@ -8756,7 +8851,7 @@ _navigationMatchedLocation = null;
                 ),
               ),
             ),
-          if (!_isOfflineMapActive)
+          if (!_isOfflineMapActive && !_flutterMapExperimentEnabled)
             Positioned(
               top: 190,
               right: 14,
