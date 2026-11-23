@@ -8416,11 +8416,11 @@ _navigationMatchedLocation = null;
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (_destination != null && _selectedMapPointAddress.isNotEmpty)
+                              if (_destination != null)
                                 Padding(
                                   padding: const EdgeInsets.only(bottom: 4),
                                   child: Text(
-                                    'B · $_selectedMapPointAddress',
+                                    'B · ${_selectedMapPointAddress.trim().isNotEmpty ? _selectedMapPointAddress : (_searchController.text.trim().isNotEmpty ? _searchController.text.trim() : 'Адрес определяется…')}',
                                     softWrap: true,
                                     style: const TextStyle(
                                       fontSize: 12,
