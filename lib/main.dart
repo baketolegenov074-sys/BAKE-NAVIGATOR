@@ -2862,6 +2862,67 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return distance < 1000 ? '${distance.round()} м' : '${(distance / 1000).toStringAsFixed(1)} км';
   }
 
+  static DateTime? _lastNominatimCityRequestAt;
+
+  Future<List<Map<String, dynamic>>> _fetchNominatimCityFeatures(String query) async {
+    final previous = _lastNominatimCityRequestAt;
+    if (previous != null) {
+      final elapsed = DateTime.now().difference(previous).inMilliseconds;
+      final waitMs = 1000 - elapsed;
+      if (waitMs > 0) await Future<void>.delayed(Duration(milliseconds: waitMs));
+    }
+    _lastNominatimCityRequestAt = DateTime.now();
+
+    final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+      'q': query.trim(),
+      'format': 'jsonv2',
+      'addressdetails': '1',
+      'limit': '20',
+      'countrycodes': 'kz',
+      'featureType': 'city',
+    });
+    final response = await http.get(uri, headers: const {
+      'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+      'Accept': 'application/json',
+    }).timeout(const Duration(seconds: 8));
+    if (response.statusCode != 200) return <Map<String, dynamic>>[];
+
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! List) return <Map<String, dynamic>>[];
+    return decoded.whereType<Map>().map((item) {
+      final result = Map<String, dynamic>.from(item);
+      final addressRaw = result['address'];
+      final address = addressRaw is Map
+          ? Map<String, dynamic>.from(addressRaw)
+          : <String, dynamic>{};
+      final lat = double.tryParse(result['lat']?.toString() ?? '');
+      final lon = double.tryParse(result['lon']?.toString() ?? '');
+      if (lat == null || lon == null) return <String, dynamic>{};
+      final name = (result['name'] ?? address['city'] ?? address['town'] ??
+          address['village'] ?? result['display_name'] ?? query).toString();
+      final placeType = (result['addresstype'] ?? result['type'] ?? 'city').toString();
+      return <String, dynamic>{
+        'type': 'Feature',
+        'properties': <String, dynamic>{
+          'name': name,
+          'display_label': (result['display_name'] ?? name).toString(),
+          'city': (address['city'] ?? address['town'] ?? address['village'] ?? name).toString(),
+          'osm_key': 'place',
+          'osm_value': placeType == 'town' || placeType == 'village' || placeType == 'hamlet'
+              ? placeType
+              : 'city',
+          'osm_type': result['osm_type'],
+          'osm_id': result['osm_id'],
+          'source': 'nominatim',
+        },
+        'geometry': <String, dynamic>{
+          'type': 'Point',
+          'coordinates': <double>[lon, lat],
+        },
+      };
+    }).where((feature) => feature.isNotEmpty).toList();
+  }
+
   Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false}) async {
     Future<List<Map<String, dynamic>>> request(Uri uri) async {
       final response = await http.get(uri, headers: const {
@@ -2907,17 +2968,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       caseSensitive: false,
     ).firstMatch(trimmed);
     final requestUris = <Uri>[];
-    // City names must not be ranked as nearby Shymkent addresses. Ask Photon
-    // explicitly for Kazakhstan city-layer matches on the online map only.
-    if (includeCitySearch && _isLikelyCityQuery(trimmed)) {
-      requestUris.add(Uri.https('photon.komoot.io', '/api/', {
-        'q': trimmed,
-        'lang': 'ru',
-        'limit': '50',
-        'countrycode': 'KZ',
-        'location_bias_scale': '0.0',
-      }));
-    }
+    // Intercity settlement lookup uses Nominatim; all ordinary Photon
+    // address and POI requests below remain unchanged.
+    final nominatimCityResults = includeCitySearch && _isLikelyCityQuery(trimmed)
+        ? await _fetchNominatimCityFeatures(trimmed)
+        : <Map<String, dynamic>>[];
     for (final apiQuery in apiQueries.take(3)) {
       requestUris.add(Uri.https('photon.komoot.io', '/api/', {
         'q': apiQuery,
@@ -2955,7 +3010,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final groups = await Future.wait(
       requestUris.toSet().map(request),
     );
-    final merged = <Map<String, dynamic>>[];
+    final merged = <Map<String, dynamic>>[...nominatimCityResults];
     final seen = <String>{};
     for (final group in groups) {
       for (final feature in group) {
