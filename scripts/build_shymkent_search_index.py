@@ -256,6 +256,11 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
     categories = category_terms(properties)
     if not names and not house and not categories:
         return None
+    # A house number without a street or district is not a usable address.
+    # Excluding it prevents searches such as "5" from pointing to an
+    # arbitrary building elsewhere in the city.
+    if house and not street and not district:
+        return None
 
     point = feature_point(feature)
     if point is None:
