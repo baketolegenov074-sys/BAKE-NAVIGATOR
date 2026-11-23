@@ -126,6 +126,7 @@ class KazakhVoiceService {
     maxRedirects: 8,
   ));
   final Map<int, Completer<void>> _pending = {};
+  CancelToken? _downloadCancelToken;
   ReceivePort? _receivePort;
   Isolate? _isolate;
   SendPort? _workerPort;
@@ -190,6 +191,7 @@ class KazakhVoiceService {
   }
 
   Future<String> _downloadAndExtractModel({
+    required CancelToken cancelToken,
     void Function(int received, int total)? onProgress,
     void Function(String stage)? onStage,
   }) async {
@@ -213,6 +215,7 @@ class KazakhVoiceService {
         final response = await _dio.download(
           _kazakhModelUrl,
           partial.path,
+          cancelToken: cancelToken,
           options: Options(
             headers: offset > 0 ? {'Range': 'bytes=$offset-'} : <String, dynamic>{},
             validateStatus: (status) => status == 200 || status == 206,
@@ -319,7 +322,9 @@ class KazakhVoiceService {
     void Function(int received, int total)? onProgress,
     void Function(String stage)? onStage,
   }) async {
-    final modelDir = await _downloadAndExtractModel(onProgress: onProgress, onStage: onStage);
+    final token = CancelToken();
+    _downloadCancelToken = token;
+    final modelDir = await _downloadAndExtractModel(cancelToken: token, onProgress: onProgress, onStage: onStage);
     onStage?.call('initializing');
     // sherpa-onnx 2.x no longer embeds eSpeak/Piper phonemization.
     if (!_phonemizerInitialized) {
@@ -479,6 +484,28 @@ class KazakhVoiceService {
   }
 
   Future<void> stop() => _player.stop();
+
+  /// Stop current audio, cancel an in-flight download and unload native TTS.
+  /// The downloaded model files are intentionally retained for the next opt-in.
+  Future<void> stopAndUnload() async {
+    _downloadCancelToken?.cancel('Kazakh voice disabled or language changed');
+    _downloadCancelToken = null;
+    await _player.stop();
+    await stopAndUnload();
+    _workerPort?.send({'command': 'dispose'});
+    _isolate?.kill(priority: Isolate.immediate);
+    _isolate = null;
+    _workerPort = null;
+    _receivePort?.close();
+    _receivePort = null;
+    _ready = null;
+    _starting = null;
+    for (final completer in _pending.values) {
+      if (!completer.isCompleted) completer.completeError(StateError('Kazakh voice stopped'));
+    }
+    _pending.clear();
+    _phonemizerInitialized = false;
+  }
 
   Future<void> dispose() async {
     _workerPort?.send({'command': 'dispose'});
