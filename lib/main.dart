@@ -7235,7 +7235,10 @@ _navigationMatchedLocation = null;
 
   bool _alternativeTapInProgress = false;
 
-  bool _trySelectAlternativeAt(LatLng point) {
+  bool _trySelectAlternativeAt(
+    LatLng point, {
+    bool preferClosestAlternative = false,
+  }) {
     // Keep the offline FlutterMap hit test unchanged.
     if (_lastMapPointerHoldDuration >= const Duration(seconds: 1)) return false;
     if (!_routeReady || _routeAlternatives.length < 2) return false;
@@ -7256,11 +7259,12 @@ _navigationMatchedLocation = null;
     // A map tap away from the route must not switch to an arbitrary alternative.
     // Prefer an alternative only when the finger is close to it and it is
     // meaningfully closer than the currently selected route.
-    // Select the route actually closest to the finger. Do not add a
-    // 6 m preference for the active route: it made nearby alternatives feel
-    // unresponsive when the user tapped directly on their line.
+    // The experimental online FlutterMap selects the closest line directly.
+    // Keep the existing active-route preference for the offline map.
     if (bestIndex < 0 || bestDistance > 45 ||
-        selectedDistance < bestDistance) {
+        (preferClosestAlternative
+            ? selectedDistance < bestDistance
+            : selectedDistance + 6 < bestDistance)) {
       return false;
     }
     _applyAlternativeRouteTap(bestIndex);
@@ -8988,7 +8992,11 @@ _navigationMatchedLocation = null;
                 initialZoom: 13,
                 onTap: (_, point) {
                   // A short tap may switch an alternative route, never set an address.
-                  _trySelectAlternativeAt(point);
+                  _trySelectAlternativeAt(
+                    point,
+                    preferClosestAlternative:
+                        _flutterMapExperimentEnabled && !_isOfflineMapActive,
+                  );
                 },
                 onLongPress: (_, point) => _captureMapLongPressPoint(point),
                 onPositionChanged: (camera, hasGesture) {
