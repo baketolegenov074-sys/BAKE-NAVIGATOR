@@ -895,11 +895,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   final MapController _mapController = MapController();
   // flutter_map controllers are unusable until MapOptions.onMapReady fires.
   bool _offlineMapReady = false;
-  // Experimental online renderer; MapLibre remains the default and fallback.
-  bool _flutterMapExperimentEnabled = false;
-  bool _flutterMapExperimentLoading = false;
-  Style? _flutterMapOnlineStyle;
-  bool get _isFlutterMapDisplayed => _isOfflineMapActive || _flutterMapExperimentEnabled;
+  // FlutterMap is reserved exclusively for the offline MBTiles map.
+  bool get _isFlutterMapDisplayed => _isOfflineMapActive;
   ml.MapLibreMapController? _mapLibreController;
   bool _mapLibreStyleReady = false;
   bool _onlineLabelStylePatchStarted = false;
@@ -2666,41 +2663,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
-  Future<void> _toggleFlutterMapExperiment() async {
-    if (_flutterMapExperimentEnabled) {
-      setState(() {
-        _flutterMapExperimentEnabled = false;
-        _offlineMapReady = false;
-      });
-      return;
-    }
-    if (_flutterMapExperimentLoading) return;
-    setState(() => _flutterMapExperimentLoading = true);
-    try {
-      // Use the same OpenFreeMap Liberty style as MapLibre so the renderer,
-      // not the map data/style, is the primary variable in this experiment.
-      final style = _flutterMapOnlineStyle ?? await StyleReader(
-        uri: 'https://tiles.openfreemap.org/styles/liberty',
-      ).read();
-      if (!mounted) return;
-      setState(() {
-        _flutterMapOnlineStyle = style;
-        _flutterMapExperimentEnabled = true;
-        _offlineMapReady = false;
-      });
-    } catch (error) {
-      debugPrint('BAKE FlutterMap online experiment failed to load style: $error');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Экспериментальная онлайн-карта не загрузилась: $error'),
-          duration: const Duration(seconds: 4),
-        ));
-      }
-    } finally {
-      if (mounted) setState(() => _flutterMapExperimentLoading = false);
-    }
-  }
-
   Future<void> _toggleOfflineMapFromMap() async {
     if (_isOfflineMapActive) {
       _disposeOfflineMap();
@@ -4041,45 +4003,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
     final localResults = await _offlineAddressSearch.search(query, near: near ?? _currentLocation ?? _shymkent);
 
-    // The experimental online FlutterMap search must query Photon even when
-    // the Shymkent-only local index has partial matches. Keep the offline-only
-    // search path unchanged when the experimental online map is not active.
-    if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
-      try {
-        final onlineResults = await _fetchPhotonFeatures(
-          query,
-          includeCitySearch: true,
-        ).timeout(const Duration(seconds: 8));
-        final merged = <Map<String, dynamic>>[];
-        final seen = <String>{};
-        // Keep exact city matches ahead of the Shymkent local index so a
-        // request such as "Тараз" cannot be buried under nearby local hits.
-        final orderedResults = <Map<String, dynamic>>[
-          ...onlineResults,
-          ...localResults,
-        ];
-        _sortSearchFeatures(orderedResults, query);
-        for (final feature in orderedResults) {
-          final rawProperties = feature['properties'];
-          final properties = rawProperties is Map
-              ? Map<String, dynamic>.from(rawProperties)
-              : <String, dynamic>{};
-          final rawGeometry = feature['geometry'];
-          final coordinates = rawGeometry is Map ? rawGeometry['coordinates'] : null;
-          final identity = properties['osm_id'] != null
-              ? '${properties['osm_type'] ?? ''}:${properties['osm_id']}'
-              : '${properties['name'] ?? ''}:${coordinates is List && coordinates.length >= 2 ? coordinates[0] : ''}:${coordinates is List && coordinates.length >= 2 ? coordinates[1] : ''}';
-          if (seen.add(identity)) merged.add(feature);
-        }
-        final combined = <Map<String, dynamic>>[...reportFeatures, ...merged];
-        _sortSearchFeatures(combined, query);
-        return combined;
-      } catch (error) {
-        debugPrint('BAKE Photon address search unavailable: $error');
-        return <Map<String, dynamic>>[...reportFeatures, ...localResults];
-      }
-    }
-
     // Preserve the established offline behavior: use the local Shymkent
     // index first and contact Photon only when the local index has no match.
     var otherResults = localResults;
@@ -4140,9 +4063,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         }
       } catch (error) {
         debugPrint('BAKE Nominatim fallback unavailable: $error');
-      }
-      if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
-        _sortSearchFeatures(results, query);
       }
       if (!mounted) return;
       if (results.isEmpty) {
@@ -6499,13 +6419,9 @@ _navigationMatchedLocation = null;
                                 );
                                 if (!searchContext.mounted) return;
                                 if (requestVersion != photonRequestVersion) return;
-                                if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
-                                  _sortSearchFeatures(found, value);
-                                } else {
-                                  found.sort((left, right) =>
-                                      (_photonFeatureDistanceMeters(left) ?? double.infinity)
-                                          .compareTo(_photonFeatureDistanceMeters(right) ?? double.infinity));
-                                }
+                                found.sort((left, right) =>
+                                    (_photonFeatureDistanceMeters(left) ?? double.infinity)
+                                        .compareTo(_photonFeatureDistanceMeters(right) ?? double.infinity));
                                 refreshSearch(() {
                                   photonSuggestions = found;
                                   photonLoadingSuggestions = false;
@@ -9007,13 +8923,6 @@ _navigationMatchedLocation = null;
                     }),
                     maximumZoom: 18,
                   )
-                else if (_flutterMapExperimentEnabled && _flutterMapOnlineStyle != null)
-                  VectorTileLayer(
-                    theme: _flutterMapOnlineStyle!.theme,
-                    sprites: _flutterMapOnlineStyle!.sprites,
-                    tileProviders: _flutterMapOnlineStyle!.providers,
-                    maximumZoom: 18,
-                  )
                 else
                   TileLayer(tileProvider: _offlineTileProvider!),
                 if (_routeAlternatives.length > 1)
@@ -9130,7 +9039,7 @@ _navigationMatchedLocation = null;
               ),
             ),
           ),
-          if (!_isOfflineMapActive && !_flutterMapExperimentEnabled)
+          if (!_isOfflineMapActive)
             Positioned(
               top: 286,
               right: 14,
@@ -9167,7 +9076,7 @@ _navigationMatchedLocation = null;
                 ),
               ),
             ),
-          if (!_isOfflineMapActive && !_flutterMapExperimentEnabled)
+          if (!_isOfflineMapActive)
             Positioned(
               top: 190,
               right: 14,
