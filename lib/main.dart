@@ -4133,11 +4133,27 @@ _navigationMatchedLocation = null;
     final anchorIndex = _navigationActive ? _navigationFixSegmentIndex : 0;
     final firstSegment = math.max(0, anchorIndex - 2);
     final lastSegment = math.min(_routePoints.length - 2, anchorIndex + 12);
+    const latScale = 110540.0;
+    final lonScale = 111320.0 * math.cos(point.latitude * math.pi / 180);
+    final px = point.longitude * lonScale;
+    final py = point.latitude * latScale;
     var segmentIndex = firstSegment;
     for (var i = firstSegment; i <= lastSegment; i++) {
       final a = _routePoints[i];
       final b = _routePoints[i + 1];
-      final distance = _distanceToSegmentMeters(point, a, b);
+      final ax = a.longitude * lonScale;
+      final ay = a.latitude * latScale;
+      final dx = (b.longitude - a.longitude) * lonScale;
+      final dy = (b.latitude - a.latitude) * latScale;
+      final lengthSquared = dx * dx + dy * dy;
+      final t = lengthSquared < 0.01
+          ? 0.0
+          : (((px - ax) * dx + (py - ay) * dy) / lengthSquared)
+              .clamp(0.0, 1.0)
+              .toDouble();
+      final ex = px - (ax + t * dx);
+      final ey = py - (ay + t * dy);
+      final distance = math.sqrt(ex * ex + ey * ey);
       if (distance < nearestDistance) {
         nearestDistance = distance;
         segmentIndex = i;
