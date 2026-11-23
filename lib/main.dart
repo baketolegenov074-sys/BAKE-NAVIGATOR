@@ -26,6 +26,7 @@ import 'services/offline_address_search.dart';
 import 'screens/road_report_center.dart';
 import 'services/road_report_sync_service.dart';
 import 'services/valhalla_archive_validator.dart';
+import 'screens/openfreemap_experiment.dart';
 
 
 // Offline label layers for the OpenMapTiles schema in shymkent.mbtiles.
@@ -997,8 +998,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   String? _speedLimitKmh;
   DateTime? _lastSpeedLimitLookup;
   LatLng? _lastSpeedLimitLookupPoint;
-  bool _speedLimitLookupInProgress = false;
-  double? _routeDistanceMeters;
+  bool _speedLimitLookupInProgress = false;  double? _routeDistanceMeters;
   double? _routeDurationSeconds;
   StreamSubscription<Position>? _positionSubscription;
   Future<void> _gpsStreamQueue = Future<void>.value();
@@ -1997,8 +1997,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           'building',
           const ml.FillLayerProperties(
             fillColor: '#C8BBA8',
-            fillOpacity: 0.12,
-          ),
+            fillOpacity: 0.12,          ),
         );
       }
       if (layerIds.contains('building-3d')) {
@@ -2997,8 +2996,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                       AppLocale.pick('В пакете 2 мужских и 4 женских голоса. Первая загрузка — около 129 МБ, дальше работает без интернета.', 'Бір пакетте 2 ер және 4 әйел дауысы бар. Алғашқы жүктеу шамамен 129 МБ, кейін интернетсіз жұмыс істейді.', 'One package includes 2 male and 4 female voices. First download is about 129 MB; after that it works offline.'),
                       style: const TextStyle(fontSize: 12, color: Color(0xFF62666D)),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
+                    const SizedBox(height: 8),                    Row(
                       children: [
                         Expanded(
                           child: FilledButton.icon(
@@ -3997,8 +3995,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     try {
       final anchor = selectAsOrigin
           ? (_currentLocation ?? _routeOrigin ?? _shymkent)
-          : (_routeOrigin ?? _currentLocation ?? _shymkent);
-      final results = await _fetchAddressFeatures(query, near: anchor);
+          : (_routeOrigin ?? _currentLocation ?? _shymkent);      final results = await _fetchAddressFeatures(query, near: anchor);
       if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
         _sortSearchFeatures(results, query);
       }
@@ -4997,8 +4994,7 @@ _navigationMatchedLocation = null;
     if (!force &&
         _lastSpeedLimitLookup != null &&
         now.difference(_lastSpeedLimitLookup!) < const Duration(seconds: 30) &&
-        movedMeters < 100) {
-      return;
+        movedMeters < 100) {      return;
     }
 
     _speedLimitLookupInProgress = true;
@@ -5997,8 +5993,7 @@ _navigationMatchedLocation = null;
           routeOrigin.longitude >= 69.35 &&
           routeOrigin.longitude <= 69.90 &&
           destination.latitude >= 42.12 &&
-          destination.latitude <= 42.53 &&
-          destination.longitude >= 69.35 &&
+          destination.latitude <= 42.53 &&          destination.longitude >= 69.35 &&
           destination.longitude <= 69.90;
       if (_routeStops.isEmpty && isInsideShymkentGraph) {
         if (!_valhallaReady) {
@@ -6997,8 +6992,7 @@ _navigationMatchedLocation = null;
               ],
             ),
           ),
-        ),
-      ),
+        ),      ),
     );
   }
 
@@ -7997,8 +7991,7 @@ _navigationMatchedLocation = null;
                     child: Text(
                       AppLocale.tr('Пока нет сохранённых сообщений о дорожных событиях.'),
                       textAlign: TextAlign.center,
-                    ),
-                  ),
+                    ),                  ),
                 )
               : ListView.separated(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
@@ -8997,8 +8990,7 @@ _navigationMatchedLocation = null;
                             )
                           else
                             const Icon(Icons.science_outlined, size: 18, color: Color(0xFF202020)),
-                          const SizedBox(width: 6),
-                          Text(
+                          const SizedBox(width: 6),                          Text(
                             _flutterMapExperimentEnabled
                                 ? 'FLUTTERMAP · ТЕСТ'
                                 : 'MAPLIBRE · ОСНОВНАЯ',
@@ -9997,8 +9989,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   }
  
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
+  Widget build(BuildContext context) {    return Scaffold(
       appBar: AppBar(title: Text(AppLocale.tr('Настройки BAKE Navigator'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -10007,6 +9998,21 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
               child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.public),
+                    title: const Text('Экспериментальная карта OpenFreeMap'),
+                    subtitle: const Text('Отдельная карта и независимый поиск городов'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const OpenFreeMapExperimentScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Text(AppLocale.tr('Автомобиль'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
