@@ -935,7 +935,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _offlineTileProvider != null || _offlineVectorTileProvider != null;
 
   void _disposeOfflineMap() {
-    _offlineMapReady = false;
+    // The FlutterMap widget remains mounted when its tile source changes.
+    // Keep controller readiness; onMapReady will not fire again for provider swaps.
     _offlineTileProvider?.dispose();
     _offlineTileProvider = null;
     _offlineVectorMbtiles?.dispose();
