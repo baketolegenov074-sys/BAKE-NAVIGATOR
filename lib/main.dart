@@ -6128,10 +6128,8 @@ _navigationMatchedLocation = null;
     return best;
   }
 
-  // FlutterMap uses the map-local tap coordinate to project each
-  // route into that same screen space so 3D tilt and perspective are included.
-  // The generous invisible touch radius makes a thin route easy to select
-  // without changing its visible width.
+  // Route selection is based on the same screen projection as the map tap.
+  // The invisible touch radius does not change the visible route width.
   void _applyAlternativeRouteTap(int index) {
     if (index == _selectedRouteIndex) return;
     _selectRouteAlternative(index);
