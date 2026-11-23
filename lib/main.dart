@@ -3725,7 +3725,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     Map<String, dynamic> feature,
     String query,
   ) {
-    final needle = query.trim().toLowerCase().replaceAll(RegExp(r'\\s+'), ' ');
+    final needle = query.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
     if (needle.isEmpty) return 0;
     final raw = feature['properties'];
     final properties = raw is Map
@@ -3940,14 +3940,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final seen = <String>{};
         // Keep exact city matches ahead of the Shymkent local index so a
         // request such as "Тараз" cannot be buried under nearby local hits.
-        for (final feature in onlineResults.toList()
-          ..sort((left, right) {
-            final relevance = _searchFeatureRelevanceScore(right, query)
-                .compareTo(_searchFeatureRelevanceScore(left, query));
-            if (relevance != 0) return relevance;
-            return (_photonFeatureDistanceMeters(left) ?? double.infinity)
-                .compareTo(_photonFeatureDistanceMeters(right) ?? double.infinity);
-          })) {
+        final orderedResults = <Map<String, dynamic>>[
+          ...onlineResults,
+          ...localResults,
+        ];
+        _sortSearchFeatures(orderedResults, query);
+        for (final feature in orderedResults) {
           final rawProperties = feature['properties'];
           final properties = rawProperties is Map
               ? Map<String, dynamic>.from(rawProperties)
