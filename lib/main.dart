@@ -8296,8 +8296,7 @@ _navigationMatchedLocation = null;
                                   padding: const EdgeInsets.only(bottom: 4),
                                   child: Text(
                                     'B · $_selectedMapPointAddress',
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+                                    softWrap: true,
                                     style: const TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w800,
