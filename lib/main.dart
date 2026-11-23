@@ -6853,12 +6853,10 @@ _navigationMatchedLocation = null;
     await _selectMapDestination(point);
   }
 
+  bool _alternativeTapInProgress = false;
+
   bool _trySelectAlternativeAt(LatLng point) {
-    // A short tap on an alternative line switches to it immediately.
-    // Do not use a fixed/geographic hit radius: the visible line thickness
-    // changes with zoom and a radius made taps unreliable on real devices.
-    // Compare every route and switch only when the tapped point is closest
-    // to a different route than the currently selected one.
+    // Keep the offline FlutterMap hit test unchanged.
     if (_lastMapPointerHoldDuration >= const Duration(seconds: 1)) return false;
     if (!_routeReady || _routeAlternatives.length < 2) return false;
     var bestIndex = -1;
@@ -6872,9 +6870,82 @@ _navigationMatchedLocation = null;
       }
     }
     if (bestIndex < 0 || bestIndex == _selectedRouteIndex) return false;
+    _applyAlternativeRouteTap(bestIndex);
+    return true;
+  }
 
-    // Selection is synchronous: update the active route on this same tap.
-    _selectRouteAlternative(bestIndex);
+  // MapLibre reports the actual screen coordinate of the finger. Project each
+  // route into that same screen space so 3D tilt and perspective are included.
+  // The generous invisible touch radius makes a thin route easy to select
+  // without changing its visible width.
+  Future<void> _trySelectAlternativeAtScreen(math.Point<double> tapPoint) async {
+    if (_lastMapPointerHoldDuration >= const Duration(seconds: 1) ||
+        !_routeReady ||
+        _routeAlternatives.length < 2 ||
+        _alternativeTapInProgress) {
+      return;
+    }
+    final controller = _mapLibreController;
+    if (controller == null) return;
+
+    _alternativeTapInProgress = true;
+    try {
+      var bestIndex = -1;
+      var bestDistance = double.infinity;
+      for (var i = 0; i < _routeAlternatives.length; i++) {
+        final routePoints = _simplifyRouteForDisplay(
+          _routePointsFromDecodedRoute(_routeAlternatives[i]),
+        );
+        if (routePoints.length < 2) continue;
+        final screenPoints = await controller.toScreenLocationBatch(routePoints);
+        final distance = _distanceToScreenPolyline(tapPoint, screenPoints);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestIndex = i;
+        }
+      }
+
+      // 48 logical pixels is a finger-sized hit area, independent of zoom.
+      if (!mounted || bestIndex < 0 || bestIndex == _selectedRouteIndex ||
+          bestDistance > 48) {
+        return;
+      }
+      _applyAlternativeRouteTap(bestIndex);
+    } catch (error) {
+      debugPrint('BAKE Navigator: online alternative route hit-test failed: $error');
+    } finally {
+      _alternativeTapInProgress = false;
+    }
+  }
+
+  double _distanceToScreenPolyline(
+    math.Point<double> position,
+    List<math.Point<num>> points,
+  ) {
+    if (points.length < 2) return double.infinity;
+    var best = double.infinity;
+    for (var i = 0; i < points.length - 1; i++) {
+      final a = points[i];
+      final b = points[i + 1];
+      final dx = b.x - a.x;
+      final dy = b.y - a.y;
+      final lengthSquared = dx * dx + dy * dy;
+      final t = lengthSquared == 0
+          ? 0.0
+          : (((position.x - a.x) * dx + (position.y - a.y) * dy) /
+                  lengthSquared)
+              .clamp(0.0, 1.0)
+              .toDouble();
+      final ex = position.x - (a.x + t * dx);
+      final ey = position.y - (a.y + t * dy);
+      best = math.min(best, math.sqrt(ex * ex + ey * ey));
+    }
+    return best;
+  }
+
+  void _applyAlternativeRouteTap(int index) {
+    if (index == _selectedRouteIndex) return;
+    _selectRouteAlternative(index);
     if (mounted) {
       setState(() => _message = AppLocale.tr(
         _navigationActive
@@ -6883,7 +6954,6 @@ _navigationMatchedLocation = null;
       ));
     }
     if (_navigationActive) unawaited(_speakCurrentInstruction());
-    return true;
   }
 
   double _distanceToPolylineMeters(LatLng position, List<LatLng> points) {
@@ -8406,10 +8476,10 @@ _navigationMatchedLocation = null;
               onMapCreated: _onMapLibreCreated,
               onStyleLoadedCallback: _onMapLibreStyleLoaded,
               onCameraIdle: () => unawaited(_syncMapLibreAnnotations()),
-              onMapClick: (_, point) {
-                // Short taps are reserved for choosing a visible alternative route.
-                // Address selection is handled only by the one-second hold above.
-                _trySelectAlternativeAt(LatLng(point.latitude, point.longitude));
+              onMapClick: (screenPoint, point) {
+                // Use the finger's screen position for reliable route selection
+                // on the tilted online map. Long holds still select point B.
+                unawaited(_trySelectAlternativeAtScreen(screenPoint));
               },
               onMapLongClick: (_, point) => _captureMapLongPressPoint(LatLng(point.latitude, point.longitude)),
               compassEnabled: false,
