@@ -2752,7 +2752,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             setState(() => _voiceMode = enabled ? 3 : 0);
             if (!enabled) {
               unawaited(_tts.stop());
-              unawaited(_kazakhVoiceService.stop());
+              unawaited(_kazakhVoiceService.stopAndUnload().catchError((Object error) {
+                debugPrint('BAKE ISSAI unload after voice switch failed: $error');
+              }));
             }
           },
         ),
@@ -2894,6 +2896,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             ? 'Қазақша дауыс іске қосылмады.'
             : (detail.length > 220 ? '${detail.substring(0, 220)}…' : detail);
       } finally {
+        await _kazakhVoiceService.stopAndUnload();
         offlineVoiceBusy = false;
         refreshSheet(() {});
       }
@@ -2927,6 +2930,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             ? 'Архивті өңдеу кезінде қате болды. Файлды қайта таңдаңыз.'
             : (detail.length > 220 ? '${detail.substring(0, 220)}…' : detail);
       } finally {
+        await _kazakhVoiceService.stopAndUnload();
         offlineVoiceBusy = false;
         refreshSheet(() {});
       }
@@ -3149,7 +3153,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                         await prefs.setInt('voice_mode', index);
                         if (index == 0) {
                           await _tts.stop();
-                          await _kazakhVoiceService.stop();
+                          await _kazakhVoiceService.stopAndUnload();
                         }
                       },
                     )),
@@ -7213,7 +7217,7 @@ _navigationMatchedLocation = null;
     await _selectMapDestination(point);
   }
 
-  List<List<LatLng>>? _alternativeHitTestCacheSource;
+  List<Map<String, dynamic>>? _alternativeHitTestCacheSource;
   int _alternativeHitTestCacheLength = -1;
   List<List<LatLng>> _alternativeHitTestCache = const [];
 
@@ -9657,7 +9661,7 @@ _navigationMatchedLocation = null;
                             await prefs.setInt('voice_mode', _voiceMode);
                             if (!enabled) {
                               await _tts.stop();
-                              await _kazakhVoiceService.stop();
+                              await _kazakhVoiceService.stopAndUnload();
                             } else if (_navigationActive) {
                               unawaited(_speakCurrentInstruction());
                             }
