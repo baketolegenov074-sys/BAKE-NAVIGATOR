@@ -3643,12 +3643,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _isLikelyCityQuery(String value) {
     final query = value.trim();
     if (query.length < 2 || query.length > 48 ||
-        RegExp(r'\\d').hasMatch(query) ||
-        RegExp(r'\\b(улица|ул\\.?|проспект|пр-т|мкр|микрорайон|дом|кв\\.?|шоссе|street|avenue|road)\\b',
+        RegExp(r'\d').hasMatch(query) ||
+        RegExp(r'\b(улица|ул\.?|проспект|пр-т|мкр|микрорайон|дом|кв\.?|шоссе|street|avenue|road)\b',
           caseSensitive: false).hasMatch(query)) {
       return false;
     }
-    return query.split(RegExp(r'\\s+')).length <= 4;
+    return query.split(RegExp(r'\s+')).length <= 4;
   }
 
   bool _isPhotonCityFeature(Map<String, dynamic> feature) {
