@@ -2875,7 +2875,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     String normalize(String value) => value
         .replaceAll('ё', 'е')
         .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ')
-        .replaceAll(RegExp(r'\\s+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
     final normalizedNeedle = normalize(needle);
     final name = normalize(value('name'));
@@ -3136,7 +3136,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final nominatimCityFuture = includeCitySearch && includeNominatimCitySearch && _isLikelyCityQuery(trimmed)
         ? _fetchNominatimCityFeatures(trimmed)
         : Future<List<Map<String, dynamic>>>.value(<Map<String, dynamic>>[]);
-    for (final apiQuery in apiQueries.take(3)) {
+    for (final apiQuery in apiQueries.take(4)) {
       requestUris.add(Uri.https('photon.komoot.io', '/api/', {
         'q': apiQuery,
         'lang': 'ru',
@@ -3216,7 +3216,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         ].whereType<Object>().join(' ').toLowerCase()
             .replaceAll('ё', 'е')
             .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ')
-            .replaceAll(RegExp(r'\\s+'), ' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
             .trim();
         return queryTokens.isNotEmpty &&
             queryTokens.every((token) => searchable.contains(token));
