@@ -3661,9 +3661,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final osmKey = properties['osm_key']?.toString().toLowerCase();
     final osmValue = properties['osm_value']?.toString().toLowerCase();
     final legacyType = properties['type']?.toString().toLowerCase();
-    return (osmKey == 'place' && (osmValue == 'city' || osmValue == 'town')) ||
-        legacyType == 'city' ||
-        legacyType == 'town';
+    const settlementTypes = <String>{
+      'city', 'town', 'village', 'hamlet', 'locality',
+    };
+    return (osmKey == 'place' && settlementTypes.contains(osmValue)) ||
+        settlementTypes.contains(legacyType);
   }
 
   String valueForPhotonFeature(Map<String, dynamic> feature) {
@@ -3776,9 +3778,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       requestUris.add(Uri.https('photon.komoot.io', '/api/', {
         'q': trimmed,
         'lang': 'ru',
-        'limit': '10',
+        'limit': '20',
         'countrycode': 'KZ',
-        'layer': 'city',
         'location_bias_scale': '0.0',
       }));
     }
