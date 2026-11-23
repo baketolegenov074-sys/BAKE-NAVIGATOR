@@ -18,7 +18,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
-import 'package:maplibre_gl/maplibre_gl.dart' as ml;
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'kazakh_voice_service.dart';
 import 'services/road_alert_service.dart';
@@ -30,7 +30,7 @@ import 'screens/openfreemap_experiment.dart';
 
 
 // Offline label layers for the OpenMapTiles schema in shymkent.mbtiles.
-// This renderer paints text with Flutter's local/system fonts; MapLibre PBF
+// This renderer paints text with Flutter's local/system fonts; PBF
 // glyph URLs are not used by vector_tile_renderer.
 vtr.Theme _buildBakeOfflineVectorTheme() {
   final base = vtr.ProvidedThemes.lightTheme();
@@ -900,24 +900,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _flutterMapExperimentLoading = false;
   Style? _flutterMapOnlineStyle;
   bool get _isFlutterMapDisplayed => true;
-  ml.MapLibreMapController? _mapLibreController;
-  bool _mapLibreStyleReady = false;
-  bool _onlineLabelStylePatchStarted = false;
-  bool _onlineLabelStylePatched = false;
-  int _mapLibreStyleGeneration = 0;
-  bool _is3DMap = true;
-  bool _isSatelliteMap = false;
-  bool _isBrightMapPreview = false;
-  final Map<String, dynamic> _satelliteOverlayFillOpacities = <String, dynamic>{};
-  bool _mapLibreAnnotationSyncInProgress = false;
-  bool _mapLibreAnnotationSyncPending = false;
-  bool _mapLibreRouteSyncPending = false;
-  DateTime? _lastFullMapAnnotationRebuildAt;
-  static const String _routeGeoJsonSourceId = 'bake-route-geojson';
+
   LatLng? _lastRouteLineSyncPoint;
-  ml.Fill? _routePositionHaloFill;
-  ml.Fill? _routePositionFill;
-  ml.Circle? _freeDriveGpsCircle;
+
   final FlutterTts _tts = FlutterTts();
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
@@ -1055,8 +1040,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     unawaited(_offlineAddressSearch.initialize());
     _loadSavedOfflineMap();
     _loadSavedRoutePoints();
-    unawaited(_loadMapViewPreference());
-    unawaited(_loadSatelliteMapPreference());
     unawaited(_loadTrafficLayerPreference());
     // Ask for location after the first frame so the permission dialog has a valid context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1088,7 +1071,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _bundledRoadAlerts = bundled;
       _roadAlerts = _mergeRoadAlerts(bundled, _roadAlerts);
     });
-    unawaited(_syncMapLibreAnnotations());
   }
 
   List<RoadAlert> _mergeRoadAlerts(List<RoadAlert> bundled, List<RoadAlert> live) {
@@ -1138,256 +1120,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       return null;
     }
   }
-
-  Future<void> _loadMapViewPreference() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final enabled = prefs.getBool('map_view_3d') ?? true;
-      if (!mounted || enabled == _is3DMap) return;
-      setState(() => _is3DMap = enabled);
-      _applyMapViewMode();
-    } catch (_) {
-      // Keep the default 3D view if local preferences are unavailable.
-    }
-  }
-
-  Future<void> _loadSatelliteMapPreference() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final enabled = prefs.getBool('layer_satellite') ?? false;
-      if (!mounted) return;
-      if (_isSatelliteMap != enabled) setState(() => _isSatelliteMap = enabled);
-      await _apply3DLayerVisibility();
-    } catch (error) {
-      debugPrint('BAKE satellite preference load failed: $error');
-    }
-  }
-
-
-
-  Future<void> _syncTomTomTrafficLayer({bool replaceSource = false}) async {
-    final controller = _mapLibreController;
-    if (!mounted || controller == null || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final apiKey = (prefs.getString('tomtom_traffic_api_key') ?? '').trim();
-      final enabled = _trafficLayerEnabled && apiKey.isNotEmpty;
-      const flowSource = 'bake-tomtom-flow-source';
-      const flowLayer = 'bake-tomtom-flow-layer';
-      const incidentsSource = 'bake-tomtom-incidents-source';
-      const incidentsLayer = 'bake-tomtom-incidents-layer';
-      final layerIds = (await controller.getLayerIds()).map((value) => value.toString()).toSet();
-      final sourceIds = (await controller.getSourceIds()).toSet();
-
-      if (!enabled) {
-        if (layerIds.contains(flowLayer)) await controller.setLayerVisibility(flowLayer, false);
-        if (layerIds.contains(incidentsLayer)) await controller.setLayerVisibility(incidentsLayer, false);
-        return;
-      }
-      if (replaceSource) {
-        if (layerIds.contains(flowLayer)) await controller.removeLayer(flowLayer);
-        if (layerIds.contains(incidentsLayer)) await controller.removeLayer(incidentsLayer);
-        if (sourceIds.contains(flowSource)) await controller.removeSource(flowSource);
-        if (sourceIds.contains(incidentsSource)) await controller.removeSource(incidentsSource);
-      }
-
-      final currentSources = (await controller.getSourceIds()).toSet();
-      if (!currentSources.contains(flowSource)) {
-        await controller.addSource(
-          flowSource,
-          ml.RasterSourceProperties(
-            tiles: [
-              'https://api.tomtom.com/traffic/map/4/tile/flow/relative0/{z}/{x}/{y}.png?key=$apiKey',
-            ],
-            tileSize: 256,
-            attribution: 'Traffic data © TomTom',
-          ),
-        );
-      }
-      if (!currentSources.contains(incidentsSource)) {
-        await controller.addSource(
-          incidentsSource,
-          ml.RasterSourceProperties(
-            tiles: [
-              'https://api.tomtom.com/traffic/map/4/tile/incidents/s0/{z}/{x}/{y}.png?key=$apiKey&t=-1',
-            ],
-            tileSize: 256,
-            attribution: 'Traffic incidents © TomTom',
-          ),
-        );
-      }
-
-      final currentLayers = (await controller.getLayerIds()).map((value) => value.toString()).toSet();
-      String? labelsLayer;
-      final styleText = await controller.getStyle();
-      if (styleText != null) {
-        final style = jsonDecode(styleText);
-        final layers = style is Map ? style['layers'] : null;
-        if (layers is List) {
-          for (final layer in layers) {
-            if (layer is Map && layer['type'] == 'symbol' && layer['id'] is String) {
-              labelsLayer = layer['id'] as String;
-              break;
-            }
-          }
-        }
-      }
-      if (!currentLayers.contains(flowLayer)) {
-        await controller.addRasterLayer(
-          flowSource,
-          flowLayer,
-          const ml.RasterLayerProperties(rasterOpacity: 0.88),
-          belowLayerId: labelsLayer,
-        );
-      } else {
-        await controller.setLayerVisibility(flowLayer, true);
-      }
-      final afterFlowLayers = (await controller.getLayerIds()).map((value) => value.toString()).toSet();
-      if (!afterFlowLayers.contains(incidentsLayer)) {
-        await controller.addRasterLayer(
-          incidentsSource,
-          incidentsLayer,
-          const ml.RasterLayerProperties(rasterOpacity: 0.95),
-          belowLayerId: labelsLayer,
-        );
-      } else {
-        await controller.setLayerVisibility(incidentsLayer, true);
-      }
-    } catch (error, stackTrace) {
-      debugPrint('BAKE TomTom traffic layer failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-    }
-  }
-
   Future<void> _loadTrafficLayerPreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool('layer_traffic') ?? false;
       if (!mounted || _trafficLayerEnabled == enabled) return;
       setState(() => _trafficLayerEnabled = enabled);
-      unawaited(_syncMapLibreAnnotations());
-      unawaited(_syncTomTomTrafficLayer());
     } catch (error) {
       debugPrint('BAKE traffic layer preference load failed: $error');
     }
   }
-
-  Future<void> _setSatelliteMap(bool enabled) async {
-    if (_isSatelliteMap != enabled && mounted) {
-      setState(() => _isSatelliteMap = enabled);
-    }
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('layer_satellite', enabled);
-    } catch (error) {
-      debugPrint('BAKE satellite preference save failed: $error');
-    }
-    // If the raster layer was not created during initial map loading,
-    // retry creating it when the user explicitly enables satellite imagery.
-    // This setting remains independent from the separate 2D/3D map control.
-    if (enabled) {
-      await _ensure3DSatelliteLayer();
-    }
-    await _apply3DLayerVisibility();
-  }
-
-  Future<void> _setMap3D(bool enabled) async {
-    if (_is3DMap == enabled) return;
-    setState(() => _is3DMap = enabled);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('map_view_3d', enabled);
-    } catch (_) {
-      // The view can still be switched for the current session.
-    }
-    _applyMapViewMode();
-  }
-
-  void _applyMapViewMode() {
-    if (_isFlutterMapDisplayed) return;
-    final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady) return;
-    unawaited(_apply3DLayerVisibility());
-    final current = controller.cameraPosition;
-    unawaited(controller.animateCamera(ml.CameraUpdate.newCameraPosition(
-      ml.CameraPosition(
-        target: current?.target ?? _toMapLibrePoint(_currentLocation ?? _shymkent),
-        zoom: current?.zoom ?? 13,
-        bearing: current?.bearing ?? 0,
-        tilt: _is3DMap ? 40 : 0,
-      ),
-    ), duration: const Duration(milliseconds: 450)));
-  }
-
-  Future<void> _setSatelliteOverlayFillOpacity(bool satelliteVisible) async {
-    final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
-
-    try {
-      final styleText = await controller.getStyle();
-      if (styleText == null || styleText.isEmpty) return;
-      final style = jsonDecode(styleText);
-      if (style is! Map<String, dynamic>) return;
-      final layers = style['layers'];
-      if (layers is! List) return;
-
-      // Only soften OpenMapTiles fill layers that are actually above the
-      // satellite raster. Roads, bridges, labels and BAKE annotations remain
-      // unchanged, while the original fill opacity is restored when disabled.
-      final satelliteIndex = layers.indexWhere(
-        (layer) => layer is Map && layer['id'] == 'bake-satellite-layer',
-      );
-      if (satelliteIndex < 0) return;
-
-      for (var index = satelliteIndex + 1; index < layers.length; index++) {
-        final layer = layers[index];
-        if (layer is! Map || layer['type'] != 'fill' || layer['source'] != 'openmaptiles') {
-          continue;
-        }
-        final id = layer['id'];
-        if (id is! String || id.isEmpty) continue;
-
-        final paint = layer['paint'];
-        final originalOpacity = paint is Map ? paint['fill-opacity'] : null;
-        _satelliteOverlayFillOpacities.putIfAbsent(id, () => originalOpacity);
-
-        final opacity = satelliteVisible
-            ? 0.12
-            : (_satelliteOverlayFillOpacities[id] ?? 1.0);
-        await controller.setLayerProperties(
-          id,
-          ml.FillLayerProperties(fillOpacity: opacity),
-        );
-      }
-    } catch (error) {
-      debugPrint('BAKE satellite overlay opacity update failed: $error');
-    }
-  }
-
-  Future<void> _apply3DLayerVisibility() async {
-    final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
-    try {
-      final layerIds = await controller.getLayerIds();
-
-      // 3D view is the visual hybrid mode: satellite imagery underneath,
-      // with the Liberty roads, labels and place names retained above it.
-      // The settings switch remains an independent way to enable imagery.
-      final satelliteVisible = _is3DMap || _isSatelliteMap;
-      if (layerIds.contains('bake-satellite-layer')) {
-        await controller.setLayerVisibility('bake-satellite-layer', satelliteVisible);
-      }
-      for (final id in ['building-3d', 'bake-buildings-3d']) {
-        if (layerIds.contains(id)) {
-          await controller.setLayerVisibility(id, _is3DMap);
-        }
-      }
-      await _setSatelliteOverlayFillOpacity(satelliteVisible);
-    } catch (error) {
-      debugPrint('BAKE 3D layer visibility update failed: $error');
-    }
-  }
-
   Future<void> _loadSavedRoutePoints() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -1575,8 +1317,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return (step['name']?.toString() ?? '').trim();
   }
 
-  ml.LatLng _toMapLibrePoint(LatLng point) => ml.LatLng(point.latitude, point.longitude);
-
   // One vehicle marker is used in both map renderers. During navigation
   // prefer the road-matched/predicted position; keep raw GPS for routing,
   // alerts and off-route detection.
@@ -1676,17 +1416,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   LatLng get _mapCameraCenter {
-    if (_isFlutterMapDisplayed) {
-      return _offlineMapReady ? _mapController.camera.center : (_currentLocation ?? _shymkent);
-    }
-    final target = _mapLibreController?.cameraPosition?.target;
-    return target == null ? (_currentLocation ?? _shymkent) : LatLng(target.latitude, target.longitude);
+    return _offlineMapReady ? _mapController.camera.center : (_currentLocation ?? _shymkent);
   }
-
-  double get _mapCameraZoom => _isFlutterMapDisplayed
-      ? (_offlineMapReady ? _mapController.camera.zoom : 13)
-      : (_mapLibreController?.cameraPosition?.zoom ?? 13);
-
+  double get _mapCameraZoom => _offlineMapReady ? _mapController.camera.zoom : 13;
   // Manual panning disables camera-follow only; GPS, route progress and voice guidance keep running.
   void _scheduleHeadingUpReturn() {
     _headingUpGestureActive = false;
@@ -1694,90 +1426,28 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   void _moveMapCamera(LatLng point, double zoom) {
-    if (_isFlutterMapDisplayed) {
-      if (!_offlineMapReady) return;
-      _mapController.move(point, zoom);
-      return;
-    }
-    final controller = _mapLibreController;
-    if (controller == null) return;
-    unawaited(controller.animateCamera(ml.CameraUpdate.newLatLngZoom(
-      _toMapLibrePoint(point), zoom,
-    ), duration: const Duration(milliseconds: 350)));
+    if (!_offlineMapReady) return;
+    _mapController.move(point, zoom);
   }
 
   void _updateNavigationCamera(LatLng point, double zoom, double heading) {
     _lastCameraHeadingDegrees = heading;
-    if (!_appInForeground) return;
-    if (_isFlutterMapDisplayed) {
-      if (!_offlineMapReady) return;
-      _mapController.move(point, zoom);
-      _mapController.rotate(-heading);
-      return;
-    }
-    final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady) return;
-
-    // Keep target, zoom, bearing and 3D pitch in one camera animation.
-    // Separate move/rotate animations can otherwise overwrite each other's target.
-    unawaited(controller.animateCamera(ml.CameraUpdate.newCameraPosition(
-      ml.CameraPosition(
-        target: _toMapLibrePoint(point),
-        zoom: zoom,
-        // MapLibre camera bearing is the clockwise direction the camera faces.
-        // Match the GPS course so the vehicle's direction stays toward screen top.
-        bearing: heading,
-        tilt: _is3DMap ? 40 : 0,
-      ),
-    ), duration: Duration(milliseconds: _navigationActive ? 180 : 420)));
+    if (!_appInForeground || !_offlineMapReady) return;
+    _mapController.move(point, zoom);
+    _mapController.rotate(-heading);
   }
 
   void _rotateMapCamera(double rotation) {
-    if (_isFlutterMapDisplayed) {
-      if (!_offlineMapReady) return;
-      _mapController.rotate(rotation);
-      return;
-    }
-    final controller = _mapLibreController;
-    if (controller == null) return;
-    final current = controller.cameraPosition;
-    unawaited(controller.animateCamera(ml.CameraUpdate.newCameraPosition(
-      ml.CameraPosition(
-        target: current?.target ?? _toMapLibrePoint(_currentLocation ?? _shymkent),
-        zoom: current?.zoom ?? 17,
-        bearing: -rotation,
-        tilt: _is3DMap ? 40 : 0,
-      ),
-    ), duration: const Duration(milliseconds: 350)));
+    if (!_offlineMapReady) return;
+    _mapController.rotate(rotation);
   }
 
   void _fitMapCamera(List<LatLng> points) {
-    if (points.isEmpty) return;
-    if (_isFlutterMapDisplayed) {
-      if (!_offlineMapReady) return;
-      _mapController.fitCamera(CameraFit.coordinates(
-        coordinates: points,
-        padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
-      ));
-      return;
-    }
-    final controller = _mapLibreController;
-    if (controller == null) return;
-    final lats = points.map((p) => p.latitude);
-    final lons = points.map((p) => p.longitude);
-    final bounds = ml.LatLngBounds(
-      southwest: ml.LatLng(
-        lats.reduce((a, b) => math.min(a, b).toDouble()),
-        lons.reduce((a, b) => math.min(a, b).toDouble()),
-      ),
-      northeast: ml.LatLng(
-        lats.reduce((a, b) => math.max(a, b).toDouble()),
-        lons.reduce((a, b) => math.max(a, b).toDouble()),
-      ),
-    );
-    unawaited(controller.animateCamera(ml.CameraUpdate.newLatLngBounds(
-      bounds, left: 36, top: 100, right: 36, bottom: 250,
-    ), duration: const Duration(milliseconds: 500)));
+    if (points.isEmpty || !_offlineMapReady) return;
+    _mapController.fitCamera(CameraFit.coordinates(
+      coordinates: points,
+      padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
+    ));
   }
 
   void _zoomMapBy(double delta) {
@@ -1798,246 +1468,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       );
     });
   }
-
-  Future<void> _toggleOnlineMapPreviewStyle() async {
-    if (_isFlutterMapDisplayed) return;
-    final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Онлайн-карта ещё загружается. Повторите через секунду.'),
-        duration: Duration(seconds: 2),
-      ));
-      return;
-    }
-
-    final nextPreview = !_isBrightMapPreview;
-    final previousStyle = _isBrightMapPreview;
-    setState(() => _isBrightMapPreview = nextPreview);
-    _mapLibreStyleReady = false;
-    try {
-      await controller.setStyle(
-        nextPreview
-            ? 'https://tiles.openfreemap.org/styles/bright'
-            : 'https://tiles.openfreemap.org/styles/liberty',
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(nextPreview
-            ? 'Тестовая карта Bright включена'
-            : 'Возвращена основная карта Liberty'),
-        duration: const Duration(seconds: 2),
-      ));
-    } catch (error) {
-      _mapLibreStyleReady = true;
-      if (mounted) {
-        setState(() => _isBrightMapPreview = previousStyle);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Не удалось переключить стиль карты: $error'),
-          duration: const Duration(seconds: 4),
-        ));
-      }
-      debugPrint('BAKE preview map style switch failed: $error');
-    }
-  }
-
-  void _onMapLibreCreated(ml.MapLibreMapController controller) {
-    // A settings round-trip creates a fresh native map/style. Never reuse the
-    // previous controller's patched/loaded flags for the new map instance.
-    _mapLibreStyleGeneration++;
-    _mapLibreStyleReady = false;
-    _onlineLabelStylePatchStarted = false;
-    _onlineLabelStylePatched = false;
-    _mapLibreController = controller;
-  }
-
-  Future<void> _patchOnlineMapStyleLabels() async {
-    if (_onlineLabelStylePatchStarted || _onlineLabelStylePatched) return;
-    _onlineLabelStylePatchStarted = true;
-    final generation = _mapLibreStyleGeneration;
-    final controller = _mapLibreController;
-    if (controller == null) {
-      _onlineLabelStylePatchStarted = false;
-      return;
-    }
-
-    // Keep the hosted Liberty style exactly as delivered by OpenFreeMap.
-    // Its native transportation_name layers already render street names.
-    // Do not rewrite road colors/widths or replace the provider's label layers.
-    _onlineLabelStylePatched = true;
-    try {
-      if (generation == _mapLibreStyleGeneration &&
-          identical(controller, _mapLibreController)) {
-        await _finishMapLibreStyleLoaded();
-      }
-    } finally {
-      if (generation == _mapLibreStyleGeneration) {
-        _onlineLabelStylePatchStarted = false;
-      }
-    }
-  }
-
-  Future<void> _finishMapLibreStyleLoaded() async {
-    if (!mounted || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
-    try {
-      await _syncMapLibreAnnotations(updateRoute: true);
-      await _syncTomTomTrafficLayer();
-    } catch (error, stackTrace) {
-      debugPrint('BAKE map annotations recovery failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-    }
-    try {
-      final currentLocation = _currentLocation;
-      if (currentLocation != null) _moveMapCamera(currentLocation, 16);
-      if (_routePoints.length > 1) _fitMapCamera(_routePoints);
-      _applyMapViewMode();
-    } catch (error, stackTrace) {
-      debugPrint('BAKE map camera restore failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-    }
-    try {
-      await _configure3DMapLayers();
-    } catch (error, stackTrace) {
-      debugPrint('BAKE optional 3D map layers unavailable: $error');
-      debugPrintStack(stackTrace: stackTrace);
-    }
-  }
-
-  void _onMapLibreStyleLoaded() {
-    try {
-      if (!mounted || _isFlutterMapDisplayed) return;
-      _mapLibreStyleReady = true;
-      if (!_onlineLabelStylePatched) {
-        if (!_onlineLabelStylePatchStarted) unawaited(_patchOnlineMapStyleLabels());
-        return;
-      }
-      unawaited(_finishMapLibreStyleLoaded());
-    } catch (error, stackTrace) {
-      debugPrint('BAKE MapLibre style-loaded callback failed safely: $error');
-      debugPrintStack(stackTrace: stackTrace);
-    }
-  }
-
-  Future<void> _configure3DMapLayers() async {
-    // Each optional style mutation is isolated: satellite/building failures
-    // must never bubble into the widget tree or stop the base road map.
-    try {
-      await _ensure3DSatelliteLayer();
-    } catch (error) {
-      debugPrint('BAKE satellite layer setup skipped: $error');
-    }
-    try {
-      await _ensure3DBuildingsLayer();
-    } catch (error) {
-      debugPrint('BAKE 3D building layer setup skipped: $error');
-    }
-    try {
-      await _apply3DLayerVisibility();
-    } catch (error) {
-      debugPrint('BAKE 3D layer visibility update skipped: $error');
-    }
-  }
-
   // Diagnostic build: verify the satellite toggle and Esri raster tiles on device.
-  Future<void> _ensure3DSatelliteLayer() async {
-    final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
-
-    try {
-      final sourceIds = await controller.getSourceIds();
-      if (!sourceIds.contains('bake-satellite')) {
-        await controller.addSource(
-          'bake-satellite',
-          const ml.RasterSourceProperties(
-            tiles: [
-              'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-            ],
-            tileSize: 256,
-            // Esri imagery may not provide detailed tiles at every zoom.
-            // Cap source requests and let MapLibre overzoom the last available imagery.
-            maxzoom: 17,
-            attribution: 'Sources: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-          ),
-        );
-      }
-
-      final layerIds = await controller.getLayerIds();
-      if (!layerIds.contains('bake-satellite-layer')) {
-        // Keep roads and labels above the raster. Opaque OpenMapTiles fill
-        // layers later in the Liberty style are made translucent separately
-        // by _setSatelliteOverlayFillOpacity while satellite mode is active.
-        final roadOverlay = layerIds.cast<String?>().firstWhere(
-          (id) => id != null && RegExp(r'^(road|transportation|bridge|tunnel)').hasMatch(id),
-          orElse: () => null,
-        );
-        final fallbackOverlay = layerIds.contains('building-3d')
-            ? 'building-3d'
-            : (layerIds.contains('building') ? 'building' : null);
-        await controller.addRasterLayer(
-          'bake-satellite',
-          'bake-satellite-layer',
-          const ml.RasterLayerProperties(rasterOpacity: 1.0),
-          belowLayerId: roadOverlay ?? fallbackOverlay,
-        );
-      }
-      await controller.setLayerVisibility('bake-satellite-layer', _isSatelliteMap);
-    } catch (error) {
-      // A satellite tile failure must never disable the normal vector map.
-      debugPrint('BAKE satellite imagery unavailable: $error');
-    }
-  }
-
-  Future<void> _ensure3DBuildingsLayer() async {
-    final controller = _mapLibreController;
-    if (controller == null || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
-
-    try {
-      // Preserve 3D building shapes, but make their surfaces translucent so
-      // the real satellite photograph remains visible through the overlay.
-      final layerIds = await controller.getLayerIds();
-      const buildingStyle = ml.FillExtrusionLayerProperties(
-        fillExtrusionColor: '#C8BBA8',
-        fillExtrusionOpacity: 0.38,
-      );
-      if (layerIds.contains('building')) {
-        await controller.setLayerProperties(
-          'building',
-          const ml.FillLayerProperties(
-            fillColor: '#C8BBA8',
-            fillOpacity: 0.12,          ),
-        );
-      }
-      if (layerIds.contains('building-3d')) {
-        await controller.setLayerProperties('building-3d', buildingStyle);
-        await controller.setLayerVisibility('building-3d', _is3DMap);
-        return;
-      }
-      if (layerIds.contains('bake-buildings-3d')) {
-        await controller.setLayerProperties('bake-buildings-3d', buildingStyle);
-        await controller.setLayerVisibility('bake-buildings-3d', _is3DMap);
-        return;
-      }
-
-      await controller.addFillExtrusionLayer(
-        'openmaptiles',
-        'bake-buildings-3d',
-        const ml.FillExtrusionLayerProperties(
-          fillExtrusionColor: '#C8BBA8',
-          fillExtrusionHeight: ['coalesce', ['get', 'render_height'], 8],
-          fillExtrusionBase: ['coalesce', ['get', 'render_min_height'], 0],
-          fillExtrusionOpacity: 0.38,
-        ),
-        sourceLayer: 'building',
-        minzoom: 14,
-        filter: ['all', ['has', 'render_height'], ['!=', ['get', 'hide_3d'], true]],
-        enableInteraction: false,
-      );
-      await controller.setLayerVisibility('bake-buildings-3d', _is3DMap);
-    } catch (error) {
-      // A style without the OpenMapTiles building source remains usable.
-      debugPrint('BAKE 3D buildings unavailable: $error');
-    }
-  }
-
   List<LatLng> _simplifyRouteForDisplay(List<LatLng> points) {
     if (points.length <= 2) return points;
     final latitudeRadians = points.first.latitude * math.pi / 180;
@@ -2093,385 +1524,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (keep[i]) points[i],
     ];
   }
-
-  Future<void> _setMapLibreRouteGeometry(
-    ml.MapLibreMapController controller,
-    List<LatLng> points,
-  ) async {
-    final sourceIds = await controller.getSourceIds();
-    if (!sourceIds.contains(_routeGeoJsonSourceId)) {
-      await controller.addGeoJsonSource(_routeGeoJsonSourceId, const {
-        'type': 'FeatureCollection',
-        'features': <Object>[],
-      });
-    }
-
-    final layerIds = await controller.getLayerIds();
-    if (!layerIds.contains('bake-route-casing-layer')) {
-      await controller.addLineLayer(
-        _routeGeoJsonSourceId,
-        'bake-route-casing-layer',
-        const ml.LineLayerProperties(
-          lineColor: '#FFD400',
-          lineWidth: 19,
-          lineOpacity: 0.96,
-        ),
-      );
-    }
-    if (!layerIds.contains('bake-route-outline-layer')) {
-      await controller.addLineLayer(
-        _routeGeoJsonSourceId,
-        'bake-route-outline-layer',
-        const ml.LineLayerProperties(
-          lineColor: '#36D9FF',
-          lineWidth: 15,
-          lineOpacity: 0.98,
-        ),
-      );
-    }
-    if (!layerIds.contains('bake-route-line-layer')) {
-      await controller.addLineLayer(
-        _routeGeoJsonSourceId,
-        'bake-route-line-layer',
-        const ml.LineLayerProperties(
-          lineColor: '#0878F9',
-          lineWidth: 9,
-          lineOpacity: 1,
-        ),
-      );
-    }
-
-    final simplified = _simplifyRouteForDisplay(points);
-    final features = simplified.length < 2
-        ? <Object>[]
-        : <Object>[
-            {
-              'type': 'Feature',
-              'properties': const <String, Object>{},
-              'geometry': {
-                'type': 'LineString',
-                'coordinates': simplified
-                    .map((point) => <double>[point.longitude, point.latitude])
-                    .toList(growable: false),
-              },
-            },
-          ];
-    await controller.setGeoJsonSource(_routeGeoJsonSourceId, {
-      'type': 'FeatureCollection',
-      'features': features,
-    });
-  }
-
-  Future<void> _setMapLibreAlternativeRouteGeometry(
-    ml.MapLibreMapController controller,
-  ) async {
-    final sourceIds = await controller.getSourceIds();
-    final layerIds = await controller.getLayerIds();
-    for (var index = 0; index < 3; index++) {
-      final sourceId = 'bake-route-alternative-$index-source';
-      final layerId = 'bake-route-alternative-$index-line';
-      if (!sourceIds.contains(sourceId)) {
-        await controller.addGeoJsonSource(sourceId, const {
-          'type': 'FeatureCollection',
-          'features': <Object>[],
-        });
-      }
-      if (!layerIds.contains(layerId)) {
-        const alternativeColors = ['#FF9800', '#9C27B0', '#00A6A6'];        await controller.addLineLayer(
-          sourceId,
-          layerId,
-          ml.LineLayerProperties(
-            lineColor: alternativeColors[index],
-            lineWidth: 8,
-            lineOpacity: 0.9,
-          ),
-        );
-      }
-      final routeIndex = index < _selectedRouteIndex ? index : index + 1;
-      final cachedRoutes = _cachedAlternativeHitTestPoints();
-      final points = routeIndex < cachedRoutes.length
-          ? cachedRoutes[routeIndex]
-          : <LatLng>[];
-      final features = points.length < 2
-          ? <Object>[]
-          : <Object>[
-              {
-                'type': 'Feature',
-                'properties': const <String, Object>{'alternative': true},
-                'geometry': {
-                  'type': 'LineString',
-                  'coordinates': points
-                      .map((point) => <double>[point.longitude, point.latitude])
-                      .toList(growable: false),
-                },
-              },
-            ];
-      await controller.setGeoJsonSource(sourceId, {
-        'type': 'FeatureCollection',
-        'features': features,
-      });
-    }
-  }
-
-  Future<void> _syncMapLibreAnnotations({bool updateRoute = false}) async {
-    // GPS updates can arrive while the previous annotation update is still
-    // clearing and recreating symbols. Serialize those updates and run once
-    // more with the newest position instead of allowing overlapping clears.
-    if (_mapLibreAnnotationSyncInProgress) {
-      _mapLibreAnnotationSyncPending = true;
-      if (updateRoute) _mapLibreRouteSyncPending = true;
-      return;
-    }
-    _mapLibreAnnotationSyncInProgress = true;
-    try {
-      do {
-        _mapLibreAnnotationSyncPending = false;
-        final syncRoute = updateRoute || _mapLibreRouteSyncPending;
-        _mapLibreRouteSyncPending = false;
-        final controller = _mapLibreController;
-        if (controller == null || !_mapLibreStyleReady || _isFlutterMapDisplayed) return;
-        final visibleRoutePoints = _remainingRoutePoints();
-        final annotationNow = DateTime.now();
-        final rebuildStaticAnnotations = syncRoute ||
-            _lastFullMapAnnotationRebuildAt == null ||
-            annotationNow.difference(_lastFullMapAnnotationRebuildAt!) >=
-                const Duration(seconds: 8);
-        if (rebuildStaticAnnotations) {
-          _lastFullMapAnnotationRebuildAt = annotationNow;
-        }
-        // GPS refreshes must never remove the already-rendered route line.
-        // Only route/style changes are allowed to replace route geometry.
-        if (syncRoute) {
-          _lastRouteLineSyncPoint = _navigationActive
-              ? (_navigationMatchedLocation ?? _currentLocation)
-              : _currentLocation;
-          // Keep one GeoJSON source and its three style layers for this map
-          // style. Updates replace source data without recreating the layers.
-          await _setMapLibreRouteGeometry(controller, visibleRoutePoints);
-          await _setMapLibreAlternativeRouteGeometry(controller);
-        }
-        if (rebuildStaticAnnotations) {
-          await controller.clearSymbols();
-          await controller.clearCircles();
-          _freeDriveGpsCircle = null;
-        }
-        // Keep the live GPS arrow fill between ordinary GPS updates.
-        // Route/style rebuilds clear fills and recreate the arrow below.
-        final shouldClearStaleRouteBird = _routePositionFill != null &&
-            (_currentLocation == null ||
-                (_navigationActive &&
-                    _routePoints.length > 1 &&
-                    _distanceToRouteMeters(_currentLocation!) > 100));
-        if (rebuildStaticAnnotations || shouldClearStaleRouteBird) {
-          await controller.clearFills();
-          _routePositionHaloFill = null;
-          _routePositionFill = null;
-        }
-
-        // Show only real upcoming turns. Each white arrow floats directly
-        // above the blue route ribbon, a short distance before its intersection.
-        // The dark offset copy creates a raised 3D/shadow effect. The separate
-        // blue lane-guidance banner elsewhere in the UI is intentionally untouched.
-        if (rebuildStaticAnnotations && visibleRoutePoints.length > 1) {
-          for (var i = 0; i < _instructions.length; i++) {
-            final instruction = _instructions[i];
-            if (!_isRouteManeuverMarker(instruction)) continue;
-            if (_navigationActive && i <= _instructionIndex) continue;
-            final bearing = _routeBearingAt(instruction.location);
-            final arrowPoint = _offsetAlongRoute(
-              instruction.location,
-              bearing,
-              -24,
-            );
-            final glyph = _maneuverArrowGlyph(instruction);
-            await controller.addSymbol(ml.SymbolOptions(
-              geometry: _toMapLibrePoint(arrowPoint),
-              textField: glyph,
-              textSize: 35,
-              textOffset: const Offset(0, 0.55),
-              textColor: '#123B69',
-              textHaloColor: '#123B69',
-              textHaloWidth: 2.5,
-            ));
-            await controller.addSymbol(ml.SymbolOptions(
-              geometry: _toMapLibrePoint(arrowPoint),
-              textField: glyph,
-              textSize: 33,
-              textColor: '#FFFFFF',
-              textHaloColor: '#64748B',
-              textHaloWidth: 1.6,
-            ));
-          }
-        }
-
-        // Keep one red GPS dot in free drive, route preview and navigation.
-        // The blue vehicle arrow and separate route-start arrow are disabled.
-        final vehiclePoint = _vehicleDisplayLocation;
-        if (vehiclePoint != null) {
-          final gpsOptions = ml.CircleOptions(
-            geometry: _toMapLibrePoint(vehiclePoint),
-            circleRadius: 8,
-            circleColor: '#E53935',
-            circleOpacity: 1,
-            circleStrokeColor: '#FFFFFF',
-            circleStrokeWidth: 2.5,
-          );
-          final existingGpsCircle = _freeDriveGpsCircle;
-          if (existingGpsCircle == null) {
-            _freeDriveGpsCircle = await controller.addCircle(gpsOptions);
-          } else {
-            await controller.updateCircle(existingGpsCircle, gpsOptions);
-          }
-        }
-      if (rebuildStaticAnnotations) {
-      for (var i = 0; i < _routeStops.length; i++) {
-        await controller.addSymbol(ml.SymbolOptions(
-          geometry: _toMapLibrePoint(_routeStops[i]), textField: '${i + 1}',
-          textSize: 16, textColor: '#FFFFFF',
-          textHaloColor: '#343434', textHaloWidth: 5,
-        ));
-      }
-      // Draw a collision-proof camera dot first. MapLibre may hide text
-      // symbols when they collide with road labels or other annotations;
-      // the circle keeps every camera position visible in both 2D and 3D.
-      // The pictogram is an additional label, not the only visible marker.
-      for (final report in _confirmedRoadReports.where(_isRoadWarningReport)) {
-        final point = ml.LatLng(
-          (report['latitude'] as num).toDouble(),
-          (report['longitude'] as num).toDouble(),
-        );
-        await controller.addCircle(ml.CircleOptions(
-          geometry: point,
-          circleRadius: 7,
-          circleColor: '#FFD54F',
-          circleOpacity: 1,
-          circleStrokeColor: '#202020',
-          circleStrokeWidth: 2.5,
-        ));
-        await controller.addSymbol(ml.SymbolOptions(
-          geometry: point,
-          textField: _roadReportGlyph(report),
-          textSize: 12,
-          textColor: '#202020',
-          textHaloColor: '#FFFFFF',
-          textHaloWidth: 1.5,
-        ));
-      }
-      if (_trafficLayerEnabled) {
-        for (final report in _trafficReports) {
-          final trafficPoint = ml.LatLng(
-            (report['latitude'] as num).toDouble(),
-            (report['longitude'] as num).toDouble(),
-          );
-          final color = _trafficReportColor(report).value.toRadixString(16).substring(2);
-          await controller.addCircle(ml.CircleOptions(
-            geometry: trafficPoint,
-            circleRadius: 13,
-            circleColor: '#$color',
-            circleOpacity: 0.32,
-            circleStrokeColor: '#$color',
-            circleStrokeWidth: 2.5,
-          ));
-        }
-      }
-      for (final alert in _roadAlertsVisibleOnMap()) {
-        await controller.addCircle(ml.CircleOptions(
-          geometry: _toMapLibrePoint(alert.location),
-          circleRadius: 7,
-          circleColor: switch (alert.kind) {
-            RoadAlertKind.speedCamera => '#B42318',
-            RoadAlertKind.trafficSignalCamera => '#B54708',
-            RoadAlertKind.surveillanceCamera => '#175CD3',
-            RoadAlertKind.sergekCamera => '#7A3E9D',
-            RoadAlertKind.unknownCamera => '#475467',
-          },
-          circleOpacity: 1,
-          circleStrokeColor: '#FFFFFF',
-          circleStrokeWidth: 2.5,
-        ));
-        final glyph = _roadAlertGlyph(alert);
-        await controller.addSymbol(ml.SymbolOptions(
-          geometry: _toMapLibrePoint(alert.location),
-          textField: glyph,
-          textSize: 13,
-          textColor: '#FFFFFF',
-          textHaloColor: '#17324D',
-          textHaloWidth: 1.5,
-        ));
-      }
-      if (_mapCameraZoom >= 14) {
-        for (final report in _confirmedRoadReports.where(_isStreetNameReport)) {
-          final label = _roadReportStreetLabel(report);
-          if (label.isEmpty) continue;
-          await controller.addSymbol(ml.SymbolOptions(
-            geometry: ml.LatLng(
-              (report['latitude'] as num).toDouble(),
-              (report['longitude'] as num).toDouble(),
-            ),
-            textField: label,
-            textSize: 12,
-            textColor: '#111111',
-            textHaloColor: '#FFFFFF',
-            textHaloWidth: 2,
-            textOffset: const Offset(0, 0.9),
-          ));
-        }
-      }
-      if (rebuildStaticAnnotations && _destination != null) {
-        // The marker's ground anchor is exactly point B. Red glow rings are
-        // drawn first so the smaller checkered flag remains clear above them.
-        await controller.addCircle(ml.CircleOptions(
-          geometry: _toMapLibrePoint(_destination!),
-          circleRadius: 25,
-          circleColor: '#FF2028',
-          circleOpacity: 0.16,
-          circleStrokeColor: '#FF3038',
-          circleStrokeWidth: 2.5,
-        ));
-        await controller.addCircle(ml.CircleOptions(
-          geometry: _toMapLibrePoint(_destination!),
-          circleRadius: 13,
-          circleColor: '#FF3038',
-          circleOpacity: 0.22,
-          circleStrokeColor: '#FFFFFF',
-          circleStrokeWidth: 1.5,
-        ));
-        final flagPolygons = _destinationFlagPolygons(_destination!);
-        await controller.addFill(ml.FillOptions(
-          geometry: [flagPolygons.first],
-          fillColor: '#E32636',
-          fillOpacity: 1,
-          fillOutlineColor: '#FFFFFF',
-        ));
-        for (var i = 1; i < flagPolygons.length; i++) {
-          await controller.addFill(ml.FillOptions(
-            geometry: [flagPolygons[i]],
-            fillColor: i.isEven ? '#FFFFFF' : '#171717',
-            fillOpacity: 1,
-            fillOutlineColor: '#FFFFFF',
-          ));
-        }
-      }
-      }
-      } while (_mapLibreAnnotationSyncPending);
-    } catch (error, stackTrace) {
-      // Do not silently lose the user's GPS marker when MapLibre rejects an
-      // annotation update. Keep a visible symbol fallback at the latest fix.
-      debugPrint('BAKE Navigator: GPS/map annotation update failed: $error');
-      debugPrintStack(stackTrace: stackTrace);
-
-      // Do not draw a second GPS marker on annotation errors. The next
-      // serialized annotation sync will restore the single navigation bird.
-    } finally {
-      _mapLibreAnnotationSyncInProgress = false;
-      if (_mapLibreAnnotationSyncPending) {
-        final syncRoute = _mapLibreRouteSyncPending;
-        _mapLibreRouteSyncPending = false;
-        unawaited(_syncMapLibreAnnotations(updateRoute: syncRoute));
-      }
-    }
-  }
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -3234,7 +2286,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       // Refresh the live position without interrupting the active navigation stream.
       // In particular, keep the Android foreground GPS subscription alive while
       // navigating; replacing it with a foreground-only stream can break tracking.
-      unawaited(_syncMapLibreAnnotations());
       if (_navigationActive) {
         final heading = _gpsHeadingDegrees;
         _updateNavigationCamera(
@@ -3558,7 +2609,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 const Duration(milliseconds: 350);
         if (shouldRefreshAnnotations) {
           _lastMapAnnotationUpdateAt = annotationNow;
-          unawaited(_syncMapLibreAnnotations(updateRoute: shouldRefreshRouteLine));
         }
         _checkSpeedingWarning();
         _updateConfirmedCameraWarning(
@@ -4252,7 +3302,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _routeDurationSeconds = null;
       _message = '';
     });
-    unawaited(_syncMapLibreAnnotations(updateRoute: true));
     unawaited(_saveRoutePoint(_savedRouteOriginKey, point));
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
@@ -4269,7 +3318,6 @@ _navigationMatchedLocation = null;
       _routeDurationSeconds = null;
       _message = AppLocale.pick('Начальная точка снова определяется по GPS.', 'Бастапқы нүкте қайтадан GPS арқылы анықталады.', 'Starting point will be detected by GPS again.');
     });
-    unawaited(_syncMapLibreAnnotations(updateRoute: true));
     unawaited(_removeSavedRoutePoint(_savedRouteOriginKey));
   }
 
@@ -4294,62 +3342,9 @@ _navigationMatchedLocation = null;
       _routeDurationSeconds = null;
       _message = '';
     });
-    unawaited(_syncMapLibreAnnotations(updateRoute: true));
     unawaited(_saveRoutePoint(_savedRouteDestinationKey, point));
     if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
-
-
-  List<List<ml.LatLng>> _destinationFlagPolygons(LatLng anchor) {
-    // Scale the reference flag down by about 35%, while keeping its base
-    // point pinned to the exact destination coordinate (point B).
-    const scale = 0.65;
-    ml.LatLng offset(double eastMeters, double northMeters) {
-      final latitude = anchor.latitude + (northMeters * scale) / 111320.0;
-      final longitudeScale =
-          111320.0 * math.cos(anchor.latitude * math.pi / 180);
-      final longitude = anchor.longitude +
-          (eastMeters * scale) / math.max(1.0, longitudeScale);
-      return ml.LatLng(latitude, longitude);
-    }
-
-    final pole = <ml.LatLng>[
-      offset(-1.5, 0),
-      offset(1.5, 0),
-      offset(1.5, 31),
-      offset(-1.5, 31),
-      offset(-1.5, 0),
-    ];
-    final base = <ml.LatLng>[
-      offset(-5.5, 0),
-      offset(5.5, 0),
-      offset(4.2, 2.5),
-      offset(-4.2, 2.5),
-      offset(-5.5, 0),
-    ];
-    final cells = <List<ml.LatLng>>[];
-    const columns = 4;
-    const rows = 3;
-    const cellWidth = 4.7;
-    const cellHeight = 3.7;
-    for (var row = 0; row < rows; row++) {
-      for (var column = 0; column < columns; column++) {
-        final west = 1.2 + column * cellWidth;
-        final east = west + cellWidth;
-        final north = 27 - row * cellHeight;
-        final south = north - cellHeight;
-        cells.add(<ml.LatLng>[
-          offset(west, north),
-          offset(east, north),
-          offset(east, south),
-          offset(west, south),
-          offset(west, north),
-        ]);
-      }
-    }
-    return <List<ml.LatLng>>[pole, base, ...cells];
-  }
-
   LatLng _offsetAlongRoute(
     LatLng point,
     double bearingDegrees,
@@ -4380,60 +3375,6 @@ _navigationMatchedLocation = null;
 
   // Build a map-native triangular arrow from geographic coordinates. This does
   // not depend on glyphs in the online map style, so it remains visible offline/online.
-  List<ml.LatLng> _directionArrowPolygon(
-    LatLng center,
-    double bearingDegrees, {
-    required double lengthMeters,
-    required double halfWidthMeters,
-  }) {
-    final radians = bearingDegrees * math.pi / 180;
-    final forwardEast = math.sin(radians);
-    final forwardNorth = math.cos(radians);
-    final rightEast = math.cos(radians);
-    final rightNorth = -math.sin(radians);
-    final rearDistance = lengthMeters * 0.58;
-
-    ml.LatLng offset(double eastMeters, double northMeters) {
-      final latitude = center.latitude + northMeters / 111320.0;
-      final longitudeScale =
-          111320.0 * math.cos(center.latitude * math.pi / 180);
-      final longitude = center.longitude +
-          eastMeters / math.max(1.0, longitudeScale);
-      return ml.LatLng(latitude, longitude);
-    }
-
-    final tip = offset(
-      forwardEast * lengthMeters,
-      forwardNorth * lengthMeters,
-    );
-    final leftBase = offset(
-      -forwardEast * rearDistance - rightEast * halfWidthMeters,
-      -forwardNorth * rearDistance - rightNorth * halfWidthMeters,
-    );
-    final rightBase = offset(
-      -forwardEast * rearDistance + rightEast * halfWidthMeters,
-      -forwardNorth * rearDistance + rightNorth * halfWidthMeters,
-    );
-    return <ml.LatLng>[tip, leftBase, rightBase, tip];
-  }
-
-  List<ml.LatLng> _circlePolygon(LatLng center, double radiusMeters) {
-    const segments = 20;
-    final latitudeScale = 111320.0;
-    final longitudeScale = math.max(
-      1.0,
-      111320.0 * math.cos(center.latitude * math.pi / 180),
-    );
-    return List<ml.LatLng>.generate(segments + 1, (index) {
-      final angle = 2 * math.pi * index / segments;
-      final latitude = center.latitude +
-          math.sin(angle) * radiusMeters / latitudeScale;
-      final longitude = center.longitude +
-          math.cos(angle) * radiusMeters / longitudeScale;
-      return ml.LatLng(latitude, longitude);
-    }, growable: false);
-  }
-
   double _routeBearingAt(LatLng point) {
     if (_routePoints.length < 2) return _gpsHeadingDegrees ?? 0.0;
     var nearestDistance = double.infinity;
@@ -4844,8 +3785,7 @@ _navigationMatchedLocation = null;
     await _tts.stop();
     await _kazakhVoiceService.stop();
     await _removeSavedRoutePoint(_savedRouteDestinationKey);
-    // Clear the rendered MapLibre route and destination annotation immediately.
-    await _syncMapLibreAnnotations(updateRoute: true);
+    // Clear the rendered map route and destination annotation immediately.
   }
 
   Future<void> _finishNavigation() async {
@@ -4879,8 +3819,7 @@ _navigationMatchedLocation = null;
     await _removeSavedRoutePoint(_savedRouteDestinationKey);
     _lastCameraHeadingDegrees = null;
     _rotateMapCamera(0);
-    // Force MapLibre to remove the old blue line and route markers.
-    await _syncMapLibreAnnotations(updateRoute: true);
+    // Force map renderer to remove the old blue line and route markers.
     await _startLiveLocationUpdates();
   }
 
@@ -5410,7 +4349,6 @@ _navigationMatchedLocation = null;
 
       if (!mounted) return;
       setState(() => _confirmedRoadReports = reports);
-      unawaited(_syncMapLibreAnnotations());
     } catch (error) {
       debugPrint('Не удалось загрузить подтверждённые дорожные отметки: $error');
     } finally {
@@ -5541,7 +4479,6 @@ _navigationMatchedLocation = null;
     // Rebuild both map renderers whenever the camera data changes.
     if (alertsWereRefreshed) {
       setState(() {});
-      unawaited(_syncMapLibreAnnotations());
     }
 
     // Never speak camera warnings while browsing the map without navigation.
@@ -5755,7 +4692,6 @@ _navigationMatchedLocation = null;
             now.difference(_lastMapAnnotationUpdateAt!) >=
                 const Duration(milliseconds: 750)) {
           _lastMapAnnotationUpdateAt = now;
-          unawaited(_syncMapLibreAnnotations(updateRoute: refreshRoute));
         }
         _updateNavigationProgress(predicted);
       },
@@ -6291,7 +5227,6 @@ _navigationMatchedLocation = null;
             : '');
       });
       if (points.isNotEmpty) {
-        await _syncMapLibreAnnotations(updateRoute: true);
         if (!automaticReroute || _mapFollowEnabled) _fitMapCamera(points);
         if (automaticReroute && resumeNavigation && _mapFollowEnabled && _currentLocation != null) {
           _moveMapCamera(_currentLocation!, 17);
@@ -6410,7 +5345,6 @@ _navigationMatchedLocation = null;
       _message = _localized('Выбран вариант маршрута ${index + 1}.', '${index + 1}-маршрут нұсқасы таңдалды.', 'Route option ${index + 1} selected.');
     });
     if (points.isNotEmpty) {
-      unawaited(_syncMapLibreAnnotations(updateRoute: true));
       if (!wasNavigating) {
         _fitMapCamera(points);
       } else if (_currentLocation != null) {
@@ -6844,8 +5778,6 @@ _navigationMatchedLocation = null;
     );
     var roadEvents = prefs.getBool('layer_road_events') ?? true;
     var parking = prefs.getBool('layer_parking') ?? false;
-    var satellite = prefs.getBool('layer_satellite') ?? false;
-
     Future<void> saveLayer(String key, bool value) async {
       await prefs.setBool(key, value);
       if (!mounted) return;
@@ -6863,10 +5795,6 @@ _navigationMatchedLocation = null;
                 'Setting saved. This layer does not have a connected data source yet.',
               );
       });
-      if (key == 'layer_traffic') {
-        unawaited(_syncMapLibreAnnotations());
-        unawaited(_syncTomTomTrafficLayer());
-      }
     }
 
     await Navigator.of(context).push<void>(
@@ -6929,7 +5857,6 @@ _navigationMatchedLocation = null;
                               setState(() => _message = key.isEmpty
                                   ? AppLocale.tr('Ключ TomTom удалён.')
                                   : AppLocale.tr('Ключ TomTom сохранён на телефоне.'));
-                              await _syncTomTomTrafficLayer(replaceSource: true);
                             },
                           ),
                         ),
@@ -6957,19 +5884,10 @@ _navigationMatchedLocation = null;
                     await saveLayer('layer_parking', value);
                   },
                 ),
-                SwitchListTile(                  contentPadding: EdgeInsets.zero,
-                  secondary: const Icon(Icons.satellite_alt_outlined),
-                  title: Text(AppLocale.tr('Спутниковая карта')),
-                  value: satellite,
-                  onChanged: (value) async {
-                    refresh(() => satellite = value);
-                    await _setSatelliteMap(value);
-                  },
-                ),
+
                 Padding(
                   padding: const EdgeInsets.only(bottom: 18),
                   child: Text(
-                    AppLocale.pick('Спутниковые снимки загружаются из ArcGIS World Imagery. Для реальных пробок нужен API-ключ TomTom; парковки пока не подключены.', 'Спутниктік суреттер ArcGIS World Imagery көзінен жүктеледі. Кептелістер, тұрақтар және жол оқиғаларының жалпы қабаты әзірге деректер көздеріне қосылмаған.', 'Satellite imagery is provided by ArcGIS World Imagery. Traffic, parking, and the shared road-events layer are not connected yet.'),
                     style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                 ),
@@ -7192,7 +6110,7 @@ _navigationMatchedLocation = null;
 
   void _captureMapLongPressPoint(LatLng point) {
     _pendingMapLongPressPoint = point;
-    // Native MapLibre/FlutterMap long-press callbacks can arrive just after
+    // Native FlutterMap long-press callbacks can arrive just after
     // the pointer-up event. Preserve a completed one-second hold in that case.
     if (_mapPointerDownAt == null &&
         !_mapPointerMoved &&
@@ -7258,98 +6176,10 @@ _navigationMatchedLocation = null;
     return true;
   }
 
-  // MapLibre reports the actual screen coordinate of the finger. Project each
+  // FlutterMap uses the map-local tap coordinate to project each
   // route into that same screen space so 3D tilt and perspective are included.
   // The generous invisible touch radius makes a thin route easy to select
   // without changing its visible width.
-  Future<void> _trySelectAlternativeAtScreen(math.Point<double> tapPoint) async {
-    if (_lastMapPointerHoldDuration >= const Duration(seconds: 1) ||
-        !_routeReady ||
-        _routeAlternatives.length < 2 ||
-        _alternativeTapInProgress) {
-      return;
-    }
-    final controller = _mapLibreController;
-    if (controller == null) return;
-
-    _alternativeTapInProgress = true;
-    try {
-      final routes = _cachedAlternativeHitTestPoints();
-      final routeStartOffsets = <int>[];
-      final allRoutePoints = <LatLng>[];
-      for (final routePoints in routes) {
-        routeStartOffsets.add(allRoutePoints.length);
-        allRoutePoints.addAll(routePoints);
-      }
-      if (allRoutePoints.isEmpty) return;
-
-      // One platform call projects every route at once for a fast tap.
-      final mapLibreRoutePoints = allRoutePoints
-          .map((point) => ml.LatLng(point.latitude, point.longitude))
-          .toList(growable: false);
-      final allScreenPoints =
-          await controller.toScreenLocationBatch(mapLibreRoutePoints);
-      var bestAlternativeIndex = -1;
-      var bestAlternativeDistance = double.infinity;
-      var activeRouteDistance = double.infinity;
-      for (var i = 0; i < routes.length; i++) {
-        if (routes[i].length < 2) continue;
-        final start = routeStartOffsets[i];
-        final screenPoints = allScreenPoints
-            .skip(start)
-            .take(routes[i].length)
-            .toList(growable: false);
-        final distance = _distanceToScreenPolyline(tapPoint, screenPoints);
-        if (i == _selectedRouteIndex) {
-          activeRouteDistance = distance;
-        } else if (distance < bestAlternativeDistance) {
-          bestAlternativeDistance = distance;
-          bestAlternativeIndex = i;
-        }
-      }
-
-      // 48 px is the finger hit radius. An alternative wins when it is within
-      // that radius and the active route is not clearly closer. A 6 px
-      // tolerance lets the driver select routes that overlap on the map.
-      if (!mounted ||
-          bestAlternativeIndex < 0 ||
-          bestAlternativeDistance > 48 ||
-          activeRouteDistance + 6 < bestAlternativeDistance) {
-        return;
-      }
-      _applyAlternativeRouteTap(bestAlternativeIndex);
-    } catch (error) {
-      debugPrint('BAKE Navigator: online alternative route hit-test failed: $error');
-    } finally {
-      _alternativeTapInProgress = false;
-    }
-  }
-
-  double _distanceToScreenPolyline(
-    math.Point<double> position,
-    List<math.Point<num>> points,
-  ) {
-    if (points.length < 2) return double.infinity;
-    var best = double.infinity;
-    for (var i = 0; i < points.length - 1; i++) {
-      final a = points[i];
-      final b = points[i + 1];
-      final dx = b.x - a.x;
-      final dy = b.y - a.y;
-      final lengthSquared = dx * dx + dy * dy;
-      final t = lengthSquared == 0
-          ? 0.0
-          : (((position.x - a.x) * dx + (position.y - a.y) * dy) /
-                  lengthSquared)
-              .clamp(0.0, 1.0)
-              .toDouble();
-      final ex = position.x - (a.x + t * dx);
-      final ey = position.y - (a.y + t * dy);
-      best = math.min(best, math.sqrt(ex * ex + ey * ey));
-    }
-    return best;
-  }
-
   void _applyAlternativeRouteTap(int index) {
     if (index == _selectedRouteIndex) return;
     _selectRouteAlternative(index);
@@ -7861,7 +6691,6 @@ _navigationMatchedLocation = null;
                   onChanged: (value) {
                     setState(() => _showShymkentCamerasOnMap = value);
                     refresh(() {});
-                    unawaited(_syncMapLibreAnnotations());
                   },
                 ),
                 const Divider(height: 1),
@@ -9012,7 +7841,6 @@ _navigationMatchedLocation = null;
                   tooltip: 'Подтверждённые дорожные события',
                   onPressed: () {
                     setState(() => _trafficLayerEnabled = !_trafficLayerEnabled);
-                    unawaited(_syncTomTomTrafficLayer());
                     unawaited(SharedPreferences.getInstance().then(
                       (prefs) => prefs.setBool('layer_traffic', _trafficLayerEnabled),
                     ));
@@ -9023,7 +7851,6 @@ _navigationMatchedLocation = null;
                         behavior: SnackBarBehavior.floating,
                       ));
                     }
-                    unawaited(_syncMapLibreAnnotations());
                   },
                   icon: Icon(
                     Icons.traffic,
@@ -9055,82 +7882,8 @@ _navigationMatchedLocation = null;
               ),
             ),
           ),
-          if (!_isOfflineMapActive && !_flutterMapExperimentEnabled)
-            Positioned(
-              top: 286,
-              right: 14,
-              child: SafeArea(
-                bottom: false,
-                child: Material(
-                  color: _isBrightMapPreview
-                      ? const Color(0xFFE8F5E9)
-                      : Colors.white,
-                  elevation: 5,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: _toggleOnlineMapPreviewStyle,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.layers_outlined, size: 18, color: Color(0xFF202020)),
-                          const SizedBox(width: 6),
-                          Text(
-                            _isBrightMapPreview ? 'BRIGHT · ТЕСТ' : 'LIBERTY · ОСНОВНАЯ',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF202020),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          if (!_isOfflineMapActive && !_flutterMapExperimentEnabled)
-            Positioned(
-              top: 190,
-              right: 14,
-              child: SafeArea(
-                bottom: false,
-                child: Material(
-                  color: Colors.white,
-                  elevation: 5,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => _setMap3D(!_is3DMap),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            _is3DMap ? Icons.view_in_ar_outlined : Icons.map_outlined,
-                            size: 19,
-                            color: const Color(0xFF202020),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            _is3DMap ? '3D' : '2D',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF202020),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+,
+,
           Positioned(
             top: 0,
             right: 14,
