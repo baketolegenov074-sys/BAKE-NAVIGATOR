@@ -25,6 +25,7 @@ class _OpenFreeMapExperimentScreenState
   bool _loading = false;
   String? _error;
   String _mapStatus = 'Подключение OpenFreeMap…';
+  DateTime? _lastSearchAt;
 
   @override
   void dispose() {
@@ -43,6 +44,16 @@ class _OpenFreeMapExperimentScreenState
     });
 
     try {
+      // Respect the public Nominatim limit: no more than one request per second.
+      final previousSearch = _lastSearchAt;
+      if (previousSearch != null) {
+        final elapsed = DateTime.now().difference(previousSearch);
+        if (elapsed < const Duration(seconds: 1)) {
+          await Future.delayed(const Duration(seconds: 1) - elapsed);
+        }
+      }
+      if (!mounted) return;
+      _lastSearchAt = DateTime.now();
       // Nominatim is queried only after explicit submission, not on each key.
       final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
         'q': query,
