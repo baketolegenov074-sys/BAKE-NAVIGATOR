@@ -1147,12 +1147,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
     // Defer disk-heavy MBTiles discovery and Valhalla graph preparation until
     // the map has been visible for one second.
-    unawaited(Future<void>(() async {
-      await Future.delayed(const Duration(seconds: 1));
-      if (!mounted) return;
-      unawaited(_loadSavedOfflineMap());
-      unawaited(_ensureValhallaReady());
-    }()));
+    unawaited(Future<void>.delayed(
+      const Duration(seconds: 1),
+      () async {
+        if (!mounted) return;
+        unawaited(_loadSavedOfflineMap());
+        unawaited(_ensureValhallaReady());
+      },
+    ));
 
     // One-time startup checks; never repeated on AppLifecycleState.resumed.
     unawaited(_locateMe());
