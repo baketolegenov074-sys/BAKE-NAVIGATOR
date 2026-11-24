@@ -3120,7 +3120,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
-  Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true}) async {
+  Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true, int resultLimit = 50}) async {
     Future<List<Map<String, dynamic>>> request(Uri uri) async {
       try {
         final response = await http.get(uri, headers: const {
@@ -3192,7 +3192,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       requestUris.add(Uri.https('photon.komoot.io', '/api/', {
         'q': apiQuery,
         'lang': 'ru',
-        'limit': '50',
+        'limit': resultLimit.toString(),
         'countrycode': 'KZ',
       }));
     }
@@ -3210,7 +3210,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         'housenumber': house,
         'city': 'Шымкент',
         'lang': 'ru',
-        'limit': '30',
+        'limit': resultLimit.toString(),
       }));
     }
     final groups = await Future.wait(
@@ -5732,14 +5732,17 @@ _navigationMatchedLocation = null;
                             // Live autocomplete starts at two characters. Use Photon
                             // for suggestions, but reserve Nominatim city lookup for
                             // an explicitly submitted search to respect its 1 req/s policy.
-                            photonDebounce = Timer(const Duration(milliseconds: 500), () async {
+                            photonDebounce = Timer(const Duration(milliseconds: 280), () async {
                               try {
-                                final found = await _fetchAddressFeatures(
+                                // Keep keystroke autocomplete lightweight: do not scan the full
+                                // offline OSM index or query Supabase on every edit.
+                                // Full local + online search still runs on submit.
+                                final found = await _fetchPhotonFeatures(
                                   value,
-                                  near: _currentLocation ?? _shymkent,
+                                  includeCitySearch: false,
                                   includeNominatimCitySearch: false,
                                   includeNominatimAddressFallback: false,
-                                  includeExpandedPhotonQueries: false,
+                                  resultLimit: 12,
                                 );
                                 if (!searchContext.mounted) return;
                                 if (requestVersion != photonRequestVersion) return;
