@@ -840,28 +840,57 @@ Future<bool> _requestSharedMbtilesAccess() async {
 }
 
 Future<String?> _findSharedMbtilesFile() async {
-  const directories = <String>[
-    '/storage/emulated/0/Download/BAKE_Navigator',
-    '/storage/emulated/0/Download',
-    '/sdcard/Download/BAKE_Navigator',
-    '/sdcard/Download',
-  ];
-  for (final path in directories) {
+  const storageRoot = '/storage/emulated/0';
+  final pendingDirectories = <Directory>[Directory(storageRoot)];
+  final candidates = <Map<String, Object>>[];
+
+  // Walk shared storage recursively. Do not follow symbolic links, enter
+  // hidden directories, or scan Android/data (Android restricts this folder).
+  while (pendingDirectories.isNotEmpty) {
+    final directory = pendingDirectories.removeLast();
     try {
-      final directory = Directory(path);
-      if (!await directory.exists()) continue;
-      final files = await directory.list(followLinks: false).where((entity) =>
-          entity is File && entity.path.toLowerCase().endsWith('.mbtiles'))
-          .cast<File>().toList();
-      files.sort((a, b) => a.path.toLowerCase().compareTo(b.path.toLowerCase()));
-      for (final file in files) {
-        if (await file.length() > 0) return file.path;
+      await for (final entity in directory.list(followLinks: false)) {
+        final path = entity.path;
+        final name = path.split(Platform.pathSeparator).last;
+        if (entity is Directory) {
+          if (name.startsWith('.')) continue;
+          if (path.toLowerCase() ==
+              '$storageRoot/android/data'.toLowerCase()) {
+            continue;
+          }
+          pendingDirectories.add(entity);
+          continue;
+        }
+        if (entity is! File || !path.toLowerCase().endsWith('.mbtiles')) {
+          continue;
+        }
+        try {
+          final stat = await entity.stat();
+          if (stat.size <= 0) continue;
+          candidates.add(<String, Object>{
+            'file': entity,
+            'modified': stat.modified,
+            'size': stat.size,
+          });
+        } catch (_) {
+          // Skip files that disappear or become inaccessible during the scan.
+        }
       }
     } catch (_) {
-      // A missing folder or denied access must not block online maps.
+      // One inaccessible directory must not stop the rest of the scan.
     }
   }
-  return null;
+
+  if (candidates.isEmpty) return null;
+  // Prefer the newest archive; use file size as a deterministic tie-breaker.
+  candidates.sort((a, b) {
+    final modifiedA = a['modified'] as DateTime;
+    final modifiedB = b['modified'] as DateTime;
+    final byDate = modifiedB.compareTo(modifiedA);
+    if (byDate != 0) return byDate;
+    return (b['size'] as int).compareTo(a['size'] as int);
+  });
+  return (candidates.first['file'] as File).path;
 }
 
 class NavigatorScreen extends StatefulWidget {
@@ -917,6 +946,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   MbTilesTileProvider? _offlineTileProvider;
+  String? _activeOfflineMapPath;
+  bool _offlineMapLoadInProgress = false;
   MbTiles? _offlineVectorMbtiles;
   MbTilesVectorTileProvider? _offlineVectorTileProvider;
   final vtr.Theme _offlineVectorTheme = _buildBakeOfflineVectorTheme();
@@ -1633,53 +1664,67 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
 
   Future<void> _loadSavedOfflineMap() async {
-    final prefs = await SharedPreferences.getInstance();
-    var path = prefs.getString('offline_map_path');
-    if (path != null && !await File(path).exists()) {
-      path = null;
-      await prefs.remove('offline_map_path');
-      await prefs.remove('offline_map_auto_connected');
-    }
-    if (path == null) {
-      final hasAccess = await _requestSharedMbtilesAccess();
-      if (hasAccess) {
-        path = await _findSharedMbtilesFile();
-        if (path != null) {
-          await prefs.setString('offline_map_path', path);
-          await prefs.setBool('offline_map_auto_connected', true);
+    if (_offlineMapLoadInProgress) return;
+    _offlineMapLoadInProgress = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      var path = prefs.getString('offline_map_path');
+      var autoConnected =
+          prefs.getBool('offline_map_auto_connected') ?? false;
+      if (path != null && !await File(path).exists()) {
+        path = null;
+        autoConnected = false;
+        await prefs.remove('offline_map_path');
+        await prefs.remove('offline_map_auto_connected');
+      }
+
+      // Re-scan at startup and after returning from Android settings for
+      // automatically discovered maps. Preserve a manually imported map.
+      if (path == null || autoConnected) {
+        final hasAccess = await _requestSharedMbtilesAccess();
+        if (hasAccess) {
+          final foundPath = await _findSharedMbtilesFile();
+          if (foundPath != null) {
+            path = foundPath;
+            autoConnected = true;
+            await prefs.setString('offline_map_path', foundPath);
+            await prefs.setBool('offline_map_auto_connected', true);
+          }
         }
       }
-    }
-    if (path == null) return;
-    try {
-      final database = MbTiles(mbtilesPath: path);
-      final format = database.getMetadata().format?.toLowerCase();
-      if (format == 'pbf' || format == 'mvt') {
-        final vectorProvider = MbTilesVectorTileProvider(mbtiles: database);
+      if (path == null || !mounted) return;
+      if (_activeOfflineMapPath == path && _isOfflineMapActive) return;
+
+      try {
+        final database = MbTiles(mbtilesPath: path);
+        final format = database.getMetadata().format?.toLowerCase();
+        MbTilesVectorTileProvider? vectorProvider;
+        MbTilesTileProvider? rasterProvider;
+        if (format == 'pbf' || format == 'mvt') {
+          vectorProvider = MbTilesVectorTileProvider(mbtiles: database);
+        } else {
+          database.dispose();
+          rasterProvider = MbTilesTileProvider.fromPath(path: path);
+        }
         if (!mounted) {
           database.dispose();
+          rasterProvider?.dispose();
           return;
         }
+        _disposeOfflineMap();
         setState(() {
-          _offlineTileProvider = null;
-          _offlineVectorMbtiles = database;
+          _activeOfflineMapPath = path;
+          _offlineTileProvider = rasterProvider;
+          _offlineVectorMbtiles =
+              vectorProvider == null ? null : database;
           _offlineVectorTileProvider = vectorProvider;
         });
-      } else {
-        database.dispose();
-        final provider = MbTilesTileProvider.fromPath(path: path);
-        if (!mounted) {
-          provider.dispose();
-          return;
-        }
-        setState(() {
-          _offlineVectorMbtiles = null;
-          _offlineVectorTileProvider = null;
-          _offlineTileProvider = provider;
-        });
+      } catch (error) {
+        debugPrint('BAKE MBTiles auto-connect failed: $error');
+        // Keep the current map provider and online map available on failure.
       }
-    } catch (_) {
-      // Keep the online map available if an offline archive cannot be opened.
+    } finally {
+      _offlineMapLoadInProgress = false;
     }
   }
 
@@ -4702,6 +4747,7 @@ _navigationMatchedLocation = null;
     _recordGpsDiagnostic(event: 'APP_LIFECYCLE', detail: state.name);
     if (state == AppLifecycleState.resumed) {
       _appInForeground = true;
+      unawaited(_loadSavedOfflineMap());
       _lastCameraUpdateAt = null;
       _lastMapAnnotationUpdateAt = null;
       _headingUpGestureActive = false;
