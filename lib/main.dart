@@ -1284,13 +1284,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final timeText = remainingMinutes >= 60
             ? '${remainingMinutes ~/ 60} часов ${remainingMinutes % 60} минут'
             : '${remainingMinutes} минут';
-        await _ayaSpeak('До точки назначения осталось $distanceText, примерно $timeText.');
+        await _ayaSpeak(_localized('До точки назначения осталось $distanceText, примерно $timeText.', 'Межелі жерге дейін $distanceText қалды, шамамен $timeText.', '$distanceText remaining to your destination, about $timeText.'));
         if (mounted) setState(() => _ayaStatus = 'Осталось $distanceText · $timeText');
         return;
       }
 
-      if (normalized == 'айя' || normalized == 'привет' ||
-          normalized == 'айя привет' || normalized == 'привет айя') {
+      final isGreeting = _navigationLanguage == 'kk-KZ'
+          ? normalized == 'айя' || normalized == 'сәлем' || normalized == 'сәлем айя'
+          : _navigationLanguage == 'en-US'
+              ? normalized == 'aya' || normalized == 'hello' || normalized == 'hello aya'
+              : normalized == 'айя' || normalized == 'привет' || normalized == 'айя привет' || normalized == 'привет айя';
+      if (isGreeting) {
         await _ayaSpeak(_localized('Слушаю вас, куда поедем?', 'Тыңдап тұрмын, қайда барамыз?', 'I am listening. Where would you like to go?'));
         if (mounted) setState(() => _ayaStatus = 'Слушаю вас');
         return;
@@ -1321,7 +1325,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           .replaceAll(RegExp(r'^[,.:;\s]+|[,.:;\s]+$'), '')
           .trim();
       if (destinationQuery.isEmpty) {
-        await _ayaSpeak('Слушаю вас, куда поедем?');
+        await _ayaSpeak(_localized('Слушаю вас, куда поедем?', 'Тыңдап тұрмын, қайда барамыз?', 'I am listening. Where would you like to go?'));
         return;
       }
 
@@ -1351,7 +1355,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       final geometry = selected['geometry'];
       final coordinates = geometry is Map ? geometry['coordinates'] : null;
       if (coordinates is! List || coordinates.length < 2) {
-        await _ayaSpeak('Адрес не найден, повторите ещё раз');
+        await _ayaSpeak(_localized('Адрес не найден, повторите ещё раз', 'Мекенжай табылмады, қайталап айтыңыз', 'Address not found. Please try again'));
         return;
       }
       final lon = double.tryParse(coordinates[0].toString());
