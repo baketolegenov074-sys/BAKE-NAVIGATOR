@@ -1311,6 +1311,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   Future<void> _dismissAyaPreviewUi() async {
     _ayaIdleTimer?.cancel();
     _ayaFinalizing = true;
+    _ayaPulseController.stop();
+    _ayaPulseController.value = 1;
     if (mounted) {
       setState(() {
         _ayaListening = false;
@@ -1505,7 +1507,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       if (mounted) setState(() => _ayaStatus = 'Ошибка команды: ' + error.toString());
     } finally {
       _ayaCommandInProgress = false;
-      if (mounted) setState(() => _isSearching = false);
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+          _ayaPanelVisible = false;
+          _ayaRecognizedText = '';
+          _ayaStatus = '';
+        });
+      }
     }
   }
 
@@ -4669,6 +4678,8 @@ _navigationMatchedLocation = null;
   Future<void> _resetRoutePreview() async {
     if (!mounted) return;
     _ayaIdleTimer?.cancel();
+    _ayaPulseController.stop();
+    _ayaPulseController.value = 1;
     setState(() {
       _routeReady = false;
       _routeActionDismissed = true;
