@@ -3002,11 +3002,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return score;
   }
 
+  bool _isInsideShymkentBounds(Map<String, dynamic> feature) {
+    final geometry = feature['geometry'];
+    final coordinates =
+        geometry is Map ? geometry['coordinates'] : null;
+    if (coordinates is! List || coordinates.length < 2) return false;
+    final lon = double.tryParse(coordinates[0].toString());
+    final lat = double.tryParse(coordinates[1].toString());
+    if (lon == null || lat == null || !lon.isFinite || !lat.isFinite) {
+      return false;
+    }
+    return lon >= 69.35 && lon <= 69.85 &&
+        lat >= 42.20 && lat <= 42.50;
+  }
+
   void _sortSearchFeatures(
     List<Map<String, dynamic>> features,
     String query,
   ) {
     features.sort((left, right) {
+      // Keep intercity settlement searches ordered by their exact match;
+      // for local POI/address searches, Shymkent bbox results come first.
+      if (!_isLikelyCityQuery(query)) {
+        final localPriority = (_isInsideShymkentBounds(right) ? 1 : 0)
+            .compareTo(_isInsideShymkentBounds(left) ? 1 : 0);
+        if (localPriority != 0) return localPriority;
+      }
       final relevance = _searchFeatureRelevanceScore(right, query)
           .compareTo(_searchFeatureRelevanceScore(left, query));
       if (relevance != 0) return relevance;
@@ -5872,7 +5893,7 @@ _navigationMatchedLocation = null;
                                     includeCitySearch: true,
                                     includeNominatimCitySearch: false,
                                     includeNominatimAddressFallback: false,
-                                    resultLimit: 12,
+                                    resultLimit: 20,
                                   ).timeout(const Duration(seconds: 4));
                                   if (searchContext.mounted &&
                                       activeVersion == photonRequestVersion) {
@@ -5955,7 +5976,13 @@ _navigationMatchedLocation = null;
                                     ? Map<String, dynamic>.from(rawProperties)
                                     : <String, dynamic>{};
                                 final name = (properties['name'] ?? label).toString().trim();
-                                final address = _photonFeatureStreetAddress(feature);
+                                final streetAddress = _photonFeatureStreetAddress(feature);
+                                final address = streetAddress.isNotEmpty
+                                    ? streetAddress
+                                    : [
+                                        (properties['district'] ?? properties['suburb'] ?? '').toString().trim(),
+                                        (properties['city'] ?? 'Шымкент').toString().trim(),
+                                      ].where((part) => part.isNotEmpty).toSet().join(', ');
                                 return ListTile(
                                   dense: true,
                                   leading: Icon(feature['_roadReport'] == true ? Icons.push_pin : Icons.location_on_outlined, size: 20, color: feature['_roadReport'] == true ? const Color(0xFF16834A) : null),
