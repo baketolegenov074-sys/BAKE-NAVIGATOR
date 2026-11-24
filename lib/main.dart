@@ -1243,8 +1243,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final normalized = rawCommand.toLowerCase().replaceAll('ё', 'е')
         .replaceAll(RegExp(r'[.!?,;:]+$'), '').trim();
     try {
-      if (RegExp(r'^(сбрось маршрут|отмени маршрут|отмена|завершить)(?:\s|$)')
-          .hasMatch(normalized)) {
+      final isCancelCommand = _navigationLanguage == 'kk-KZ'
+          ? normalized.startsWith('бағытты өшір')
+          : _navigationLanguage == 'en-US'
+              ? normalized.startsWith('cancel route')
+              : RegExp(r'^(сбрось маршрут|отмени маршрут|отмена|завершить)(?:\s|$)').hasMatch(normalized);
+      if (isCancelCommand) {
         if (_navigationActive) {
           await _finishNavigation();
         } else {
@@ -1255,9 +1259,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         return;
       }
 
-      if (normalized == 'айя сколько осталось' ||
-          normalized == 'сколько осталось' ||
-          normalized == 'айя сколько осталось до точки') {
+      final asksRemaining = _navigationLanguage == 'kk-KZ'
+          ? normalized.contains('қанша қалды')
+          : _navigationLanguage == 'en-US'
+              ? normalized.contains('how much left')
+              : normalized.contains('сколько осталось');
+      if (asksRemaining) {
         if (!_navigationActive || _destination == null ||
             _routeDistanceMeters == null || _routeDurationSeconds == null) {
           await _ayaSpeak('Активного маршрута нет');
