@@ -952,6 +952,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   LatLng? _freeDriveJumpCandidate;
   int _freeDriveJumpCandidateCount = 0;
   LatLng? _destination;
+  LatLng? _mapPreviewPoint;
+  String _mapPreviewAddress = 'Адрес определяется…';
+  int _mapPreviewGeneration = 0;
   String _selectedMapPointAddress = 'Адрес определяется…';
   int _routeRequestGeneration = 0;
   DateTime? _mapPointerDownAt;
@@ -6759,6 +6762,44 @@ _navigationMatchedLocation = null;
       }
       return;
     }
+
+    final generation = ++_mapPreviewGeneration;
+    setState(() {
+      _mapPreviewPoint = point;
+      _mapPreviewAddress = 'Адрес определяется…';
+      _message = '';
+    });
+    _moveMapCamera(point, 15);
+
+    try {
+      final address = await _lookupPhotonReverseAddress(point);
+      await _rememberMapAddress(address, point);
+      if (!mounted ||
+          generation != _mapPreviewGeneration ||
+          _mapPreviewPoint != point) return;
+      setState(() => _mapPreviewAddress = address);
+    } catch (error) {
+      debugPrint('BAKE selected point address lookup failed: $error');
+      if (!mounted ||
+          generation != _mapPreviewGeneration ||
+          _mapPreviewPoint != point) return;
+      setState(() => _mapPreviewAddress = 'Адрес не найден.');
+    }
+  }
+
+  void _cancelMapPointPreview() {
+    _mapPreviewGeneration++;
+    if (!mounted) return;
+    setState(() {
+      _mapPreviewPoint = null;
+      _mapPreviewAddress = 'Адрес определяется…';
+    });
+  }
+
+  Future<void> _confirmMapPointPreview() async {
+    final point = _mapPreviewPoint;
+    if (point == null || _isBuildingRoute) return;
+
     if (_navigationActive) {
       final accepted = await showDialog<bool>(
         context: context,
@@ -6766,38 +6807,28 @@ _navigationMatchedLocation = null;
           title: Text(AppLocale.tr('Изменить текущий заказ?')),
           content: Text(AppLocale.tr('Текущий маршрут останется активным, пока вы не подтвердите перестроение.')),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: Text(AppLocale.tr('Продолжить текущий маршрут'))),
-            FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: Text(AppLocale.tr('Построить новый маршрут'))),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(AppLocale.tr('Продолжить текущий маршрут')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(AppLocale.tr('Построить новый маршрут')),
+            ),
           ],
         ),
       );
-      if (accepted != true || !mounted) return;
+      if (accepted != true || !mounted || _mapPreviewPoint != point) return;
     }
+
+    final address = _mapPreviewAddress;
+    _mapPreviewGeneration++;
+    setState(() {
+      _mapPreviewPoint = null;
+      _selectedMapPointAddress = address;
+    });
     _selectDestination(point);
-    _moveMapCamera(point, 15);
-    if (mounted) {
-      setState(() {
-        _selectedMapPointAddress = 'Адрес определяется…';
-        _message = AppLocale.pick(
-          'Определяем адрес и строим варианты маршрута…',
-          'Мекенжай анықталып, маршрут нұсқалары құрылуда…',
-          'Resolving address and building route options…',
-        );
-      });
-    }
-    try {
-      final address = await _lookupPhotonReverseAddress(point);
-      await _rememberMapAddress(address, point);
-      if (mounted && _destination == point) {
-        setState(() => _selectedMapPointAddress = address);
-      }
-    } catch (error) {
-      debugPrint('BAKE selected point address lookup failed: $error');
-      if (mounted && _destination == point) {
-        setState(() => _selectedMapPointAddress = 'Адрес не найден.');
-      }
-    }
-    if (!mounted || _destination != point) return;
+    if (mounted) setState(() => _selectedMapPointAddress = address);
     await _buildRoute();
   }
 
@@ -8323,6 +8354,19 @@ _navigationMatchedLocation = null;
           child: Text('${entry.key + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
         ),
       )),
+      if (_mapPreviewPoint != null)
+        Marker(
+          point: _mapPreviewPoint!,
+          width: 52,
+          height: 58,
+          alignment: Alignment.bottomCenter,
+          child: const Icon(
+            Icons.location_pin,
+            color: Color(0xFFE53935),
+            size: 50,
+            shadows: [Shadow(color: Colors.white, blurRadius: 4)],
+          ),
+        ),
       if (_destination != null)
         Marker(
           point: _destination!,
@@ -8395,8 +8439,11 @@ _navigationMatchedLocation = null;
                 initialCenter: _shymkent,
                 initialZoom: 13,
                 onTap: (_, point) {
-                  // A short tap may switch an alternative route, never set an address.
-                  _trySelectAlternativeAt(point);
+                  // A tap selects a place only; route calculation requires
+                  // an explicit press on the preview card's "Поехать" button.
+                  if (!_trySelectAlternativeAt(point)) {
+                    unawaited(_selectMapDestination(point));
+                  }
                 },
                 onLongPress: (_, point) => _captureMapLongPressPoint(point),
                 onPositionChanged: (camera, hasGesture) {
@@ -9009,7 +9056,80 @@ _navigationMatchedLocation = null;
                 ),
               ),
             ),
-          if (_routeReady && !_navigationActive && !_routeActionDismissed)
+          if (_mapPreviewPoint != null)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 82,
+              child: SafeArea(
+                top: false,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 9,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _mapPreviewAddress,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF202020),
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Отменить выбор точки',
+                              visualDensity: VisualDensity.compact,
+                              onPressed: _cancelMapPointPreview,
+                              icon: const Icon(Icons.close, size: 24),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 50,
+                          child: FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFCC00),
+                              foregroundColor: const Color(0xFF171717),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(15),
+                              ),
+                            ),
+                            onPressed: _isBuildingRoute
+                                ? null
+                                : _confirmMapPointPreview,
+                            child: const Text(
+                              'Поехать',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (_routeReady &&
+              !_navigationActive &&
+              !_routeActionDismissed &&
+              _mapPreviewPoint == null)
             Positioned(
               left: 12,              right: 12,
               bottom: 76,
