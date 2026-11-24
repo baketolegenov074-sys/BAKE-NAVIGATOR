@@ -5821,6 +5821,7 @@ _navigationMatchedLocation = null;
     final prefs = await SharedPreferences.getInstance();
     List<Map<String, dynamic>> photonSuggestions = <Map<String, dynamic>>[];
     bool photonLoadingSuggestions = false;
+    String? peliasAutocompleteError;
     Timer? photonDebounce;
     var photonRequestVersion = 0;
     var photonRequestRunning = false;
@@ -5868,7 +5869,10 @@ _navigationMatchedLocation = null;
                       } catch (error) {
                         debugPrint('BAKE Pelias autocomplete failed: $error');
                         if (searchContext.mounted && version == photonRequestVersion) {
-                          refreshSearch(() => photonLoadingSuggestions = false);
+                          refreshSearch(() {
+                            photonLoadingSuggestions = false;
+                            peliasAutocompleteError = 'Сервер Pelias недоступен';
+                          });
                         }
                       }
                     }
@@ -5899,6 +5903,9 @@ _navigationMatchedLocation = null;
                                     final configured = await _configurePeliasEndpoint();
                                     if (!configured) return;
                                   }
+                                  photonDebounce?.cancel();
+                                  photonRequestVersion++;
+                                  pendingPhotonQuery = null;
                                   final prefs = await SharedPreferences.getInstance();
                                   await prefs.setBool('pelias_test_mode', enablePelias);
                                   if (!mounted || !searchContext.mounted) return;
@@ -5906,6 +5913,7 @@ _navigationMatchedLocation = null;
                                   refreshSearch(() {
                                     photonSuggestions = <Map<String, dynamic>>[];
                                     photonLoadingSuggestions = false;
+                                    peliasAutocompleteError = null;
                                   });
                                 },
                               ),
@@ -5946,7 +5954,10 @@ _navigationMatchedLocation = null;
                               });
                               return;
                             }
-                            refreshSearch(() => photonLoadingSuggestions = true);
+                            refreshSearch(() {
+                                photonLoadingSuggestions = true;
+                                peliasAutocompleteError = null;
+                              });
                             // Keep typing responsive: one Photon batch at a time.
                             // While it runs, retain only the newest text value.
                             Future<void> loadLatestPhotonSuggestions(
@@ -6034,6 +6045,14 @@ _navigationMatchedLocation = null;
                           const Padding(
                             padding: EdgeInsets.all(10),
                             child: LinearProgressIndicator(minHeight: 2),
+                          ),
+                        if (peliasAutocompleteError != null)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            child: Text(
+                              peliasAutocompleteError!,
+                              style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                            ),
                           ),
                         if (photonSuggestions.isNotEmpty)
                           Container(
