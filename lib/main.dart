@@ -3120,7 +3120,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
-  Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false, bool includeNominatimCitySearch = true}) async {
+  Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true}) async {
     Future<List<Map<String, dynamic>>> request(Uri uri) async {
       try {
         final response = await http.get(uri, headers: const {
@@ -3179,7 +3179,105 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
 
     final addressMatch = RegExp(
-      r'^(.*?)\s+(\d+[0-9а-яa-z]*(?:/\d+[0-9а-яa-z]*)?)$',
+      r'^(.*?)\s*(?:,|\s)\s*(?:дом\s*|д\.?\s*|№\s*)?(\d+[0-9а-яa-z]*(?:/\d+[0-9а-яa-z]*)?)
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    final requestUris = <Uri>[];
+    // Start the city lookup alongside Photon so a slow Nominatim response
+    // cannot consume the entire online-search timeout before Photon starts.
+    final nominatimCityFuture = includeCitySearch && includeNominatimCitySearch && _isLikelyCityQuery(trimmed)
+        ? _fetchNominatimCityFeatures(trimmed)
+        : Future<List<Map<String, dynamic>>>.value(<Map<String, dynamic>>[]);
+    for (final apiQuery in apiQueries.take(4)) {
+      requestUris.add(Uri.https('photon.komoot.io', '/api/', {
+        'q': apiQuery,
+        'lang': 'ru',
+        'limit': '50',
+        'countrycode': 'KZ',
+      }));
+    }
+
+    // Address-shaped input gets a structured district/street + house-number
+    // lookup as well as the ordinary free-text query.
+    if (addressMatch != null && schoolNumber == null &&
+        !RegExp(r'школа|мектеп|мега|центр|базар|рынок|плаза|plaza|mall|аэропорт|вокзал', caseSensitive: false)
+            .hasMatch(addressMatch.group(1)!)) {
+      final street = addressMatch.group(1)!.trim();
+      final house = addressMatch.group(2)!.trim();
+      // Use the street field for a street name. The previous implementation
+      // incorrectly sent the street text as a district, wasting a Photon request.
+      requestUris.add(Uri.https('photon.komoot.io', '/structured', {
+        'street': street,
+        'housenumber': house,
+        'city': 'Шымкент',
+        'lang': 'ru',
+        'limit': '30',
+      }));
+    }
+    final groups = await Future.wait(
+      requestUris.toSet().take(6).map(request),
+    );
+    final nominatimCityResults = await nominatimCityFuture;
+    final merged = <Map<String, dynamic>>[...nominatimCityResults];
+    final seen = <String>{};
+    for (final group in groups) {
+      for (final feature in group) {
+        final properties = feature['properties'] is Map
+            ? Map<String, dynamic>.from(feature['properties'] as Map)
+            : <String, dynamic>{};
+        final geometry = feature['geometry'] as Map;
+        final coordinates = geometry['coordinates'] as List;
+        final identity = properties['osm_id'] != null
+            ? '${properties['osm_type'] ?? ''}:${properties['osm_id']}'
+            : '${properties['name'] ?? ''}:${coordinates[0]}:${coordinates[1]}';
+        if (seen.add(identity)) merged.add(feature);
+      }
+    }
+    if (!_isLikelyCityQuery(trimmed)) {
+      final queryTokens = trimmed.toLowerCase()
+          .replaceAll('ё', 'е')
+          .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ')
+          .split(RegExp(r'\s+'))
+          .where((token) => token.length > 1 &&
+              token != 'шымкент' && token != 'город' && token != 'г')
+          .toList();
+      final hasStrongMatch = merged.any((feature) {
+        final raw = feature['properties'];
+        final properties = raw is Map
+            ? Map<String, dynamic>.from(raw)
+            : <String, dynamic>{};
+        final searchable = [
+          properties['name'],
+          properties['display_label'],
+          properties['label'],
+          properties['address'],
+          properties['street'],
+          properties['housenumber'],
+          properties['house_number'],
+          properties['district'],
+          properties['suburb'],
+          properties['city'],
+        ].whereType<Object>().join(' ').toLowerCase()
+            .replaceAll('ё', 'е')
+            .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ')
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .trim();
+        return queryTokens.isNotEmpty &&
+            queryTokens.every((token) => searchable.contains(token));
+      });
+      if (includeNominatimAddressFallback && (merged.isEmpty || !hasStrongMatch)) {
+        // Photon can return nearby but unrelated objects and suppress a valid
+        // OSM match. Retry the full place/street phrase through Nominatim.
+        final fallbackQuery = includeCitySearch &&
+                !trimmed.toLowerCase().contains('шымкент')
+            ? '$trimmed Шымкент'
+            : trimmed;
+        merged.addAll(await _fetchNominatimAddressFeatures(fallbackQuery));
+      }
+    }
+    return merged.take(150).toList();
+  }
+,
       caseSensitive: false,
     ).firstMatch(trimmed);
     final requestUris = <Uri>[];
@@ -3286,7 +3384,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return merged.take(150).toList();
   }
 
-  Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near, bool includeNominatimCitySearch = true}) async {
+  Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true, bool includeExpandedPhotonQueries = true}) async {
     final needle = query.trim().toLowerCase();
     final reportFeatures = <Map<String, dynamic>>[];
     final seenReports = <String>{};
@@ -3417,8 +3515,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       try {
         final onlineResults = await _fetchPhotonFeatures(
           query,
-          includeCitySearch: true,
+          includeCitySearch: includeExpandedPhotonQueries,
           includeNominatimCitySearch: includeNominatimCitySearch,
+          includeNominatimAddressFallback: includeNominatimAddressFallback,
         ).timeout(const Duration(seconds: 18));
         final merged = <Map<String, dynamic>>[];
         final seen = <String>{};
@@ -3462,6 +3561,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         otherResults = await _fetchPhotonFeatures(
           query,
           includeNominatimCitySearch: includeNominatimCitySearch,
+          includeNominatimAddressFallback: includeNominatimAddressFallback,
         ).timeout(const Duration(seconds: 18));
       } catch (error) {
         debugPrint('BAKE Photon address search unavailable: $error');
@@ -5746,6 +5846,8 @@ _navigationMatchedLocation = null;
                                   value,
                                   near: _currentLocation ?? _shymkent,
                                   includeNominatimCitySearch: false,
+                                  includeNominatimAddressFallback: false,
+                                  includeExpandedPhotonQueries: false,
                                 );
                                 if (!searchContext.mounted) return;
                                 if (requestVersion != photonRequestVersion) return;
