@@ -3179,7 +3179,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
 
     final addressMatch = RegExp(
-      r'^(.*?)\s*(?:,|\s)\s*(?:дом\s*|д\.?\s*|№\s*)?(\d+[0-9а-яa-z]*(?:/\d+[0-9а-яa-z]*)?)
+      r'^(.*?)\s*(?:,|\s)\s*(?:дом\s*|д\.?\s*|№\s*)?(\d+[0-9а-яa-z]*(?:/\d+[0-9а-яa-z]*)?)$',
+      caseSensitive: false,
     ).firstMatch(trimmed);
     final requestUris = <Uri>[];
     // Start the city lookup alongside Photon so a slow Nominatim response
