@@ -297,7 +297,7 @@ class BakeNavigatorApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: const Color(0xFFFFFFFF),
       ),
-      home: const NavigatorScreen(),
+      home: const _BakeStartupGate(),
     );
   }
 }
@@ -1049,29 +1049,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   DateTime? _lastAutomaticReroute;
   DateTime? _plannedDeparture;  String _message = '';
 
-  bool _showStartupSplash = true;
-  bool _keepStartupSplash = true;
-  Timer? _startupSplashTimer;
-  Timer? _startupSplashRemovalTimer;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // The first frame is deliberately lightweight. Disk scans, map providers,
-    // graph validation, camera data, cloud sync and GPS all start afterwards.
+    // Start expensive work only after the root splash has painted its first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _startupSplashTimer = Timer(const Duration(milliseconds: 1150), () {
-        if (!mounted) return;
-        setState(() => _showStartupSplash = false);
-        _startupSplashRemovalTimer = Timer(
-          const Duration(milliseconds: 350),
-          () {
-            if (mounted) setState(() => _keepStartupSplash = false);
-          },
-        );
-      });
       unawaited(_initializeStartupServices());
     });
   }
@@ -1648,8 +1632,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _roadReportRetryTimer?.cancel();
-    _startupSplashTimer?.cancel();
-    _startupSplashRemovalTimer?.cancel();
     unawaited(_stopLiveLocationUpdates(reason: 'widget_disposed'));
     _headingUpResumeTimer?.cancel();
     _navigationPredictionTimer?.cancel();
@@ -9411,19 +9393,67 @@ _navigationMatchedLocation = null;
               ),
             ),
 
-          if (_keepStartupSplash)
-            Positioned.fill(
-              child: AnimatedOpacity(
-                opacity: _showStartupSplash ? 1 : 0,
-                duration: const Duration(milliseconds: 350),
-                child: IgnorePointer(
-                  ignoring: !_showStartupSplash,
-                  child: const _BakeStartupSplash(),
-                ),
-              ),
-            ),
         ],
       ),
+    );
+  }
+}
+
+class _BakeStartupGate extends StatefulWidget {
+  const _BakeStartupGate();
+
+  @override
+  State<_BakeStartupGate> createState() => _BakeStartupGateState();
+}
+
+class _BakeStartupGateState extends State<_BakeStartupGate> {
+  bool _showSplash = true;
+  bool _keepSplash = true;
+  Timer? _fadeTimer;
+  Timer? _removeTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // NavigatorScreen is mounted underneath the splash, so its MBTiles,
+    // Valhalla and other startup services begin while the splash is visible.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _fadeTimer = Timer(const Duration(milliseconds: 1500), () {
+        if (!mounted) return;
+        setState(() => _showSplash = false);
+        _removeTimer = Timer(const Duration(milliseconds: 350), () {
+          if (mounted) setState(() => _keepSplash = false);
+        });
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _fadeTimer?.cancel();
+    _removeTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const NavigatorScreen(),
+        if (_keepSplash)
+          Positioned.fill(
+            child: AnimatedOpacity(
+              opacity: _showSplash ? 1 : 0,
+              duration: const Duration(milliseconds: 350),
+              child: IgnorePointer(
+                ignoring: !_showSplash,
+                child: const _BakeStartupSplash(),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
