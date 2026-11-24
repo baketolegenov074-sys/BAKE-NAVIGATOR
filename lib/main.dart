@@ -923,7 +923,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   LatLng? _lastRouteLineSyncPoint;
 
   final FlutterTts _tts = FlutterTts();
-  final FlutterTts _ayaTts = FlutterTts();
+  Future<void> _speechQueue = Future<void>.value();
   final SpeechToText _ayaSpeech = SpeechToText();
   late final AnimationController _ayaPulseController;
   bool _ayaListening = false;
@@ -1149,16 +1149,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     unawaited(_locateMe());
   }
 
-  Future<void> _ayaSpeak(String text) async {
-    try {
-      await _ayaTts.setLanguage('ru-RU');
-      await _ayaTts.setSpeechRate(0.5);
-      await _ayaTts.setPitch(1.0);
-      await _ayaTts.speak(text);
-    } catch (error) {
-      debugPrint('BAKE Aya TTS unavailable: ' + error.toString());
-    }
-  }
+  Future<void> _ayaSpeak(String text) => _speakText(text);
 
   Future<void> _toggleAyaListening() async {
     if (_ayaListening) {
@@ -1264,6 +1255,33 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         return;
       }
 
+      if (normalized == 'айя сколько осталось' ||
+          normalized == 'сколько осталось' ||
+          normalized == 'айя сколько осталось до точки') {
+        if (!_navigationActive || _destination == null ||
+            _routeDistanceMeters == null || _routeDurationSeconds == null) {
+          await _ayaSpeak('Активного маршрута нет');
+          if (mounted) setState(() => _ayaStatus = 'Активного маршрута нет');
+          return;
+        }
+        final totalMeters = _routeDistanceMeters!;
+        final remainingMeters = math.max(
+          0.0,
+          totalMeters - _navigationProgressMeters,
+        ).toDouble();
+        final ratio = totalMeters <= 0 ? 0.0 : (remainingMeters / totalMeters).clamp(0.0, 1.0);
+        final remainingMinutes = ( _routeDurationSeconds! * ratio / 60).ceil();
+        final distanceText = remainingMeters >= 1000
+            ? '${(remainingMeters / 1000).toStringAsFixed(1)} километра'
+            : '${remainingMeters.round()} метров';
+        final timeText = remainingMinutes >= 60
+            ? '${remainingMinutes ~/ 60} часов ${remainingMinutes % 60} минут'
+            : '${remainingMinutes} минут';
+        await _ayaSpeak('До точки назначения осталось $distanceText, примерно $timeText.');
+        if (mounted) setState(() => _ayaStatus = 'Осталось $distanceText · $timeText');
+        return;
+      }
+
       if (normalized == 'айя' || normalized == 'привет' ||
           normalized == 'айя привет' || normalized == 'привет айя') {
         await _ayaSpeak('Слушаю вас, куда поедем?');
@@ -1352,8 +1370,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       await _buildRoute();
       if (!mounted) return;
       if (_routeReady && _routePoints.length >= 2) {
-        await _ayaSpeak('Маршрут построен до ' +
-            (destinationName.isEmpty ? destinationQuery : destinationName));
+        final routeName = destinationName.isEmpty ? destinationQuery : destinationName;
+        final routeKm = (_routeDistanceMeters ?? 0) / 1000;
+        final routeMinutes = ((_routeDurationSeconds ?? 0) / 60).ceil();
+        await _ayaSpeak(
+          'Маршрут построен до $routeName. '
+          'Расстояние ${routeKm.toStringAsFixed(1)} километра, '
+          'время в пути примерно $routeMinutes минут. Поехали!',
+        );
         if (mounted) setState(() => _ayaStatus = 'Маршрут построен');
       } else {
         await _ayaSpeak('Не удалось построить маршрут, повторите ещё раз');
@@ -1617,11 +1641,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _selectedVoiceLocale = prefs.getString('voice_locale');
       _kazakhVoiceId = (prefs.getInt('kazakh_voice_sid') ?? 0).clamp(0, 5).toInt();
       _kazakhVoiceEnabled = prefs.getBool('kazakh_voice_enabled') ?? false;
-      await _tts.setLanguage(_navigationLanguage);
-      await _tts.setSpeechRate(rate);
+      await _tts.awaitSpeakCompletion(true);
+      await _tts.setLanguage('ru-RU');
+      await _tts.setSpeechRate(0.5);
+      await _tts.setPitch(1.0);
       await _tts.setVolume(volume);
-      await _refreshAvailableVoices();
-      await _applySelectedVoice();
+      // Keep the system default Android voice; no downloadable voice model.
     } catch (_) {
       // Voice support depends on the speech engine installed on the phone.
     }
@@ -1688,38 +1713,26 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     await _prepareSpeechVoice();
   }
 
-  Future<void> _speakText(String text) async {
-    // The global voice switch must silence every navigation language,
-    // including the bundled Kazakh ISSAI voice.
-    if (_voiceMode == 0) return;
-    try {
-      // Kazakh navigation speech is provided by BAKE's bundled ISSAI engine.
-      // It must never depend on a Kazakh voice installed in Android.
-      if (_navigationLanguage == 'kk-KZ') {
-        if (!_kazakhVoiceEnabled) return;
-        await _kazakhVoiceService.speak(
-          text: text,
-          speakerId: _kazakhVoiceId,
-          speed: 1.0,
-        );
-        return;
+  Future<void> _speakText(String text) {
+    if (_voiceMode == 0 || text.trim().isEmpty) return Future<void>.value();
+
+    // All spoken output (navigation and Aya) goes through one serialized
+    // Android TTS queue. Await completion prevents utterances from overlapping.
+    final completion = Completer<void>();
+    _speechQueue = _speechQueue.catchError((Object _) {}).then((_) async {
+      try {
+        await _tts.awaitSpeakCompletion(true);
+        await _tts.setLanguage('ru-RU');
+        await _tts.setSpeechRate(0.5);
+        await _tts.setPitch(1.0);
+        await _tts.speak(text);
+      } catch (error) {
+        debugPrint('BAKE system TTS failed: $error');
+      } finally {
+        if (!completion.isCompleted) completion.complete();
       }
-      if (!await _prepareSpeechVoice()) return;
-      await _tts.speak(text);
-    } catch (error) {
-      if (mounted) {
-        setState(() => _message = _navigationLanguage == 'kk-KZ'
-            ? AppLocale.pick(
-                'Қазақша дауыс пакетін жүктеу немесе іске қосу мүмкін болмады. Интернетті тексеріп, дыбыс баптауларынан «Қазақша офлайн дауысы» батырмасын басыңыз.',
-                'Қазақша дауыс пакетін жүктеу немесе іске қосу мүмкін болмады. Интернетті тексеріп, дыбыс баптауларынан «Қазақша офлайн дауысы» батырмасын басыңыз.',
-                'Could not download or start the built-in Kazakh voice. Check the internet and use the Kazakh offline voice button in sound settings.',
-              )
-            : AppLocale.pick(
-                'Не удалось запустить выбранный голос навигации.',
-                'Таңдалған навигация дауысын іске қосу мүмкін болмады.',
-                'Could not start the selected navigation voice.',              ));
-      }
-    }
+    });
+    return completion.future;
   }
 
   String _normalizeNavigationLanguage(String value) {
@@ -1971,7 +1984,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _searchFocusNode.dispose();
     _ayaPulseController.dispose();
     _ayaSpeech.stop();
-    _ayaTts.stop();
     _tts.stop();
     unawaited(_kazakhVoiceService.dispose());
     _roadAlertService.dispose();
