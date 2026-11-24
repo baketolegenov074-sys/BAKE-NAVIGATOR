@@ -1321,6 +1321,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _ayaStatus = '';
         _mapPreviewPoint = null;
         _mapPreviewAddress = 'Адрес определяется…';
+        _routeActionDismissed = true;
       });
     }
     try {
