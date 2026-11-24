@@ -14,6 +14,7 @@ import 'package:vector_map_tiles_mbtiles/vector_map_tiles_mbtiles.dart';
 import 'package:vector_tile_renderer/vector_tile_renderer.dart' as vtr;
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -875,6 +876,44 @@ List<LatLng> _routePointsFromDecodedRoute(Map<String, dynamic> route) {
   }).toList(growable: false);
 }
 
+Future<bool> _requestSharedMbtilesAccess() async {
+  if (!Platform.isAndroid) return true;
+  try {
+    final current = await Permission.manageExternalStorage.status;
+    if (current.isGranted) return true;
+    final requested = await Permission.manageExternalStorage.request();
+    if (requested.isGranted) return true;
+    final legacy = await Permission.storage.request();
+    return legacy.isGranted;
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<String?> _findSharedMbtilesFile() async {
+  const directories = <String>[
+    '/storage/emulated/0/Download/BAKE_Navigator',
+    '/storage/emulated/0/Download',
+    '/sdcard/Download/BAKE_Navigator',
+    '/sdcard/Download',
+  ];
+  for (final path in directories) {
+    try {
+      final directory = Directory(path);
+      if (!await directory.exists()) continue;
+      final files = await directory.list(followLinks: false).where((entity) =>
+          entity is File && entity.path.toLowerCase().endsWith('.mbtiles')).toList();
+      files.sort((a, b) => a.path.toLowerCase().compareTo(b.path.toLowerCase()));
+      for (final file in files) {
+        if (await file.length() > 0) return file.path;
+      }
+    } catch (_) {
+      // A missing folder or denied access must not block online maps.
+    }
+  }
+  return null;
+}
+
 class NavigatorScreen extends StatefulWidget {
   const NavigatorScreen({super.key});
 
@@ -1571,8 +1610,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _loadSavedOfflineMap() async {
     final prefs = await SharedPreferences.getInstance();
-    final path = prefs.getString('offline_map_path');
-    if (path == null || !await File(path).exists()) return;
+    var path = prefs.getString('offline_map_path');
+    if (path != null && !await File(path).exists()) {
+      path = null;
+      await prefs.remove('offline_map_path');
+      await prefs.remove('offline_map_auto_connected');
+    }
+    if (path == null) {
+      final hasAccess = await _requestSharedMbtilesAccess();
+      if (hasAccess) {
+        path = await _findSharedMbtilesFile();
+        if (path != null) {
+          await prefs.setString('offline_map_path', path);
+          await prefs.setBool('offline_map_auto_connected', true);
+        }
+      }
+    }
+    if (path == null) return;
     try {
       final database = MbTiles(mbtilesPath: path);
       final format = database.getMetadata().format?.toLowerCase();
@@ -1837,7 +1891,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   Future<void> _openOfflineAndVehicleSettings() async {
     final selectedPath = await Navigator.of(context).push<String>(
       MaterialPageRoute(
-        builder: (_) => NavigatorSettingsScreen(onRetryValhalla: _ensureValhallaReady),
+        builder: (_) => NavigatorSettingsScreen(
+          onRetryValhalla: _ensureValhallaReady,
+          onOfflineMapFound: (_) => _loadSavedOfflineMap(),
+        ),
       ),
     );
     if (!mounted || selectedPath == null) return;
@@ -9428,9 +9485,10 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
 }
 
 class NavigatorSettingsScreen extends StatefulWidget {
-  const NavigatorSettingsScreen({super.key, required this.onRetryValhalla});
+  const NavigatorSettingsScreen({super.key, required this.onRetryValhalla, this.onOfflineMapFound});
 
   final Future<bool> Function() onRetryValhalla;
+  final ValueChanged<String>? onOfflineMapFound;
 
   @override
   State<NavigatorSettingsScreen> createState() => _NavigatorSettingsScreenState();
@@ -9443,6 +9501,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   final _vehiclePlate = TextEditingController();
   bool _loading = true;
   String? _offlineMapPath;
+  bool _offlineMapAutoConnected = false;
   bool _importingOfflineMap = false;
   String? _valhallaExtractPath;
   bool _importingValhallaExtract = false;
@@ -9468,6 +9527,22 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     _vehicleColor.text = prefs.getString('vehicle_color') ?? '';
     _vehiclePlate.text = prefs.getString('vehicle_plate') ?? '';
     _offlineMapPath = prefs.getString('offline_map_path');
+    _offlineMapAutoConnected = prefs.getBool('offline_map_auto_connected') ?? false;
+    if (_offlineMapPath == null || !await File(_offlineMapPath!).exists()) {
+      _offlineMapPath = null;
+      _offlineMapAutoConnected = false;
+      final hasAccess = await _requestSharedMbtilesAccess();
+      if (hasAccess) {
+        final foundPath = await _findSharedMbtilesFile();
+        if (foundPath != null) {
+          _offlineMapPath = foundPath;
+          _offlineMapAutoConnected = true;
+          await prefs.setString('offline_map_path', foundPath);
+          await prefs.setBool('offline_map_auto_connected', true);
+          widget.onOfflineMapFound?.call(foundPath);
+        }
+      }
+    }
     _valhallaExtractPath = prefs.getString('valhalla_tile_extract_path');
     if (_valhallaExtractPath != null) {
       try {
@@ -9532,8 +9607,12 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('offline_map_path', destination.path);
+      await prefs.setBool('offline_map_auto_connected', false);
       if (!mounted) return;
-      setState(() => _offlineMapPath = destination.path);
+      setState(() {
+        _offlineMapPath = destination.path;
+        _offlineMapAutoConnected = false;
+      });
       Navigator.of(context).pop(destination.path);
     } catch (error) {
       if (!mounted) return;
@@ -9548,8 +9627,12 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   Future<void> _removeOfflineMap() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('offline_map_path');
+    await prefs.remove('offline_map_auto_connected');
     if (!mounted) return;
-    setState(() => _offlineMapPath = null);
+    setState(() {
+      _offlineMapPath = null;
+      _offlineMapAutoConnected = false;
+    });
     Navigator.of(context).pop('__use_online_map__');
   }
 
@@ -9732,9 +9815,11 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                           contentPadding: EdgeInsets.zero,
                           leading: const Icon(Icons.map_outlined),
                           title: Text(AppLocale.tr('Офлайн-карта')),
-                          subtitle: Text(AppLocale.tr(_offlineMapPath == null
-                              ? 'Готовый MBTiles-файл пока не подключён.'
-                              : 'Офлайн-карта подключена на этом устройстве.')),
+                          subtitle: Text(_offlineMapPath == null
+                              ? AppLocale.tr('Готовый MBTiles-файл пока не подключён.')
+                              : _offlineMapAutoConnected
+                                  ? 'Офлайн-карта подключена автоматически: ${_offlineMapPath!.split(Platform.pathSeparator).last}'
+                                  : 'Офлайн-карта подключена: ${_offlineMapPath!.split(Platform.pathSeparator).last}'),
                         ),
                         SizedBox(
                           width: double.infinity,
