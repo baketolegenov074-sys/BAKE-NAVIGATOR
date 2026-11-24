@@ -1147,12 +1147,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   Future<void> _loadGeoapifySettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final apiKey = (prefs.getString('geoapify_api_key') ?? '').trim();
       final enabled = prefs.getBool('geoapify_test_mode') ?? false;
       if (!mounted) return;
       setState(() {
-        _geoapifyApiKey = apiKey;
-        _geoapifyTestMode = enabled && apiKey.isNotEmpty;
+        _geoapifyTestMode = enabled;
       });
     } catch (error) {
       debugPrint('BAKE Geoapify settings load failed: $error');
@@ -1202,30 +1200,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     required bool autocomplete,
     LatLng? near,
   }) async {
-    final apiKey = _geoapifyApiKey.trim();
-    if (apiKey.isEmpty) {
-      throw StateError('Geoapify API key is not configured.');
-    }
     final focus = near ?? _currentLocation ?? _shymkent;
-    final endpoint = Uri.https(
-      'api.geoapify.com',
-      '/v1/geocode/${autocomplete ? 'autocomplete' : 'search'}',
-      <String, String>{
-        'text': query.trim(),
-        'limit': autocomplete ? '10' : '25',
-        'filter': 'countrycode:kz',
-        'bias': 'proximity:${focus.longitude},${focus.latitude}',
-        'lang': 'ru',
-        'format': 'geojson',
-        'apiKey': apiKey,
-      },
-    );
+    final endpoint = Uri.https('photon.komoot.io', '/api', <String, String>{
+      'q': query.trim(),
+      'limit': autocomplete ? '10' : '25',
+      'lat': focus.latitude.toString(),
+      'lon': focus.longitude.toString(),
+      'lang': 'ru',
+    });
     final response = await http.get(endpoint, headers: const {
-      'User-Agent': 'BAKE-Navigator/1.0 (Geoapify test mode)',
+      'User-Agent': 'BAKE-Navigator/1.0 (Photon test mode)',
       'Accept': 'application/geo+json, application/json',
-    }).timeout(Duration(seconds: autocomplete ? 4 : 9));
+    }).timeout(Duration(seconds: autocomplete ? 5 : 10));
     if (response.statusCode != 200) {
-      throw HttpException('Geoapify HTTP ${response.statusCode}');
+      throw HttpException('Photon HTTP ${response.statusCode}');
     }
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     final rawFeatures = decoded is Map ? decoded['features'] : null;
@@ -1236,15 +1224,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       final properties = rawProperties is Map
           ? Map<String, dynamic>.from(rawProperties)
           : <String, dynamic>{};
-      final label = (properties['formatted'] ??
-              properties['address_line1'] ??
-              properties['name'] ??
-              '').toString().trim();
-      properties['display_label'] = label;
-      properties['district'] ??= properties['suburb'] ??
-          properties['neighbourhood'];
-      properties['city'] ??= properties['county'] ?? properties['locality'];
-      properties['source'] = 'geoapify';
+      final label = _photonDestinationAddress(feature);
+      properties['display_label'] = label.isEmpty
+          ? (properties['name'] ?? '').toString()
+          : label;
+      properties['source'] = 'photon_test';
       feature['properties'] = properties;
       return feature;
     }).where((feature) {
@@ -1255,7 +1239,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }).toList(growable: false);
   }
 
-  Future<void> _loadSavedRoutePoints() async {
+    Future<void> _loadSavedRoutePoints() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       // A saved start point may be stale after the user has moved.
@@ -5884,16 +5868,12 @@ _navigationMatchedLocation = null;
                                   ButtonSegment<bool>(
                                     value: true,
                                     icon: Icon(Icons.science_outlined),
-                                    label: Text('Тест Geoapify'),
+                                    label: Text('Тест Photon'),
                                   ),
                                 ],
                                 selected: <bool>{_geoapifyTestMode},
                                 onSelectionChanged: (selection) async {
                                   final enableGeoapify = selection.first;
-                                  if (enableGeoapify && _geoapifyApiKey.isEmpty) {
-                                    final configured = await _configureGeoapifyApiKey();
-                                    if (!configured) return;
-                                  }
                                   photonDebounce?.cancel();
                                   photonRequestVersion++;
                                   pendingPhotonQuery = null;
@@ -5909,24 +5889,14 @@ _navigationMatchedLocation = null;
                                 },
                               ),
                             ),
-                            IconButton(
-                              tooltip: 'Ключ Geoapify',
-                              onPressed: () async {
-                                await _configureGeoapifyApiKey();
-                                refreshSearch(() {
-                                  photonSuggestions = <Map<String, dynamic>>[];
-                                  photonLoadingSuggestions = false;
-                                });
-                              },
-                              icon: const Icon(Icons.settings_outlined),
-                            ),
+
                           ],
                         ),
                         if (_geoapifyTestMode)
                           const Padding(
                             padding: EdgeInsets.only(bottom: 8),
                             child: Text(
-                              'Изолированный тест: запросы идут только в Geoapify. Нужен бесплатный API key.',
+                              'Изолированный тест: поиск и подсказки идут только через публичный Photon, без API-ключа.',
                               style: TextStyle(fontSize: 11, color: Color(0xFF687786)),
                             ),
                           ),
@@ -6963,51 +6933,31 @@ _navigationMatchedLocation = null;
 
   Future<String> _lookupGeoapifyReverseAddress(LatLng point) async {
     try {
-      final apiKey = _geoapifyApiKey.trim();
-      if (apiKey.isEmpty) return 'Ключ Geoapify не настроен.';
-      final uri = Uri.https('api.geoapify.com', '/v1/geocode/reverse', {
-        'lat': point.latitude.toString(),
+      final uri = Uri.https('photon.komoot.io', '/reverse', {
         'lon': point.longitude.toString(),
-        'limit': '1',
-        'countrycodes': 'kz',
+        'lat': point.latitude.toString(),
         'lang': 'ru',
-        'format': 'geojson',
-        'apiKey': apiKey,
       });
       final response = await http.get(uri, headers: const {
-        'User-Agent': 'BAKE-Navigator/1.0 (Geoapify test mode)',
+        'User-Agent': 'BAKE-Navigator/1.0 (Photon test mode)',
         'Accept': 'application/geo+json, application/json',
-      }).timeout(const Duration(seconds: 6));
-      if (response.statusCode != 200) {
-        debugPrint('BAKE Geoapify reverse: HTTP ${response.statusCode}');
-        return 'Адрес не найден.';
-      }
+      }).timeout(const Duration(seconds: 7));
+      if (response.statusCode != 200) return 'Адрес не найден.';
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
       final features = decoded is Map ? decoded['features'] : null;
       if (features is! List || features.isEmpty || features.first is! Map) {
         return 'Адрес не найден.';
       }
       final feature = Map<String, dynamic>.from(features.first as Map);
-      final rawProperties = feature['properties'];
-      final properties = rawProperties is Map
-          ? Map<String, dynamic>.from(rawProperties)
-          : <String, dynamic>{};
-      final label = (properties['formatted'] ??
-              properties['address_line1'] ??
-              properties['name'] ??
-              '').toString().trim();
-      if (label.isNotEmpty) return label;
-      properties['display_label'] = '';
-      feature['properties'] = properties;
-      final fallback = _photonDestinationAddress(feature);
-      return fallback.isEmpty ? 'Адрес не найден.' : fallback;
+      final address = _photonDestinationAddress(feature);
+      return address.isEmpty ? 'Адрес не найден.' : address;
     } catch (error) {
-      debugPrint('BAKE Geoapify reverse failed: $error');
+      debugPrint('BAKE Photon test reverse failed: $error');
       return 'Адрес не найден.';
     }
   }
 
-  Future<String> _lookupPhotonReverseAddress(LatLng point) async {
+    Future<String> _lookupPhotonReverseAddress(LatLng point) async {
     if (_geoapifyTestMode) {
       // Keep reverse geocoding isolated while Geoapify test mode is active.
       return _lookupGeoapifyReverseAddress(point);
