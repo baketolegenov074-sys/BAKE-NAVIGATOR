@@ -1277,7 +1277,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (mounted) {
       setState(() {
         _ayaListening = false;
-        _ayaPanelVisible = false;
+        _ayaPanelVisible = true;
+        _ayaRecognizedText = command;
         _ayaStatus = 'Обрабатываю команду...';
       });
     }
@@ -1288,9 +1289,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   Future<void> _cancelAyaListening() async {
     _ayaIdleTimer?.cancel();
     _ayaFinalizing = true;
-    try {
-      await _ayaSpeech.stop();
-    } catch (_) {}
     _ayaPulseController.stop();
     _ayaPulseController.value = 1;
     if (mounted) {
@@ -1298,10 +1296,44 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _ayaListening = false;
         _ayaPanelVisible = false;
         _ayaRecognizedText = '';
-        _ayaStatus = 'Прослушивание отменено';
+        _ayaStatus = '';
+        _mapPreviewPoint = null;
+        _mapPreviewAddress = 'Адрес определяется…';
+        _routeActionDismissed = true;
       });
     }
+    try {
+      await _ayaSpeech.stop();
+    } catch (_) {}
     _ayaFinalizing = false;
+  }
+
+  Future<void> _dismissAyaPreviewUi() async {
+    _ayaIdleTimer?.cancel();
+    _ayaFinalizing = true;
+    if (mounted) {
+      setState(() {
+        _ayaListening = false;
+        _ayaPanelVisible = false;
+        _ayaRecognizedText = '';
+        _ayaStatus = '';
+        _mapPreviewPoint = null;
+        _mapPreviewAddress = 'Адрес определяется…';
+      });
+    }
+    try {
+      await _ayaSpeech.stop();
+    } catch (_) {}
+    _ayaFinalizing = false;
+  }
+
+  Future<void> _startNavigationFromPreview() async {
+    await _dismissAyaPreviewUi();
+    if (!mounted) return;
+    await _startNavigation();
+    if (mounted && _navigationActive) {
+      await _ayaSpeak('Поехали!');
+    }
   }
 
   Future<void> _handleAyaCommand(String rawCommand) async {
@@ -1315,6 +1347,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           : _navigationLanguage == 'en-US'
               ? normalized.startsWith('cancel route')
               : RegExp(r'^(сбрось маршрут|отмени маршрут|отмена|завершить)(?:\s|$)').hasMatch(normalized);
+      final isStartCommand = normalized == 'поехали' ||
+          normalized == 'поехать' ||
+          normalized == 'жолға шығу' ||
+          normalized == 'go';
+      if (isStartCommand && _routeReady && _routePoints.length >= 2 &&
+          _destination != null) {
+        await _startNavigationFromPreview();
+        return;
+      }
+
       if (isCancelCommand) {
         if (_navigationActive) {
           await _finishNavigation();
@@ -1422,12 +1464,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
       final point = LatLng(lat, lon);
       final destinationName = _photonDestinationAddress(selected);
+      final displayName = destinationName.isEmpty ? destinationQuery : destinationName;
+      setState(() {
+        _mapPreviewPoint = point;
+        _mapPreviewAddress = displayName;
+        _ayaPanelVisible = true;
+        _ayaStatus = 'Строю маршрут до $displayName...';
+      });
       _selectDestination(point);
       _moveMapCamera(point, 16);
       setState(() {
-        _selectedMapPointAddress = destinationName.isEmpty
-            ? destinationQuery
-            : destinationName;
+        _selectedMapPointAddress = displayName;
         _message = _selectedMapPointAddress;
         _ayaStatus = 'Строю маршрут до ' + _selectedMapPointAddress + '...';
       });
@@ -1436,10 +1483,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       if (_routeReady && _routePoints.length >= 2) {
         final routeName = destinationName.isEmpty ? destinationQuery : destinationName;
         await _ayaSpeak(_localized('Маршрут построен до $routeName', '$routeName бағыты құрылды', 'Route built to $routeName'));
-        if (mounted) setState(() => _ayaStatus = 'Маршрут построен');
+        if (mounted) {
+          setState(() {
+            _ayaPanelVisible = false;
+            _ayaRecognizedText = '';
+            _ayaStatus = '';
+          });
+        }
       } else {
         await _ayaSpeak(_localized('Не удалось построить маршрут, повторите ещё раз', 'Бағыт құру мүмкін болмады, қайталап көріңіз', 'Could not build the route. Please try again'));
-        if (mounted) setState(() => _ayaStatus = 'Не удалось построить маршрут');
+        if (mounted) {
+          setState(() {
+            _ayaPanelVisible = false;
+            _ayaRecognizedText = '';
+            _ayaStatus = '';
+          });
+        }
       }
     } catch (error) {
       debugPrint('BAKE Aya command failed: ' + error.toString());
@@ -1451,105 +1510,53 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   Widget _buildAyaAssistant() {
+    if (_ayaPanelVisible || _mapPreviewPoint != null ||
+        (_routeReady && !_navigationActive && !_routeActionDismissed)) {
+      return const SizedBox.shrink();
+    }
     return Positioned(
       left: 16,
       bottom: 150,
       child: SafeArea(
         top: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_ayaPanelVisible)
-              Container(
-                width: math.min(MediaQuery.of(context).size.width - 32, 330.0).toDouble(),
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: AnimatedBuilder(
+          animation: _ayaPulseController,
+          builder: (context, child) => Transform.scale(
+            scale: _ayaListening ? _ayaPulseController.value : 1,
+            child: child,
+          ),
+          child: Material(
+            color: const Color(0xFF071326),
+            elevation: 8,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: _toggleAyaListening,
+              child: Container(
+                width: 66,
+                height: 66,
                 decoration: BoxDecoration(
-                  color: const Color(0xF5071326),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0xFF25D9D0), width: 1.2),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF35E2D7), width: 2),
                   boxShadow: const [
-                    BoxShadow(color: Color(0x4425D9D0), blurRadius: 16, spreadRadius: 1),
+                    BoxShadow(color: Color(0x6635E2D7), blurRadius: 15, spreadRadius: 1),
                   ],
                 ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.graphic_eq, color: Color(0xFF35E2D7), size: 19),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text(
-                            'Айя слушает...',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Поехали',
-                          visualDensity: VisualDensity.compact,
-                          onPressed: _ayaRecognizedText.trim().isEmpty
-                              ? null
-                              : _finalizeAyaListening,
-                          icon: const Icon(Icons.arrow_forward, color: Color(0xFF35E2D7), size: 21),
-                        ),
-                        IconButton(
-                          tooltip: 'Отмена',
-                          visualDensity: VisualDensity.compact,
-                          onPressed: _cancelAyaListening,
-                          icon: const Icon(Icons.close, color: Colors.white70, size: 18),
-                        ),
-                      ],
+                    Icon(
+                      _ayaListening ? Icons.mic : Icons.mic_none,
+                      color: const Color(0xFF35E2D7),
+                      size: 25,
                     ),
-                    Text(
-                      _ayaRecognizedText.isEmpty ? _ayaStatus : _ayaRecognizedText,
-                      style: const TextStyle(color: Colors.white, fontSize: 14),
-                    ),
+                    const SizedBox(height: 1),
+                    const Text('Айя', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
                   ],
                 ),
               ),
-            AnimatedBuilder(
-              animation: _ayaPulseController,
-              builder: (context, child) => Transform.scale(
-                scale: _ayaListening ? _ayaPulseController.value : 1,
-                child: child,
-              ),
-              child: Material(
-                color: const Color(0xFF071326),
-                elevation: 8,
-                shape: const CircleBorder(),
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: _toggleAyaListening,
-                  child: Container(
-                    width: 66,
-                    height: 66,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFF35E2D7), width: 2),
-                      boxShadow: const [
-                        BoxShadow(color: Color(0x6635E2D7), blurRadius: 15, spreadRadius: 1),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          _ayaListening ? Icons.mic : Icons.mic_none,
-                          color: const Color(0xFF35E2D7),
-                          size: 25,
-                        ),
-                        const SizedBox(height: 1),
-                        const Text('Айя', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -1769,6 +1776,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         await _tts.setLanguage('ru-RU');
         await _tts.setSpeechRate(0.5);
         await _tts.setPitch(1.0);
+        try {
+          await _ayaSpeech.stop();
+        } catch (_) {}
+        await Future.delayed(const Duration(milliseconds: 250));
         await _tts.speak(text);
       } catch (error) {
         debugPrint('BAKE system TTS failed: $error');
@@ -4657,9 +4668,16 @@ _navigationMatchedLocation = null;
 
   Future<void> _resetRoutePreview() async {
     if (!mounted) return;
+    _ayaIdleTimer?.cancel();
     setState(() {
       _routeReady = false;
       _routeActionDismissed = true;
+      _ayaListening = false;
+      _ayaPanelVisible = false;
+      _ayaRecognizedText = '';
+      _ayaStatus = '';
+      _mapPreviewPoint = null;
+      _mapPreviewAddress = 'Адрес определяется…';
       _selectedMapPointAddress = '';
       _routeProgressSegmentIndex = 0;
 _navigationMatchedLocation = null;
@@ -4678,6 +4696,10 @@ _navigationMatchedLocation = null;
       _message = '';
       _searchController.clear();
     });
+    try {
+      await _ayaSpeech.stop();
+    } catch (_) {}
+    _ayaFinalizing = false;
     await _tts.stop();
     await _kazakhVoiceService.stop();
     await _removeSavedRoutePoint(_savedRouteDestinationKey);
@@ -7348,11 +7370,11 @@ _navigationMatchedLocation = null;
 
   void _cancelMapPointPreview() {
     _mapPreviewGeneration++;
-    if (!mounted) return;
-    setState(() {
-      _mapPreviewPoint = null;
-      _mapPreviewAddress = 'Адрес определяется…';
-    });
+    if (_routeReady) {
+      unawaited(_resetRoutePreview());
+    } else {
+      unawaited(_dismissAyaPreviewUi());
+    }
   }
 
   Future<void> _confirmMapPointPreview() async {
@@ -9616,7 +9638,7 @@ _navigationMatchedLocation = null;
                 ),
               ),
             ),
-          if (_mapPreviewPoint != null)
+          if (_mapPreviewPoint != null || _ayaPanelVisible)
             Positioned(
               left: 12,
               right: 12,
@@ -9633,53 +9655,106 @@ _navigationMatchedLocation = null;
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                _mapPreviewAddress,
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  height: 1.2,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF202020),
+                        if (_ayaPanelVisible)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                AnimatedBuilder(
+                                  animation: _ayaPulseController,
+                                  builder: (context, child) => Opacity(
+                                    opacity: _ayaListening
+                                        ? 0.55 + (_ayaPulseController.value * 0.45)
+                                        : 1,
+                                    child: child,
+                                  ),
+                                  child: const Icon(
+                                    Icons.mic,
+                                    color: Color(0xFF169B55),
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _ayaRecognizedText.trim().isEmpty
+                                        ? _ayaStatus
+                                        : _ayaRecognizedText,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF30343A),
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: 'Отмена',
+                                  visualDensity: VisualDensity.compact,
+                                  constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+                                  padding: EdgeInsets.zero,
+                                  onPressed: _cancelAyaListening,
+                                  icon: const Icon(Icons.close, size: 21),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (_mapPreviewPoint != null)
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _mapPreviewAddress,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    height: 1.2,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF202020),
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Отменить выбор точки',
+                                visualDensity: VisualDensity.compact,
+                                onPressed: _cancelMapPointPreview,
+                                icon: const Icon(Icons.close, size: 24),
+                              ),
+                            ],
+                          ),
+                        if (_mapPreviewPoint != null) ...[
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            height: 50,
+                            child: FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFFFCC00),
+                                foregroundColor: const Color(0xFF171717),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                              ),
+                              onPressed: _isBuildingRoute
+                                  ? null
+                                  : (_routeReady &&
+                                          _destination != null &&
+                                          _destination!.latitude == _mapPreviewPoint!.latitude &&
+                                          _destination!.longitude == _mapPreviewPoint!.longitude
+                                      ? _startNavigationFromPreview
+                                      : _confirmMapPointPreview),
+                              child: const Text(
+                                'Поехать',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
                                 ),
                               ),
                             ),
-                            IconButton(
-                              tooltip: 'Отменить выбор точки',
-                              visualDensity: VisualDensity.compact,
-                              onPressed: _cancelMapPointPreview,
-                              icon: const Icon(Icons.close, size: 24),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          height: 50,
-                          child: FilledButton(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFFFFCC00),
-                              foregroundColor: const Color(0xFF171717),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(15),
-                              ),
-                            ),
-                            onPressed: _isBuildingRoute
-                                ? null
-                                : _confirmMapPointPreview,
-                            child: const Text(
-                              'Поехать',
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
@@ -9730,7 +9805,7 @@ _navigationMatchedLocation = null;
                               padding: const EdgeInsets.symmetric(horizontal: 28),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
                             ),
-                            onPressed: _startNavigation,
+                            onPressed: _startNavigationFromPreview,
                             child: Text(
                               AppLocale.tr('Поехали'),
                               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
