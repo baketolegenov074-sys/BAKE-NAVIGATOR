@@ -5684,6 +5684,9 @@ _navigationMatchedLocation = null;
     bool photonLoadingSuggestions = false;
     Timer? photonDebounce;
     var photonRequestVersion = 0;
+    var photonRequestRunning = false;
+    String? pendingPhotonQuery;
+    var pendingPhotonVersion = 0;
     final history = prefs.getStringList('search_history') ?? <String>[];
     if (!mounted) return;
     const categories = <Map<String, Object>>[
@@ -5722,6 +5725,7 @@ _navigationMatchedLocation = null;
                             photonDebounce?.cancel();
                             final requestVersion = ++photonRequestVersion;
                             if (value.trim().length < 2) {
+                              pendingPhotonQuery = null;
                               refreshSearch(() {
                                 photonSuggestions = <Map<String, dynamic>>[];
                                 photonLoadingSuggestions = false;
@@ -5729,39 +5733,61 @@ _navigationMatchedLocation = null;
                               return;
                             }
                             refreshSearch(() => photonLoadingSuggestions = true);
-                            // Live autocomplete starts at two characters. Use Photon
-                            // for suggestions, but reserve Nominatim city lookup for
-                            // an explicitly submitted search to respect its 1 req/s policy.
-                            photonDebounce = Timer(const Duration(milliseconds: 280), () async {
-                              try {
-                                // Keep keystroke autocomplete lightweight: do not scan the full
-                                // offline OSM index or query Supabase on every edit.
-                                // Full local + online search still runs on submit.
-                                final found = await _fetchPhotonFeatures(
-                                  value,
-                                  includeCitySearch: false,
-                                  includeNominatimCitySearch: false,
-                                  includeNominatimAddressFallback: false,
-                                  resultLimit: 12,
-                                );
-                                if (!searchContext.mounted) return;
-                                if (requestVersion != photonRequestVersion) return;
-                                if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
-                                  _sortSearchFeatures(found, value);
-                                } else {
-                                  found.sort((left, right) =>
-                                      (_photonFeatureDistanceMeters(left) ?? double.infinity)
-                                          .compareTo(_photonFeatureDistanceMeters(right) ?? double.infinity));
-                                }
-                                refreshSearch(() {
-                                  photonSuggestions = found;
-                                  photonLoadingSuggestions = false;
-                                });
-                              } catch (_) {
-                                if (!searchContext.mounted) return;
-                                if (requestVersion != photonRequestVersion) return;
-                                refreshSearch(() => photonLoadingSuggestions = false);
+                            // Keep typing responsive: one Photon batch at a time.
+                            // While it runs, retain only the newest text value.
+                            Future<void> loadLatestPhotonSuggestions(
+                              String query,
+                              int version,
+                            ) async {
+                              if (photonRequestRunning) {
+                                pendingPhotonQuery = query;
+                                pendingPhotonVersion = version;
+                                return;
                               }
+                              photonRequestRunning = true;
+                              var activeQuery = query;
+                              var activeVersion = version;
+                              try {
+                                while (true) {
+                                  pendingPhotonQuery = null;
+                                  final found = await _fetchPhotonFeatures(
+                                    activeQuery,
+                                    includeCitySearch: true,
+                                    includeNominatimCitySearch: false,
+                                    includeNominatimAddressFallback: false,
+                                    resultLimit: 12,
+                                  ).timeout(const Duration(seconds: 4));
+                                  if (searchContext.mounted &&
+                                      activeVersion == photonRequestVersion) {
+                                    if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
+                                      _sortSearchFeatures(found, activeQuery);
+                                    } else {
+                                      found.sort((left, right) =>
+                                          (_photonFeatureDistanceMeters(left) ?? double.infinity)
+                                              .compareTo(_photonFeatureDistanceMeters(right) ?? double.infinity));
+                                    }
+                                    refreshSearch(() {
+                                      photonSuggestions = found;
+                                      photonLoadingSuggestions = false;
+                                    });
+                                  }
+                                  final nextQuery = pendingPhotonQuery;
+                                  if (nextQuery == null) break;
+                                  activeQuery = nextQuery;
+                                  activeVersion = pendingPhotonVersion;
+                                }
+                              } catch (error) {
+                                debugPrint('BAKE Photon autocomplete failed: $error');
+                                if (searchContext.mounted &&
+                                    activeVersion == photonRequestVersion) {
+                                  refreshSearch(() => photonLoadingSuggestions = false);
+                                }
+                              } finally {
+                                photonRequestRunning = false;
+                              }
+                            }
+                            photonDebounce = Timer(const Duration(milliseconds: 350), () {
+                              unawaited(loadLatestPhotonSuggestions(value, requestVersion));
                             });
                           },
                           onSubmitted: (_) {
