@@ -54,7 +54,7 @@ jobs:
           PY
 
       - name: Test Shymkent search-index generation
-        run: python3 -m unittest test/search_index_test.py -v
+        run: python3 test/search_index_test.py -v
 
       - name: Run Flutter tests
         run: flutter test --reporter expanded
