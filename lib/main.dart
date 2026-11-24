@@ -271,59 +271,8 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
   );
 }
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Release builds normally replace failed widgets with an uninformative grey
-  // screen. Keep the actual exception visible so device-only map failures can
-  // be diagnosed instead of appearing as a blank screen.
-  ErrorWidget.builder = (FlutterErrorDetails details) {
-    debugPrint('BAKE RELEASE WIDGET ERROR: ${details.exceptionAsString()}');
-    debugPrintStack(stackTrace: details.stack);
-    return Directionality(
-      textDirection: TextDirection.ltr,
-      child: ColoredBox(
-        color: const Color(0xFFFFFFFF),
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: SelectableText(
-              'BAKE ERROR\\n\\n${details.exceptionAsString()}',
-              style: const TextStyle(
-                color: Color(0xFFB00020),
-                fontSize: 14,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  };
-  final startupWatch = Stopwatch()..start();
-  // Start local preferences loading alongside cloud SDK initialization so
-  // independent startup work does not run sequentially.
-  final prefsFuture = SharedPreferences.getInstance();
-  try {
-    final cloudInitWatch = Stopwatch()..start();
-    await RoadReportSyncService.initialize();
-    debugPrint('BAKE STARTUP phase=supabase_init duration_ms=${cloudInitWatch.elapsedMilliseconds}');
-  } catch (error) {
-    debugPrint('BAKE road report cloud sync is unavailable: $error');
-    debugPrint(
-      'BAKE Supabase config: ${RoadReportSyncService.configurationSummary}; '
-      'problem=${RoadReportSyncService.configurationProblem ?? 'none'}',
-    );
-  }
-  final prefs = await prefsFuture;
-  debugPrint('BAKE STARTUP phase=before_run_app duration_ms=${startupWatch.elapsedMilliseconds}');
-  // One-time migration: make Kazakh the default app and navigation language.
-  if (!(prefs.getBool('kazakh_primary_language_v1') ?? false)) {
-    await prefs.setString('app_language', 'kk');
-    await prefs.setString('navigation_language', 'kk-KZ');
-    await prefs.remove('voice_name');
-    await prefs.remove('voice_locale');
-    await prefs.setBool('kazakh_primary_language_v1', true);
-  }
-  AppLocale.language = prefs.getString('app_language') ?? 'kk';
   runApp(const BakeNavigatorApp());
 }
 
@@ -1069,33 +1018,95 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   DateTime? _lastAutomaticReroute;
   DateTime? _plannedDeparture;  String _message = '';
 
+  bool _showStartupSplash = true;
+  Timer? _startupSplashTimer;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // The first frame is deliberately lightweight. Disk scans, map providers,
+    // graph validation, camera data, cloud sync and GPS all start afterwards.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _startupSplashTimer = Timer(const Duration(milliseconds: 1350), () {
+        if (mounted) setState(() => _showStartupSplash = false);
+      });
+      unawaited(_initializeStartupServices());
+    });
+  }
+
+  Future<void> _initializeStartupServices() async {
+    ErrorWidget.builder = (FlutterErrorDetails details) {
+      debugPrint('BAKE RELEASE WIDGET ERROR: ${details.exceptionAsString()}');
+      debugPrintStack(stackTrace: details.stack);
+      return Directionality(
+        textDirection: TextDirection.ltr,
+        child: ColoredBox(
+          color: const Color(0xFFFFFFFF),
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: SelectableText(
+                'BAKE ERROR\\n\\n${details.exceptionAsString()}',
+                style: const TextStyle(color: Color(0xFFB00020), fontSize: 14),
+              ),
+            ),
+          ),
+        ),
+      );
+    };
+
     unawaited(_loadFlutterMapOnlineStyle());
     unawaited(_loadGpsDiagnosticsSetting());
+    unawaited(_loadBundledRoadAlerts());
+    unawaited(_loadSavedOfflineMap());
+    unawaited(_loadSavedRoutePoints());
+    unawaited(_loadTrafficLayerPreference());
+    unawaited(_loadNominatimTestMode());
+    unawaited(_offlineAddressSearch.initialize());
+    _configureVoice();
+
     _roadReportRetryTimer = Timer.periodic(
       const Duration(seconds: 45),
       (_) => unawaited(_retryPendingRoadReports()),
     );
-    _configureVoice();
-    unawaited(_loadBundledRoadAlerts());
-    unawaited(_loadConfirmedRoadReports());
-    RoadReportSyncService.subscribeToChanges(() {
-      if (mounted) unawaited(_loadConfirmedRoadReports());
-    });
-    unawaited(_offlineAddressSearch.initialize());
-    _loadSavedOfflineMap();
-    _loadSavedRoutePoints();
-    unawaited(_loadTrafficLayerPreference());
-    unawaited(_loadNominatimTestMode());
-    // Ask for location after the first frame so the permission dialog has a valid context.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(_ensureValhallaReady());
-      unawaited(_locateMe());
-    });
+
+    // Cloud initialization and local preference migration must never delay runApp.
+    unawaited(() async {
+      try {
+        await RoadReportSyncService.initialize();
+        if (!mounted) return;
+        RoadReportSyncService.subscribeToChanges(() {
+          if (mounted) unawaited(_loadConfirmedRoadReports());
+        });
+        unawaited(_loadConfirmedRoadReports());
+        unawaited(_retryPendingRoadReports());
+      } catch (error) {
+        debugPrint('BAKE road report cloud sync is unavailable: $error');
+      }
+    }());
+
+    unawaited(() async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        if (!(prefs.getBool('kazakh_primary_language_v1') ?? false)) {
+          await prefs.setString('app_language', 'kk');
+          await prefs.setString('navigation_language', 'kk-KZ');
+          await prefs.remove('voice_name');
+          await prefs.remove('voice_locale');
+          await prefs.setBool('kazakh_primary_language_v1', true);
+        }
+        AppLocale.language = prefs.getString('app_language') ?? 'kk';
+        if (mounted) setState(() {});
+      } catch (error) {
+        debugPrint('BAKE startup preferences unavailable: $error');
+      }
+    }());
+
+    // One-time startup checks; never repeated on AppLifecycleState.resumed.
+    unawaited(_ensureValhallaReady());
+    unawaited(_locateMe());
   }
 
   Future<void> _loadBundledRoadAlerts() async {
@@ -1597,6 +1608,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _roadReportRetryTimer?.cancel();
+    _startupSplashTimer?.cancel();
     unawaited(_stopLiveLocationUpdates(reason: 'widget_disposed'));
     _headingUpResumeTimer?.cancel();
     _navigationPredictionTimer?.cancel();
@@ -3420,7 +3432,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         return <Map<String, dynamic>>[];
       }
     }
-    final needle = query.trim().toLowerCase();
+    final needle = query.trim().toLowerCase().replaceAll('ё', 'е');
     final reportFeatures = <Map<String, dynamic>>[];
     final seenReports = <String>{};
     Map<String, dynamic> toFeature(Map<String, dynamic> report) {
@@ -3439,8 +3451,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     bool matches(Map<String, dynamic> row) {
       final status = row['status']?.toString();
       if (status != 'Подтверждено' && status != 'approved') return false;
+      final normalizedNeedle = needle.replaceAll('ё', 'е');
       return [row['title'], row['address'], row['comment'], row['type']]
-          .whereType<Object>().any((value) => value.toString().toLowerCase().contains(needle));
+          .whereType<Object>()
+          .any((value) => value.toString().toLowerCase().replaceAll('ё', 'е').contains(normalizedNeedle));
     }
     for (final row in _confirmedRoadReports) {
       final id = row['id']?.toString() ?? '';
@@ -5287,9 +5301,11 @@ _navigationMatchedLocation = null;
   // Alternatives are useful only near the route's current decision point.
   // Keep the chosen route, but discard the stale branches after 45 m of travel.
   void _clearNavigationAlternativesAfterProgress() {
+    // Progress is measured along the selected primary route from its start.
+    // Remove side branches once the vehicle has travelled 45 m on that route.
     if (!_navigationActive ||
         _navigationAlternativesCleared ||
-        _navigationProgressMeters < 45) return;
+        _navigationProgressMeters < 45.0) return;
     _navigationAlternativesCleared = true;
     if (_routeAlternatives.length <= 1) return;
     final selectedIndex = _selectedRouteIndex
@@ -9339,7 +9355,184 @@ _navigationMatchedLocation = null;
               ),
             ),
 
+          if (_showStartupSplash)
+            const Positioned.fill(child: _BakeStartupSplash()),
         ],
+      ),
+    );
+  }
+}
+
+class _BakeStartupSplash extends StatefulWidget {
+  const _BakeStartupSplash();
+
+  @override
+  State<_BakeStartupSplash> createState() => _BakeStartupSplashState();
+}
+
+class _BakeStartupSplashState extends State<_BakeStartupSplash>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFF071326),
+      child: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Column(
+              children: [
+                const Spacer(flex: 3),
+                SizedBox(
+                  width: 330,
+                  height: 330,
+                  child: AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, child) {
+                      return Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          for (var ring = 0; ring < 3; ring++)
+                            Builder(builder: (context) {
+                              final phase = (_controller.value + ring / 3) % 1.0;
+                              final diameter = 112.0 + phase * 190.0;
+                              return Opacity(
+                                opacity: (1.0 - phase) * 0.72,
+                                child: Container(
+                                  width: diameter,
+                                  height: diameter,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: const Color(0xFF35D9F4),
+                                      width: 1.8,
+                                    ),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0x5535D9F4),
+                                        blurRadius: 12,
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }),
+                          Container(
+                            width: 132,
+                            height: 132,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Color(0xAA00CFFF),
+                                  blurRadius: 54,
+                                  spreadRadius: 4,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(
+                            Icons.navigation_rounded,
+                            size: 112,
+                            color: Color(0xFF42DDF7),
+                            shadows: [
+                              Shadow(color: Color(0xFF00BFFF), blurRadius: 30),
+                              Shadow(color: Color(0xFF007DFF), blurRadius: 48),
+                            ],
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'BAKE Navigator',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 34,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.7,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Шымкент',
+                  style: TextStyle(color: Colors.white, fontSize: 21),
+                ),
+                const Spacer(flex: 2),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 42),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(
+                      height: 8,
+                      child: LayoutBuilder(
+                        builder: (context, barConstraints) {
+                          return AnimatedBuilder(
+                            animation: _controller,
+                            builder: (context, child) {
+                              final width = barConstraints.maxWidth *
+                                  (0.48 + 0.42 * _controller.value);
+                              return Stack(
+                                children: [
+                                  Container(color: const Color(0xFF123B56)),
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Container(
+                                      width: width,
+                                      decoration: const BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            Color(0xFF08AEEA),
+                                            Color(0xFF24E5D2),
+                                          ],
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Color(0xAA00D9FF),
+                                            blurRadius: 12,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Загрузка карт...',
+                  style: TextStyle(color: Colors.white, fontSize: 17),
+                ),
+                const SizedBox(height: 34),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
