@@ -2765,7 +2765,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _isLikelyCityQuery(String value) {
     final query = value.trim().toLowerCase().replaceAll('ё', 'е');
     if (query.length < 2 || query.length > 48) return false;
-    if (RegExp(r'^(?:г\.?\s*|город\s+|қала\s+)', caseSensitive: false).hasMatch(query)) {
+    if (RegExp(
+      r'^(?:г\.?\s*|город\s+|қала\s+|пос[её]лок\s+|село\s+|аул\s+|ауыл\s+|деревня\s+|пгт\s+|станция\s+)',
+      caseSensitive: false,
+    ).hasMatch(query)) {
       return true;
     }
     const kazakhstanCities = <String>{
