@@ -1710,7 +1710,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   Future<void> _applySelectedVoice() async {
-    await _prepareSpeechVoice();
+    // Navigation voice is intentionally fixed to Android's default Russian voice.
+    _selectedVoiceName = null;
+    _selectedVoiceLocale = null;
+    await _tts.setLanguage('ru-RU');
+    await _tts.setSpeechRate(0.5);
+    await _tts.setPitch(1.0);
   }
 
   Future<void> _speakText(String text) {
@@ -2644,7 +2649,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                           _selectedVoiceLocale = voice['locale'];
                           await prefs.setString('voice_name', _selectedVoiceName!);
                           await prefs.setString('voice_locale', _selectedVoiceLocale!);
-                          await _tts.setVoice(<String, String>{'name': _selectedVoiceName!, 'locale': _selectedVoiceLocale!});
+                          // Custom voices are not applied; the navigator uses one system voice.
                         }
                         refresh(() {});
                       },
