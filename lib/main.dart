@@ -3018,7 +3018,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       'addressdetails': '1',
       'limit': '20',
       'countrycodes': 'kz',
-      'featureType': 'city',
+      'featureType': 'settlement',
     });
     try {
       final response = await http.get(uri, headers: const {
@@ -3179,6 +3179,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
     final trimmed = query.trim();
     if (trimmed.isEmpty) return <Map<String, dynamic>>[];
+
+    // Intercity destination lookup is handled by Nominatim, independently
+    // from Photon-based Shymkent address and organization search.
+    if (includeCitySearch && _isLikelyCityQuery(trimmed)) {
+      return _fetchNominatimCityFeatures(trimmed);
+    }
 
     final apiQueries = <String>{_photonQuery(trimmed)};
     final schoolMatch = RegExp(
