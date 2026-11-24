@@ -1006,6 +1006,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   final List<LatLng> _routeStops = <LatLng>[];
   List<Map<String, dynamic>> _routeAlternatives = <Map<String, dynamic>>[];
   int _selectedRouteIndex = 0;
+  bool _navigationAlternativesCleared = false;
   List<LatLng> _routePoints = [];
   int _routeProgressSegmentIndex = 0;
   LatLng? _navigationMatchedLocation;
@@ -2768,6 +2769,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
         if (!firstFix.isCompleted) firstFix.complete();
         _updateNavigationProgress(navigationPoint);
+        _clearNavigationAlternativesAfterProgress();
         _checkForOffRoute(position);
       },
       onError: (Object error) {
@@ -4173,6 +4175,7 @@ _navigationMatchedLocation = null;
     _mapFollowEnabled = true;
     setState(() {
       _navigationActive = true;
+      _navigationAlternativesCleared = false;
       _announcedManeuverStage = 0;
       _instructionIndex = _instructions.isNotEmpty && _instructions.length > 1 ? 1 : 0;
       _message = _currentLocation == null
@@ -5283,6 +5286,24 @@ _navigationMatchedLocation = null;
     return matched;
   }
 
+  // Alternatives are useful only near the route's current decision point.
+  // Keep the chosen route, but discard the stale branches after 45 m of travel.
+  void _clearNavigationAlternativesAfterProgress() {
+    if (!_navigationActive ||
+        _navigationAlternativesCleared ||
+        _navigationProgressMeters < 45) return;
+    _navigationAlternativesCleared = true;
+    if (_routeAlternatives.length <= 1) return;
+    final selectedIndex = _selectedRouteIndex
+        .clamp(0, _routeAlternatives.length - 1).toInt();
+    final selectedRoute = _routeAlternatives[selectedIndex];
+    if (!mounted) return;
+    setState(() {
+      _routeAlternatives = <Map<String, dynamic>>[selectedRoute];
+      _selectedRouteIndex = 0;
+    });
+  }
+
   void _updateNavigationProgress(LatLng position) {
     if (!_navigationActive || _instructionIndex >= _instructions.length) return;
 
@@ -5317,6 +5338,9 @@ _navigationMatchedLocation = null;
       if (_instructionIndex + 1 >= _instructions.length) {
         setState(() {
           _navigationActive = false;
+          _routeAlternatives = <Map<String, dynamic>>[];
+          _selectedRouteIndex = 0;
+          _navigationAlternativesCleared = true;
           _routeActionDismissed = true;
           _message = AppLocale.pick('Вы прибыли в пункт назначения.', 'Межелі жерге жеттіңіз.', 'You have arrived at your destination.');
           _searchController.clear();
@@ -5505,6 +5529,12 @@ _navigationMatchedLocation = null;
     final resumeNavigation = automaticReroute && _navigationActive;
     setState(() {
       _isBuildingRoute = true;
+      if (automaticReroute) {
+        // Drop branches from the previous route before calculating from live GPS.
+        _routeAlternatives = <Map<String, dynamic>>[];
+        _selectedRouteIndex = 0;
+        _navigationAlternativesCleared = true;
+      }
       _message = automaticReroute ? AppLocale.pick('Вы отклонились от маршрута. Перестраиваем…', 'Маршруттан ауытқыдыңыз. Қайта құрудамыз…', 'You left the route. Recalculating…') : AppLocale.pick('Строим варианты маршрута…', 'Маршрут нұсқалары құрылуда…', 'Building route options…');
     });
 
@@ -5664,6 +5694,7 @@ _navigationMatchedLocation = null;
       setState(() {
         _routeAlternatives = validRoutes;
         _selectedRouteIndex = 0;
+        _navigationAlternativesCleared = false;
         _routeProgressSegmentIndex = 0;
 _navigationMatchedLocation = null;
         _routePoints = points;
