@@ -1251,7 +1251,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _ayaCommandInProgress = true;
     final normalized = rawCommand.toLowerCase().replaceAll('ё', 'е').trim();
     try {
-      if (RegExp(r'^(сбрось маршрут|отмени маршрут|отмена|завершить)(?:\b|$)')
+      if (RegExp(r'^(сбрось маршрут|отмени маршрут|отмена|завершить)(?:\s|$)')
           .hasMatch(normalized)) {
         if (_navigationActive) {
           await _finishNavigation();
