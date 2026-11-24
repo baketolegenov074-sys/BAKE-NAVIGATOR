@@ -1010,8 +1010,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _isLocating = false;
   bool _gpsAvailable = false;
   bool _isSearching = false;
-  bool _geoapifyTestMode = false;
-  String _geoapifyApiKey = '';
+  bool _photonTestMode = false;
   bool _isBuildingRoute = false;
   int _voiceMode = 3;
   double? _gpsHeadingDegrees;
@@ -1045,7 +1044,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _loadSavedOfflineMap();
     _loadSavedRoutePoints();
     unawaited(_loadTrafficLayerPreference());
-    unawaited(_loadGeoapifySettings());
+    unawaited(_loadPhotonTestSettings());
     // Ask for location after the first frame so the permission dialog has a valid context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1144,58 +1143,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       debugPrint('BAKE traffic layer preference load failed: $error');
     }
   }
-  Future<void> _loadGeoapifySettings() async {
+  Future<void> _loadPhotonTestSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool('geoapify_test_mode') ?? false;
       if (!mounted) return;
       setState(() {
-        _geoapifyTestMode = enabled;
+        _photonTestMode = enabled;
       });
     } catch (error) {
-      debugPrint('BAKE Geoapify settings load failed: $error');
+      debugPrint('BAKE Photon settings load failed: $error');
     }
   }
 
-  Future<bool> _configureGeoapifyApiKey() async {
-    final controller = TextEditingController(text: _geoapifyApiKey);
-    final value = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Ключ Geoapify'),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          autocorrect: false,
-          enableSuggestions: false,
-          decoration: const InputDecoration(
-            labelText: 'API key',
-            hintText: 'Вставьте ключ Geoapify',
-            helperText: 'Бесплатный ключ: myprojects.geoapify.com',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Отмена'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-            child: const Text('Сохранить'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (value == null || value.isEmpty || !mounted) return false;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('geoapify_api_key', value);
-    if (!mounted) return false;
-    setState(() => _geoapifyApiKey = value);
-    return true;
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchGeoapifyFeatures(
+  Future<List<Map<String, dynamic>>> _fetchPhotonTestFeatures(
     String query, {
     required bool autocomplete,
     LatLng? near,
@@ -3375,11 +3336,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return merged.take(150).toList();
   }
   Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true, bool includeExpandedPhotonQueries = true}) async {
-    if (_geoapifyTestMode) {
+    if (_photonTestMode) {
       try {
         // Isolated test: do not mix Photon, Nominatim, local index,
-        // saved places, or road reports into Geoapify results.
-        final geoapifyResults = await _fetchGeoapifyFeatures(
+        // saved places, or road reports into Photon results.
+        final geoapifyResults = await _fetchPhotonTestFeatures(
           query,
           autocomplete: false,
           near: near,
@@ -3387,7 +3348,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _sortSearchFeatures(geoapifyResults, query);
         return geoapifyResults;
       } catch (error) {
-        debugPrint('BAKE Geoapify full search failed: $error');
+        debugPrint('BAKE Photon full search failed: $error');
         return <Map<String, dynamic>>[];
       }
     }
@@ -5796,7 +5757,7 @@ _navigationMatchedLocation = null;
     final prefs = await SharedPreferences.getInstance();
     List<Map<String, dynamic>> photonSuggestions = <Map<String, dynamic>>[];
     bool photonLoadingSuggestions = false;
-    String? geoapifyAutocompleteError;
+    String? photonTestAutocompleteError;
     Timer? photonDebounce;
     var photonRequestVersion = 0;
     var photonRequestRunning = false;
@@ -5829,9 +5790,9 @@ _navigationMatchedLocation = null;
               children: [
                 StatefulBuilder(
                   builder: (searchContext, refreshSearch) {
-                    Future<void> loadGeoapifySuggestions(String query, int version) async {
+                    Future<void> loadPhotonSuggestions(String query, int version) async {
                       try {
-                        final found = await _fetchGeoapifyFeatures(
+                        final found = await _fetchPhotonTestFeatures(
                           query,
                           autocomplete: true,
                         );
@@ -5842,11 +5803,11 @@ _navigationMatchedLocation = null;
                           photonLoadingSuggestions = false;
                         });
                       } catch (error) {
-                        debugPrint('BAKE Geoapify autocomplete failed: $error');
+                        debugPrint('BAKE Photon autocomplete failed: $error');
                         if (searchContext.mounted && version == photonRequestVersion) {
                           refreshSearch(() {
                             photonLoadingSuggestions = false;
-                            geoapifyAutocompleteError = 'Ошибка запроса Geoapify';
+                            photonTestAutocompleteError = 'Ошибка запроса Photon';
                           });
                         }
                       }
@@ -5871,20 +5832,20 @@ _navigationMatchedLocation = null;
                                     label: Text('Тест Photon'),
                                   ),
                                 ],
-                                selected: <bool>{_geoapifyTestMode},
+                                selected: <bool>{_photonTestMode},
                                 onSelectionChanged: (selection) async {
-                                  final enableGeoapify = selection.first;
+                                  final enablePhoton = selection.first;
                                   photonDebounce?.cancel();
                                   photonRequestVersion++;
                                   pendingPhotonQuery = null;
                                   final prefs = await SharedPreferences.getInstance();
-                                  await prefs.setBool('geoapify_test_mode', enableGeoapify);
+                                  await prefs.setBool('geoapify_test_mode', enablePhoton);
                                   if (!mounted || !searchContext.mounted) return;
-                                  setState(() => _geoapifyTestMode = enableGeoapify);
+                                  setState(() => _photonTestMode = enablePhoton);
                                   refreshSearch(() {
                                     photonSuggestions = <Map<String, dynamic>>[];
                                     photonLoadingSuggestions = false;
-                                    geoapifyAutocompleteError = null;
+                                    photonTestAutocompleteError = null;
                                   });
                                 },
                               ),
@@ -5892,7 +5853,7 @@ _navigationMatchedLocation = null;
 
                           ],
                         ),
-                        if (_geoapifyTestMode)
+                        if (_photonTestMode)
                           const Padding(
                             padding: EdgeInsets.only(bottom: 8),
                             child: Text(
@@ -5917,7 +5878,7 @@ _navigationMatchedLocation = null;
                             }
                             refreshSearch(() {
                                 photonLoadingSuggestions = true;
-                                geoapifyAutocompleteError = null;
+                                photonTestAutocompleteError = null;
                               });
                             // Keep typing responsive: one Photon batch at a time.
                             // While it runs, retain only the newest text value.
@@ -5973,8 +5934,8 @@ _navigationMatchedLocation = null;
                               }
                             }
                             photonDebounce = Timer(const Duration(milliseconds: 300), () {
-                              if (_geoapifyTestMode) {
-                                unawaited(loadGeoapifySuggestions(value, requestVersion));
+                              if (_photonTestMode) {
+                                unawaited(loadPhotonSuggestions(value, requestVersion));
                               } else {
                                 unawaited(loadLatestPhotonSuggestions(value, requestVersion));
                               }
@@ -6007,11 +5968,11 @@ _navigationMatchedLocation = null;
                             padding: EdgeInsets.all(10),
                             child: LinearProgressIndicator(minHeight: 2),
                           ),
-                        if (geoapifyAutocompleteError != null)
+                        if (photonTestAutocompleteError != null)
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                             child: Text(
-                              geoapifyAutocompleteError!,
+                              photonTestAutocompleteError!,
                               style: const TextStyle(color: Colors.redAccent, fontSize: 12),
                             ),
                           ),
@@ -6931,7 +6892,7 @@ _navigationMatchedLocation = null;
     );
   }
 
-  Future<String> _lookupGeoapifyReverseAddress(LatLng point) async {
+  Future<String> _lookupPhotonTestReverseAddress(LatLng point) async {
     try {
       final uri = Uri.https('photon.komoot.io', '/reverse', {
         'lon': point.longitude.toString(),
@@ -6958,9 +6919,9 @@ _navigationMatchedLocation = null;
   }
 
     Future<String> _lookupPhotonReverseAddress(LatLng point) async {
-    if (_geoapifyTestMode) {
-      // Keep reverse geocoding isolated while Geoapify test mode is active.
-      return _lookupGeoapifyReverseAddress(point);
+    if (_photonTestMode) {
+      // Keep reverse geocoding isolated while Photon test mode is active.
+      return _lookupPhotonTestReverseAddress(point);
     }
     // Photon is the primary geocoder. Its reverse endpoint can return an
     // empty feature list for mapped streets, so fall back to OSM Nominatim.
