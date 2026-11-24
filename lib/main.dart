@@ -1254,7 +1254,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         } else {
           await _resetRoutePreview();
         }
-        await _ayaSpeak('Маршрут отменён');
+        await _ayaSpeak(_localized('Маршрут отменён', 'Бағыт тоқтатылды', 'Route cancelled'));
         if (mounted) setState(() => _ayaStatus = 'Маршрут отменён');
         return;
       }
@@ -1267,7 +1267,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       if (asksRemaining) {
         if (!_navigationActive || _destination == null ||
             _routeDistanceMeters == null || _routeDurationSeconds == null) {
-          await _ayaSpeak('Активного маршрута нет');
+          await _ayaSpeak(_localized('Активного маршрута нет', 'Белсенді бағыт жоқ', 'There is no active route'));
           if (mounted) setState(() => _ayaStatus = 'Активного маршрута нет');
           return;
         }
@@ -1291,7 +1291,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
       if (normalized == 'айя' || normalized == 'привет' ||
           normalized == 'айя привет' || normalized == 'привет айя') {
-        await _ayaSpeak('Слушаю вас, куда поедем?');
+        await _ayaSpeak(_localized('Слушаю вас, куда поедем?', 'Тыңдап тұрмын, қайда барамыз?', 'I am listening. Where would you like to go?'));
         if (mounted) setState(() => _ayaStatus = 'Слушаю вас');
         return;
       }
@@ -1342,7 +1342,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _sortSearchFeatures(shymkentResults, destinationQuery);
       if (!mounted) return;
       if (shymkentResults.isEmpty) {
-        await _ayaSpeak('Адрес не найден, повторите ещё раз');
+        await _ayaSpeak(_localized('Адрес не найден, повторите ещё раз', 'Мекенжай табылмады, қайталап айтыңыз', 'Address not found. Please try again'));
         if (mounted) setState(() => _ayaStatus = 'Адрес не найден');
         return;
       }
@@ -1377,14 +1377,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final routeName = destinationName.isEmpty ? destinationQuery : destinationName;
         final routeKm = (_routeDistanceMeters ?? 0) / 1000;
         final routeMinutes = ((_routeDurationSeconds ?? 0) / 60).ceil();
-        await _ayaSpeak(
-          'Маршрут построен до $routeName. '
-          'Расстояние ${routeKm.toStringAsFixed(1)} километра, '
-          'время в пути примерно $routeMinutes минут. Поехали!',
-        );
+        await _ayaSpeak(_localized('Маршрут построен до $routeName. Расстояние ${routeKm.toStringAsFixed(1)} километра, время в пути примерно $routeMinutes минут. Поехали!', '$routeName бағыты құрылды. Қашықтық ${routeKm.toStringAsFixed(1)} километр, жол уақыты шамамен $routeMinutes минут. Жолға шығайық!', 'Route built to $routeName. Distance ${routeKm.toStringAsFixed(1)} kilometers, estimated travel time $routeMinutes minutes. Let us go!'));
         if (mounted) setState(() => _ayaStatus = 'Маршрут построен');
       } else {
-        await _ayaSpeak('Не удалось построить маршрут, повторите ещё раз');
+        await _ayaSpeak(_localized('Не удалось построить маршрут, повторите ещё раз', 'Бағыт құру мүмкін болмады, қайталап көріңіз', 'Could not build the route. Please try again'));
         if (mounted) setState(() => _ayaStatus = 'Не удалось построить маршрут');
       }
     } catch (error) {
