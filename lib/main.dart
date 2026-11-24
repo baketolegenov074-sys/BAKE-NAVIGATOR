@@ -1010,7 +1010,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _isLocating = false;
   bool _gpsAvailable = false;
   bool _isSearching = false;
-  bool _photonTestMode = false;
   bool _isBuildingRoute = false;
   int _voiceMode = 3;
   double? _gpsHeadingDegrees;
@@ -1044,7 +1043,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _loadSavedOfflineMap();
     _loadSavedRoutePoints();
     unawaited(_loadTrafficLayerPreference());
-    unawaited(_loadPhotonTestSettings());
     // Ask for location after the first frame so the permission dialog has a valid context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1143,63 +1141,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       debugPrint('BAKE traffic layer preference load failed: $error');
     }
   }
-  Future<void> _loadPhotonTestSettings() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final enabled = prefs.getBool('geoapify_test_mode') ?? false;
-      if (!mounted) return;
-      setState(() {
-        _photonTestMode = enabled;
-      });
-    } catch (error) {
-      debugPrint('BAKE Photon settings load failed: $error');
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchPhotonTestFeatures(
-    String query, {
-    required bool autocomplete,
-    LatLng? near,
-  }) async {
-    final focus = near ?? _currentLocation ?? _shymkent;
-    final endpoint = Uri.https('photon.komoot.io', '/api', <String, String>{
-      'q': query.trim(),
-      'limit': autocomplete ? '10' : '25',
-      'lat': focus.latitude.toString(),
-      'lon': focus.longitude.toString(),
-      'lang': 'ru',
-    });
-    final response = await http.get(endpoint, headers: const {
-      'User-Agent': 'BAKE-Navigator/1.0 (Photon test mode)',
-      'Accept': 'application/geo+json, application/json',
-    }).timeout(Duration(seconds: autocomplete ? 5 : 10));
-    if (response.statusCode != 200) {
-      throw HttpException('Photon HTTP ${response.statusCode}');
-    }
-    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-    final rawFeatures = decoded is Map ? decoded['features'] : null;
-    if (rawFeatures is! List) return <Map<String, dynamic>>[];
-    return rawFeatures.whereType<Map>().map((raw) {
-      final feature = Map<String, dynamic>.from(raw);
-      final rawProperties = feature['properties'];
-      final properties = rawProperties is Map
-          ? Map<String, dynamic>.from(rawProperties)
-          : <String, dynamic>{};
-      final label = _photonDestinationAddress(feature);
-      properties['display_label'] = label.isEmpty
-          ? (properties['name'] ?? '').toString()
-          : label;
-      properties['source'] = 'photon_test';
-      feature['properties'] = properties;
-      return feature;
-    }).where((feature) {
-      final geometry = feature['geometry'];
-      final coordinates = geometry is Map ? geometry['coordinates'] : null;
-      return coordinates is List && coordinates.length >= 2 &&
-          coordinates[0] is num && coordinates[1] is num;
-    }).toList(growable: false);
-  }
-
     Future<void> _loadSavedRoutePoints() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -3336,22 +3277,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return merged.take(150).toList();
   }
   Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true, bool includeExpandedPhotonQueries = true}) async {
-    if (_photonTestMode) {
-      try {
-        // Isolated test: do not mix Photon, Nominatim, local index,
-        // saved places, or road reports into Photon results.
-        final geoapifyResults = await _fetchPhotonTestFeatures(
-          query,
-          autocomplete: false,
-          near: near,
-        );
-        _sortSearchFeatures(geoapifyResults, query);
-        return geoapifyResults;
-      } catch (error) {
-        debugPrint('BAKE Photon full search failed: $error');
-        return <Map<String, dynamic>>[];
-      }
-    }
     final needle = query.trim().toLowerCase();
     final reportFeatures = <Map<String, dynamic>>[];
     final seenReports = <String>{};
@@ -5757,7 +5682,6 @@ _navigationMatchedLocation = null;
     final prefs = await SharedPreferences.getInstance();
     List<Map<String, dynamic>> photonSuggestions = <Map<String, dynamic>>[];
     bool photonLoadingSuggestions = false;
-    String? photonTestAutocompleteError;
     Timer? photonDebounce;
     var photonRequestVersion = 0;
     var photonRequestRunning = false;
@@ -5790,78 +5714,10 @@ _navigationMatchedLocation = null;
               children: [
                 StatefulBuilder(
                   builder: (searchContext, refreshSearch) {
-                    Future<void> loadPhotonSuggestions(String query, int version) async {
-                      try {
-                        final found = await _fetchPhotonTestFeatures(
-                          query,
-                          autocomplete: true,
-                        );
-                        if (!searchContext.mounted || version != photonRequestVersion) return;
-                        _sortSearchFeatures(found, query);
-                        refreshSearch(() {
-                          photonSuggestions = found;
-                          photonLoadingSuggestions = false;
-                        });
-                      } catch (error) {
-                        debugPrint('BAKE Photon autocomplete failed: $error');
-                        if (searchContext.mounted && version == photonRequestVersion) {
-                          refreshSearch(() {
-                            photonLoadingSuggestions = false;
-                            photonTestAutocompleteError = 'Ошибка запроса Photon';
-                          });
-                        }
-                      }
-                    }
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: SegmentedButton<bool>(
-                                showSelectedIcon: false,
-                                segments: const [
-                                  ButtonSegment<bool>(
-                                    value: false,
-                                    icon: Icon(Icons.bolt_outlined),
-                                    label: Text('Photon'),
-                                  ),
-                                  ButtonSegment<bool>(
-                                    value: true,
-                                    icon: Icon(Icons.science_outlined),
-                                    label: Text('Тест Photon'),
-                                  ),
-                                ],
-                                selected: <bool>{_photonTestMode},
-                                onSelectionChanged: (selection) async {
-                                  final enablePhoton = selection.first;
-                                  photonDebounce?.cancel();
-                                  photonRequestVersion++;
-                                  pendingPhotonQuery = null;
-                                  final prefs = await SharedPreferences.getInstance();
-                                  await prefs.setBool('geoapify_test_mode', enablePhoton);
-                                  if (!mounted || !searchContext.mounted) return;
-                                  setState(() => _photonTestMode = enablePhoton);
-                                  refreshSearch(() {
-                                    photonSuggestions = <Map<String, dynamic>>[];
-                                    photonLoadingSuggestions = false;
-                                    photonTestAutocompleteError = null;
-                                  });
-                                },
-                              ),
-                            ),
 
-                          ],
-                        ),
-                        if (_photonTestMode)
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 8),
-                            child: Text(
-                              'Изолированный тест: поиск и подсказки идут только через публичный Photon, без API-ключа.',
-                              style: TextStyle(fontSize: 11, color: Color(0xFF687786)),
-                            ),
-                          ),
-                        VoiceTextField(
                           controller: _searchController,
                           autofocus: true,
                           textInputAction: TextInputAction.search,
@@ -5878,7 +5734,6 @@ _navigationMatchedLocation = null;
                             }
                             refreshSearch(() {
                                 photonLoadingSuggestions = true;
-                                photonTestAutocompleteError = null;
                               });
                             // Keep typing responsive: one Photon batch at a time.
                             // While it runs, retain only the newest text value.
@@ -5934,11 +5789,7 @@ _navigationMatchedLocation = null;
                               }
                             }
                             photonDebounce = Timer(const Duration(milliseconds: 300), () {
-                              if (_photonTestMode) {
-                                unawaited(loadPhotonSuggestions(value, requestVersion));
-                              } else {
-                                unawaited(loadLatestPhotonSuggestions(value, requestVersion));
-                              }
+
                             });
                           },
                           onSubmitted: (_) {
@@ -5967,14 +5818,6 @@ _navigationMatchedLocation = null;
                           const Padding(
                             padding: EdgeInsets.all(10),
                             child: LinearProgressIndicator(minHeight: 2),
-                          ),
-                        if (photonTestAutocompleteError != null)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                            child: Text(
-                              photonTestAutocompleteError!,
-                              style: const TextStyle(color: Colors.redAccent, fontSize: 12),
-                            ),
                           ),
                         if (photonSuggestions.isNotEmpty)
                           Container(
@@ -6892,37 +6735,7 @@ _navigationMatchedLocation = null;
     );
   }
 
-  Future<String> _lookupPhotonTestReverseAddress(LatLng point) async {
-    try {
-      final uri = Uri.https('photon.komoot.io', '/reverse', {
-        'lon': point.longitude.toString(),
-        'lat': point.latitude.toString(),
-        'lang': 'ru',
-      });
-      final response = await http.get(uri, headers: const {
-        'User-Agent': 'BAKE-Navigator/1.0 (Photon test mode)',
-        'Accept': 'application/geo+json, application/json',
-      }).timeout(const Duration(seconds: 7));
-      if (response.statusCode != 200) return 'Адрес не найден.';
-      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      final features = decoded is Map ? decoded['features'] : null;
-      if (features is! List || features.isEmpty || features.first is! Map) {
-        return 'Адрес не найден.';
-      }
-      final feature = Map<String, dynamic>.from(features.first as Map);
-      final address = _photonDestinationAddress(feature);
-      return address.isEmpty ? 'Адрес не найден.' : address;
-    } catch (error) {
-      debugPrint('BAKE Photon test reverse failed: $error');
-      return 'Адрес не найден.';
-    }
-  }
-
     Future<String> _lookupPhotonReverseAddress(LatLng point) async {
-    if (_photonTestMode) {
-      // Keep reverse geocoding isolated while Photon test mode is active.
-      return _lookupPhotonTestReverseAddress(point);
-    }
     // Photon is the primary geocoder. Its reverse endpoint can return an
     // empty feature list for mapped streets, so fall back to OSM Nominatim.
     try {
