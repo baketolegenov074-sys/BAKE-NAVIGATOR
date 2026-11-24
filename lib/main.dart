@@ -1010,8 +1010,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _isLocating = false;
   bool _gpsAvailable = false;
   bool _isSearching = false;
-  bool _peliasTestMode = false;
-  String _peliasApiBaseUrl = '';
+  bool _geoapifyTestMode = false;
+  String _geoapifyApiKey = '';
   bool _isBuildingRoute = false;
   int _voiceMode = 3;
   double? _gpsHeadingDegrees;
@@ -1045,7 +1045,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _loadSavedOfflineMap();
     _loadSavedRoutePoints();
     unawaited(_loadTrafficLayerPreference());
-    unawaited(_loadPeliasSettings());
+    unawaited(_loadGeoapifySettings());
     // Ask for location after the first frame so the permission dialog has a valid context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1144,35 +1144,36 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       debugPrint('BAKE traffic layer preference load failed: $error');
     }
   }
-  Future<void> _loadPeliasSettings() async {
+  Future<void> _loadGeoapifySettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final endpoint = (prefs.getString('pelias_api_base_url') ?? '').trim();
-      final enabled = prefs.getBool('pelias_test_mode') ?? false;
+      final apiKey = (prefs.getString('geoapify_api_key') ?? '').trim();
+      final enabled = prefs.getBool('geoapify_test_mode') ?? false;
       if (!mounted) return;
       setState(() {
-        _peliasApiBaseUrl = endpoint;
-        _peliasTestMode = enabled && endpoint.isNotEmpty;
+        _geoapifyApiKey = apiKey;
+        _geoapifyTestMode = enabled && apiKey.isNotEmpty;
       });
     } catch (error) {
-      debugPrint('BAKE Pelias settings load failed: $error');
+      debugPrint('BAKE Geoapify settings load failed: $error');
     }
   }
 
-  Future<bool> _configurePeliasEndpoint() async {
-    final controller = TextEditingController(text: _peliasApiBaseUrl);
+  Future<bool> _configureGeoapifyApiKey() async {
+    final controller = TextEditingController(text: _geoapifyApiKey);
     final value = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Сервер Pelias'),
+        title: const Text('Ключ Geoapify'),
         content: TextField(
           controller: controller,
-          keyboardType: TextInputType.url,
+          obscureText: true,
           autocorrect: false,
+          enableSuggestions: false,
           decoration: const InputDecoration(
-            labelText: 'Адрес сервера',
-            hintText: 'https://адрес-сервера',
-            helperText: 'Укажите корневой URL своего Pelias API',
+            labelText: 'API key',
+            hintText: 'Вставьте ключ Geoapify',
+            helperText: 'Бесплатный ключ: myprojects.geoapify.com',
           ),
         ),
         actions: [
@@ -1189,56 +1190,42 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     );
     controller.dispose();
     if (value == null || value.isEmpty || !mounted) return false;
-    final uri = Uri.tryParse(value);
-    if (uri == null || !uri.hasAuthority ||
-        (uri.scheme != 'https' && uri.scheme != 'http') ||
-        uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment) {
-      setState(() => _message = 'Неверный адрес Pelias API.');
-      return false;
-    }
-    final cleanUrl = uri.replace(
-      path: uri.path.replaceFirst(RegExp(r'/+$'), ''),
-    ).toString();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pelias_api_base_url', cleanUrl);
+    await prefs.setString('geoapify_api_key', value);
     if (!mounted) return false;
-    setState(() => _peliasApiBaseUrl = cleanUrl);
+    setState(() => _geoapifyApiKey = value);
     return true;
   }
 
-  Future<List<Map<String, dynamic>>> _fetchPeliasFeatures(
+  Future<List<Map<String, dynamic>>> _fetchGeoapifyFeatures(
     String query, {
     required bool autocomplete,
     LatLng? near,
   }) async {
-    final baseUrl = _peliasApiBaseUrl.trim();
-    if (baseUrl.isEmpty) {
-      throw StateError('Pelias API endpoint is not configured.');
-    }
-    final base = Uri.tryParse(baseUrl);
-    if (base == null || !base.hasAuthority ||
-        (base.scheme != 'https' && base.scheme != 'http')) {
-      throw StateError('Pelias API endpoint is invalid.');
+    final apiKey = _geoapifyApiKey.trim();
+    if (apiKey.isEmpty) {
+      throw StateError('Geoapify API key is not configured.');
     }
     final focus = near ?? _currentLocation ?? _shymkent;
-    final path = base.path.replaceFirst(RegExp(r'/+$'), '');
-    final endpoint = base.replace(
-      path: '$path/v1/${autocomplete ? 'autocomplete' : 'search'}',
-      queryParameters: <String, String>{
+    final endpoint = Uri.https(
+      'api.geoapify.com',
+      '/v1/geocode/${autocomplete ? 'autocomplete' : 'search'}',
+      <String, String>{
         'text': query.trim(),
-        'size': autocomplete ? '12' : '30',
-        'boundary.country': 'KZ',
+        'limit': autocomplete ? '10' : '25',
+        'filter': 'countrycode:kz',
+        'bias': 'proximity:${focus.longitude},${focus.latitude}',
         'lang': 'ru',
-        'focus.point.lat': focus.latitude.toString(),
-        'focus.point.lon': focus.longitude.toString(),
+        'format': 'geojson',
+        'apiKey': apiKey,
       },
     );
     final response = await http.get(endpoint, headers: const {
-      'User-Agent': 'BAKE-Navigator/1.0 (Pelias test mode)',
+      'User-Agent': 'BAKE-Navigator/1.0 (Geoapify test mode)',
       'Accept': 'application/geo+json, application/json',
-    }).timeout(Duration(seconds: autocomplete ? 3 : 8));
+    }).timeout(Duration(seconds: autocomplete ? 4 : 9));
     if (response.statusCode != 200) {
-      throw HttpException('Pelias HTTP ${response.statusCode}', uri: endpoint);
+      throw HttpException('Geoapify HTTP ${response.statusCode}', uri: endpoint);
     }
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     final rawFeatures = decoded is Map ? decoded['features'] : null;
@@ -1249,11 +1236,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       final properties = rawProperties is Map
           ? Map<String, dynamic>.from(rawProperties)
           : <String, dynamic>{};
-      final label = (properties['label'] ?? properties['name'] ?? '').toString().trim();
+      final label = (properties['formatted'] ??
+              properties['address_line1'] ??
+              properties['name'] ??
+              '').toString().trim();
       properties['display_label'] = label;
-      properties['district'] ??= properties['neighbourhood'] ?? properties['borough'];
-      properties['city'] ??= properties['locality'] ?? properties['localadmin'];
-      properties['source'] = 'pelias';
+      properties['district'] ??= properties['suburb'] ??
+          properties['neighbourhood'] ?? properties['district'];
+      properties['city'] ??= properties['city'] ?? properties['county'];
+      properties['source'] = 'geoapify';
       feature['properties'] = properties;
       return feature;
     }).where((feature) {
@@ -3400,19 +3391,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return merged.take(150).toList();
   }
   Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true, bool includeExpandedPhotonQueries = true}) async {
-    if (_peliasTestMode) {
+    if (_geoapifyTestMode) {
       try {
         // Isolated test: do not mix Photon, Nominatim, local index,
-        // saved places, or road reports into Pelias results.
-        final peliasResults = await _fetchPeliasFeatures(
+        // saved places, or road reports into Geoapify results.
+        final geoapifyResults = await _fetchGeoapifyFeatures(
           query,
           autocomplete: false,
           near: near,
         );
-        _sortSearchFeatures(peliasResults, query);
-        return peliasResults;
+        _sortSearchFeatures(geoapifyResults, query);
+        return geoapifyResults;
       } catch (error) {
-        debugPrint('BAKE Pelias full search failed: $error');
+        debugPrint('BAKE Geoapify full search failed: $error');
         return <Map<String, dynamic>>[];
       }
     }
@@ -5821,7 +5812,7 @@ _navigationMatchedLocation = null;
     final prefs = await SharedPreferences.getInstance();
     List<Map<String, dynamic>> photonSuggestions = <Map<String, dynamic>>[];
     bool photonLoadingSuggestions = false;
-    String? peliasAutocompleteError;
+    String? geoapifyAutocompleteError;
     Timer? photonDebounce;
     var photonRequestVersion = 0;
     var photonRequestRunning = false;
@@ -5854,9 +5845,9 @@ _navigationMatchedLocation = null;
               children: [
                 StatefulBuilder(
                   builder: (searchContext, refreshSearch) {
-                    Future<void> loadPeliasSuggestions(String query, int version) async {
+                    Future<void> loadGeoapifySuggestions(String query, int version) async {
                       try {
-                        final found = await _fetchPeliasFeatures(
+                        final found = await _fetchGeoapifyFeatures(
                           query,
                           autocomplete: true,
                         );
@@ -5867,11 +5858,11 @@ _navigationMatchedLocation = null;
                           photonLoadingSuggestions = false;
                         });
                       } catch (error) {
-                        debugPrint('BAKE Pelias autocomplete failed: $error');
+                        debugPrint('BAKE Geoapify autocomplete failed: $error');
                         if (searchContext.mounted && version == photonRequestVersion) {
                           refreshSearch(() {
                             photonLoadingSuggestions = false;
-                            peliasAutocompleteError = 'Сервер Pelias недоступен';
+                            geoapifyAutocompleteError = 'Ключ Geoapify недоступен';
                           });
                         }
                       }
@@ -5893,35 +5884,35 @@ _navigationMatchedLocation = null;
                                   ButtonSegment<bool>(
                                     value: true,
                                     icon: Icon(Icons.science_outlined),
-                                    label: Text('Тест Pelias'),
+                                    label: Text('Тест Geoapify'),
                                   ),
                                 ],
-                                selected: <bool>{_peliasTestMode},
+                                selected: <bool>{_geoapifyTestMode},
                                 onSelectionChanged: (selection) async {
-                                  final enablePelias = selection.first;
-                                  if (enablePelias && _peliasApiBaseUrl.isEmpty) {
-                                    final configured = await _configurePeliasEndpoint();
+                                  final enableGeoapify = selection.first;
+                                  if (enableGeoapify && _geoapifyApiKey.isEmpty) {
+                                    final configured = await _configureGeoapifyApiKey();
                                     if (!configured) return;
                                   }
                                   photonDebounce?.cancel();
                                   photonRequestVersion++;
                                   pendingPhotonQuery = null;
                                   final prefs = await SharedPreferences.getInstance();
-                                  await prefs.setBool('pelias_test_mode', enablePelias);
+                                  await prefs.setBool('geoapify_test_mode', enableGeoapify);
                                   if (!mounted || !searchContext.mounted) return;
-                                  setState(() => _peliasTestMode = enablePelias);
+                                  setState(() => _geoapifyTestMode = enableGeoapify);
                                   refreshSearch(() {
                                     photonSuggestions = <Map<String, dynamic>>[];
                                     photonLoadingSuggestions = false;
-                                    peliasAutocompleteError = null;
+                                    geoapifyAutocompleteError = null;
                                   });
                                 },
                               ),
                             ),
                             IconButton(
-                              tooltip: 'Адрес сервера Pelias',
+                              tooltip: 'Ключ Geoapify',
                               onPressed: () async {
-                                await _configurePeliasEndpoint();
+                                await _configureGeoapifyApiKey();
                                 refreshSearch(() {
                                   photonSuggestions = <Map<String, dynamic>>[];
                                   photonLoadingSuggestions = false;
@@ -5931,11 +5922,11 @@ _navigationMatchedLocation = null;
                             ),
                           ],
                         ),
-                        if (_peliasTestMode)
+                        if (_geoapifyTestMode)
                           const Padding(
                             padding: EdgeInsets.only(bottom: 8),
                             child: Text(
-                              'Изолированный тест: запросы идут только в Pelias. Нужен работающий сервер.',
+                              'Изолированный тест: запросы идут только в Geoapify. Нужен бесплатный API key.',
                               style: TextStyle(fontSize: 11, color: Color(0xFF687786)),
                             ),
                           ),
@@ -5956,7 +5947,7 @@ _navigationMatchedLocation = null;
                             }
                             refreshSearch(() {
                                 photonLoadingSuggestions = true;
-                                peliasAutocompleteError = null;
+                                geoapifyAutocompleteError = null;
                               });
                             // Keep typing responsive: one Photon batch at a time.
                             // While it runs, retain only the newest text value.
@@ -6012,8 +6003,8 @@ _navigationMatchedLocation = null;
                               }
                             }
                             photonDebounce = Timer(const Duration(milliseconds: 300), () {
-                              if (_peliasTestMode) {
-                                unawaited(loadPeliasSuggestions(value, requestVersion));
+                              if (_geoapifyTestMode) {
+                                unawaited(loadGeoapifySuggestions(value, requestVersion));
                               } else {
                                 unawaited(loadLatestPhotonSuggestions(value, requestVersion));
                               }
@@ -6046,11 +6037,11 @@ _navigationMatchedLocation = null;
                             padding: EdgeInsets.all(10),
                             child: LinearProgressIndicator(minHeight: 2),
                           ),
-                        if (peliasAutocompleteError != null)
+                        if (geoapifyAutocompleteError != null)
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                             child: Text(
-                              peliasAutocompleteError!,
+                              geoapifyAutocompleteError!,
                               style: const TextStyle(color: Colors.redAccent, fontSize: 12),
                             ),
                           ),
@@ -6970,26 +6961,25 @@ _navigationMatchedLocation = null;
     );
   }
 
-  Future<String> _lookupPeliasReverseAddress(LatLng point) async {
+  Future<String> _lookupGeoapifyReverseAddress(LatLng point) async {
     try {
-      final base = Uri.parse(_peliasApiBaseUrl);
-      final path = base.path.replaceFirst(RegExp(r'/+$'), '');
-      final uri = base.replace(
-        path: '$path/v1/reverse',
-        queryParameters: <String, String>{
-          'point.lat': point.latitude.toString(),
-          'point.lon': point.longitude.toString(),
-          'size': '1',
-          'boundary.country': 'KZ',
-          'lang': 'ru',
-        },
-      );
+      final apiKey = _geoapifyApiKey.trim();
+      if (apiKey.isEmpty) return 'Ключ Geoapify не настроен.';
+      final uri = Uri.https('api.geoapify.com', '/v1/geocode/reverse', {
+        'lat': point.latitude.toString(),
+        'lon': point.longitude.toString(),
+        'limit': '1',
+        'countrycodes': 'kz',
+        'lang': 'ru',
+        'format': 'geojson',
+        'apiKey': apiKey,
+      });
       final response = await http.get(uri, headers: const {
-        'User-Agent': 'BAKE-Navigator/1.0 (Pelias test mode)',
+        'User-Agent': 'BAKE-Navigator/1.0 (Geoapify test mode)',
         'Accept': 'application/geo+json, application/json',
-      }).timeout(const Duration(seconds: 5));
+      }).timeout(const Duration(seconds: 6));
       if (response.statusCode != 200) {
-        debugPrint('BAKE Pelias reverse: HTTP ${response.statusCode}');
+        debugPrint('BAKE Geoapify reverse: HTTP ${response.statusCode}');
         return 'Адрес не найден.';
       }
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
@@ -7002,22 +6992,25 @@ _navigationMatchedLocation = null;
       final properties = rawProperties is Map
           ? Map<String, dynamic>.from(rawProperties)
           : <String, dynamic>{};
-      final label = (properties['label'] ?? properties['name'] ?? '').toString().trim();
+      final label = (properties['formatted'] ??
+              properties['address_line1'] ??
+              properties['name'] ??
+              '').toString().trim();
       if (label.isNotEmpty) return label;
       properties['display_label'] = '';
       feature['properties'] = properties;
       final fallback = _photonDestinationAddress(feature);
       return fallback.isEmpty ? 'Адрес не найден.' : fallback;
     } catch (error) {
-      debugPrint('BAKE Pelias reverse failed: $error');
+      debugPrint('BAKE Geoapify reverse failed: $error');
       return 'Адрес не найден.';
     }
   }
 
   Future<String> _lookupPhotonReverseAddress(LatLng point) async {
-    if (_peliasTestMode) {
-      // Keep reverse geocoding isolated while Pelias test mode is active.
-      return _lookupPeliasReverseAddress(point);
+    if (_geoapifyTestMode) {
+      // Keep reverse geocoding isolated while Geoapify test mode is active.
+      return _lookupGeoapifyReverseAddress(point);
     }
     // Photon is the primary geocoder. Its reverse endpoint can return an
     // empty feature list for mapped streets, so fall back to OSM Nominatim.
