@@ -5717,7 +5717,7 @@ _navigationMatchedLocation = null;
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-
+                        VoiceTextField(
                           controller: _searchController,
                           autofocus: true,
                           textInputAction: TextInputAction.search,
@@ -5789,7 +5789,7 @@ _navigationMatchedLocation = null;
                               }
                             }
                             photonDebounce = Timer(const Duration(milliseconds: 300), () {
-
+                              unawaited(loadLatestPhotonSuggestions(value, requestVersion));
                             });
                           },
                           onSubmitted: (_) {
