@@ -1019,7 +1019,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   DateTime? _plannedDeparture;  String _message = '';
 
   bool _showStartupSplash = true;
+  bool _keepStartupSplash = true;
   Timer? _startupSplashTimer;
+  Timer? _startupSplashRemovalTimer;
 
   @override
   void initState() {
@@ -1030,7 +1032,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _startupSplashTimer = Timer(const Duration(milliseconds: 1150), () {
-        if (mounted) setState(() => _showStartupSplash = false);
+        if (!mounted) return;
+        setState(() => _showStartupSplash = false);
+        _startupSplashRemovalTimer = Timer(
+          const Duration(milliseconds: 350),
+          () {
+            if (mounted) setState(() => _keepStartupSplash = false);
+          },
+        );
       });
       unawaited(_initializeStartupServices());
     });
@@ -1609,6 +1618,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     WidgetsBinding.instance.removeObserver(this);
     _roadReportRetryTimer?.cancel();
     _startupSplashTimer?.cancel();
+    _startupSplashRemovalTimer?.cancel();
     unawaited(_stopLiveLocationUpdates(reason: 'widget_disposed'));
     _headingUpResumeTimer?.cancel();
     _navigationPredictionTimer?.cancel();
@@ -9355,16 +9365,17 @@ _navigationMatchedLocation = null;
               ),
             ),
 
-          Positioned.fill(
-            child: AnimatedOpacity(
-              opacity: _showStartupSplash ? 1 : 0,
-              duration: const Duration(milliseconds: 350),
-              child: IgnorePointer(
-                ignoring: !_showStartupSplash,
-                child: const _BakeStartupSplash(),
+          if (_keepStartupSplash)
+            Positioned.fill(
+              child: AnimatedOpacity(
+                opacity: _showStartupSplash ? 1 : 0,
+                duration: const Duration(milliseconds: 350),
+                child: IgnorePointer(
+                  ignoring: !_showStartupSplash,
+                  child: const _BakeStartupSplash(),
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
