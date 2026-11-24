@@ -1208,7 +1208,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
       await _ayaSpeech.listen(
         listenOptions: SpeechListenOptions(
-          localeId: 'ru_RU',
+          localeId: _navigationLanguage.replaceAll('-', '_'),
           partialResults: true,
           cancelOnError: true,
           listenMode: ListenMode.dictation,
@@ -1636,13 +1636,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       final volume = prefs.getDouble('voice_volume') ?? 1.0;
       final rate = prefs.getDouble('voice_rate') ?? 0.48;
       _voiceMode = prefs.getInt('voice_mode') ?? 3;
-      _navigationLanguage = _normalizeNavigationLanguage(prefs.getString('navigation_language') ?? 'kk-KZ');
+      _navigationLanguage = _normalizeNavigationLanguage(prefs.getString('navigation_language') ?? 'ru-RU');
       _selectedVoiceName = prefs.getString('voice_name');
       _selectedVoiceLocale = prefs.getString('voice_locale');
       _kazakhVoiceId = (prefs.getInt('kazakh_voice_sid') ?? 0).clamp(0, 5).toInt();
       _kazakhVoiceEnabled = prefs.getBool('kazakh_voice_enabled') ?? false;
       await _tts.awaitSpeakCompletion(true);
-      await _tts.setLanguage('ru-RU');
+      await _tts.setLanguage(_navigationLanguage);
       await _tts.setSpeechRate(0.5);
       await _tts.setPitch(1.0);
       await _tts.setVolume(volume);
