@@ -2818,7 +2818,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (match == null) return null;
     final streetPart = normalized.substring(0, match.start).trim();
     if (streetPart.isEmpty ||
-        RegExp(r'\b(?:школа|мектеп|микрорайон|мкр|район|№)\b').hasMatch(streetPart) ||
+        RegExp(r'\b(?:школа|мектеп|микрорайон|мкр|район|№|mega|мега|центр|торговый|плаза|plaza|mall|базар|рынок|аэропорт|вокзал)\b', caseSensitive: false).hasMatch(streetPart) ||
         streetPart.split(RegExp(r'\s+')).where((part) => part.isNotEmpty).length < 2) {
       return null;
     }
@@ -3223,7 +3223,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
 
     final groups = await Future.wait(
-      requestUris.toSet().take(4).map(request),
+      requestUris.toSet().take(6).map(request),
     );
     final nominatimCityResults = await nominatimCityFuture;
     final merged = <Map<String, dynamic>>[...nominatimCityResults];
@@ -3413,7 +3413,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     // The experimental online FlutterMap search must query Photon even when
     // the Shymkent-only local index has partial matches. Keep the offline-only
     // search path unchanged when the experimental online map is not active.
-    if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
+    if (!_isOfflineMapActive) {
       try {
         final onlineResults = await _fetchPhotonFeatures(
           query,

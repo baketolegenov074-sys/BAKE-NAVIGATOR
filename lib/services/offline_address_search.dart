@@ -226,24 +226,57 @@ class OfflineAddressSearch {
         .toList();
     if (queryTokens.isEmpty) return <Map<String, dynamic>>[];
 
+    // Always search both sources. The curated directory must never suppress
+    // street/house/POI records from the full OSM index just because it found
+    // enough nearby aliases first.
     final directoryMatches = _searchDirectory(
       query,
       normalizedQuery,
       near: near,
-      limit: limit,
+      limit: limit * 3,
     );
-    if (directoryMatches.length >= limit) return directoryMatches;
-
     final indexMatches = _searchOsmIndex(
       normalizedQuery,
       queryTokens,
       near: near,
-      limit: limit - directoryMatches.length,
+      limit: limit * 3,
     );
-    return <Map<String, dynamic>>[
+
+    final combined = <Map<String, dynamic>>[
       ...directoryMatches,
       ...indexMatches,
-    ].take(limit).toList(growable: false);
+    ];
+    final seen = <String>{};
+    final unique = <Map<String, dynamic>>[];
+    for (final feature in combined) {
+      final properties = feature['properties'] as Map<String, dynamic>;
+      final coordinates = (feature['geometry'] as Map)['coordinates'] as List;
+      final identity = [
+        (properties['name'] ?? '').toString().toLowerCase().trim(),
+        (properties['street'] ?? '').toString().toLowerCase().trim(),
+        (properties['housenumber'] ?? '').toString().toLowerCase().trim(),
+        coordinates[0].toStringAsFixed(5),
+        coordinates[1].toStringAsFixed(5),
+      ].join('|');
+      if (seen.add(identity)) unique.add(feature);
+    }
+    unique.sort((a, b) {
+      final ap = a['properties'] as Map<String, dynamic>;
+      final bp = b['properties'] as Map<String, dynamic>;
+      final score = ((bp['_searchScore'] as num?)?.toInt() ?? 0)
+          .compareTo((ap['_searchScore'] as num?)?.toInt() ?? 0);
+      if (score != 0) return score;
+      final ac = (a['geometry'] as Map)['coordinates'] as List;
+      final bc = (b['geometry'] as Map)['coordinates'] as List;
+      final ad = near == null ? 0.0 : _distanceKm(near, LatLng(
+        (ac[1] as num).toDouble(), (ac[0] as num).toDouble(),
+      ));
+      final bd = near == null ? 0.0 : _distanceKm(near, LatLng(
+        (bc[1] as num).toDouble(), (bc[0] as num).toDouble(),
+      ));
+      return ad.compareTo(bd);
+    });
+    return unique.take(limit).toList(growable: false);
   }
 
   bool _matchesSearchToken(String queryToken, Iterable<String> candidates) {
@@ -341,6 +374,7 @@ class OfflineAddressSearch {
           'city': 'Шымкент',
           'type': item['kind'] ?? 'place',
           'source': 'BAKE local directory',
+          '_searchScore': match.score * 100,
         },
         'geometry': <String, dynamic>{
           'type': 'Point',
@@ -445,6 +479,8 @@ class OfflineAddressSearch {
           'city': 'Шымкент',
           'label': label,
           'type': item['kind']?.toString() ?? 'place',
+          '_searchScore': match.score * 10,
+          'source': 'OpenStreetMap offline index',
         },
         'geometry': <String, dynamic>{
           'type': 'Point',

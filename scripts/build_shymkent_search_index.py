@@ -252,9 +252,14 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
         or ""
     ).strip()
     amenity = str(properties.get("amenity") or "").strip().lower()
+    entrance = str(properties.get("entrance") or "").strip().lower()
     reference = str(properties.get("ref") or "").strip()
     categories = category_terms(properties)
-    if not names and not house and not categories:
+    # Entrance nodes are useful only when their own address/name can identify
+    # the building. This preserves the entrance coordinate instead of replacing
+    # it with the building polygon centroid.
+    is_addressed_entrance = bool(entrance and (house or street or district or names))
+    if not names and not house and not categories and not is_addressed_entrance:
         return None
     # A house number without a street or district is not a usable address.
     # Excluding it prevents searches such as "5" from pointing to an
@@ -297,7 +302,11 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
     else:
         label = f"{place or street or district or 'Дом'}, {house}".strip(", ")
 
-    if house:
+    if is_addressed_entrance:
+        kind = "entrance"
+        if not primary_name:
+            primary_name = "Вход"
+    elif house:
         kind = "address"
     elif properties.get("highway"):
         kind = "street"
@@ -308,6 +317,8 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
 
     aliases = list(names)
     aliases.extend(categories)
+    if is_addressed_entrance:
+        aliases.extend(["вход", "подъезд", "entrance", "вход в здание"])
     if district:
         aliases.append(district)
     if amenity == "school":
