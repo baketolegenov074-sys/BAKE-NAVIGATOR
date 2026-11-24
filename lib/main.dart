@@ -902,7 +902,8 @@ Future<String?> _findSharedMbtilesFile() async {
       final directory = Directory(path);
       if (!await directory.exists()) continue;
       final files = await directory.list(followLinks: false).where((entity) =>
-          entity is File && entity.path.toLowerCase().endsWith('.mbtiles')).toList();
+          entity is File && entity.path.toLowerCase().endsWith('.mbtiles'))
+          .cast<File>().toList();
       files.sort((a, b) => a.path.toLowerCase().compareTo(b.path.toLowerCase()));
       for (final file in files) {
         if (await file.length() > 0) return file.path;
