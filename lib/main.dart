@@ -1225,7 +1225,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       'Accept': 'application/geo+json, application/json',
     }).timeout(Duration(seconds: autocomplete ? 4 : 9));
     if (response.statusCode != 200) {
-      throw HttpException('Geoapify HTTP ${response.statusCode}', uri: endpoint);
+      throw HttpException('Geoapify HTTP ${response.statusCode}');
     }
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     final rawFeatures = decoded is Map ? decoded['features'] : null;
@@ -1242,8 +1242,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               '').toString().trim();
       properties['display_label'] = label;
       properties['district'] ??= properties['suburb'] ??
-          properties['neighbourhood'] ?? properties['district'];
-      properties['city'] ??= properties['city'] ?? properties['county'];
+          properties['neighbourhood'];
+      properties['city'] ??= properties['county'] ?? properties['locality'];
       properties['source'] = 'geoapify';
       feature['properties'] = properties;
       return feature;
@@ -5862,7 +5862,7 @@ _navigationMatchedLocation = null;
                         if (searchContext.mounted && version == photonRequestVersion) {
                           refreshSearch(() {
                             photonLoadingSuggestions = false;
-                            geoapifyAutocompleteError = 'Ключ Geoapify недоступен';
+                            geoapifyAutocompleteError = 'Ошибка запроса Geoapify';
                           });
                         }
                       }
