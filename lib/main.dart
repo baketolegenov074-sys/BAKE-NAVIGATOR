@@ -1675,37 +1675,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       locale.toLowerCase().replaceAll('_', '-').split('-').first;
 
   Future<bool> _prepareSpeechVoice() async {
-    // Voice enumeration is not reliable on every Android TTS engine. In
-    // particular, some engines can synthesize a locale even when getVoices
-    // returns an empty list. Check locale support, then set the locale directly.
-    final languageAvailable = await _tts.isLanguageAvailable(_navigationLanguage);
-    if (languageAvailable != true) return false;
-
-    await _tts.setLanguage(_navigationLanguage);
-    final requiredLanguage = _voiceLanguageCode(_navigationLanguage);
-    final matchingVoices = _availableVoices
-        .where((voice) => _voiceLanguageCode(voice['locale'] ?? '') == requiredLanguage)
-        .toList();
-
-    // No enumerated voices is not a reason to silence navigation. Keep the
-    // requested locale and let Android's TTS engine use its locale default.
-    if (matchingVoices.isEmpty) {
-      _selectedVoiceName = null;
-      _selectedVoiceLocale = null;
-      return true;
-    }
-
-    final selected = matchingVoices.where((voice) =>
-      voice['name'] == _selectedVoiceName &&
-      voice['locale'] == _selectedVoiceLocale
-    );
-    final voice = selected.isNotEmpty ? selected.first : matchingVoices.first;
-    _selectedVoiceName = voice['name'];
-    _selectedVoiceLocale = voice['locale'];
-    await _tts.setVoice(<String, String>{
-      'name': voice['name']!,
-      'locale': voice['locale']!,
-    });
+    await _tts.setLanguage('ru-RU');
+    await _tts.setSpeechRate(0.5);
+    await _tts.setPitch(1.0);
     return true;
   }
 
