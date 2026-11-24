@@ -1297,14 +1297,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
 
       var destinationQuery = normalized;
-      final prefixes = <RegExp>[
-        RegExp(r'^как\s+проехать(?:\s+до)?\s*'),
-        RegExp(r'^доехать\s+до\s*'),
-        RegExp(r'^маршрут(?:\s+до)?\s*'),
-        RegExp(r'^поехали\s*(?:до\s*)?'),
-        RegExp(r'^найди\s*'),
-        RegExp(r'^айя[\s,.:;-]*'),
-      ];
+      final prefixes = _navigationLanguage == 'kk-KZ'
+          ? <RegExp>[RegExp(r'^барайық\s*'), RegExp(r'^тап\s*'), RegExp(r'^бағыт\s*'), RegExp(r'^айя[\s,.:;-]*')]
+          : _navigationLanguage == 'en-US'
+              ? <RegExp>[RegExp(r'^go\s+to\s*'), RegExp(r'^find\s*'), RegExp(r'^route\s*(?:to\s*)?'), RegExp(r'^aya[\s,.:;-]*')]
+              : <RegExp>[RegExp(r'^как\s+проехать(?:\s+до)?\s*'), RegExp(r'^доехать\s+до\s*'), RegExp(r'^маршрут(?:\s+до)?\s*'), RegExp(r'^поехали\s*(?:до\s*)?'), RegExp(r'^найди\s*'), RegExp(r'^айя[\s,.:;-]*')];
       var removedPrefix = false;
       var changed = true;
       while (changed) {
