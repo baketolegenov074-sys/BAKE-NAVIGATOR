@@ -3006,23 +3006,26 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return Geolocator.distanceBetween(origin.latitude, origin.longitude, lat, lon);
   }
 
+  String _normalizePhotonSearchText(String value) => value
+      .toLowerCase()
+      .replaceAll('ё', 'е')
+      .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
   int _searchFeatureRelevanceScore(
     Map<String, dynamic> feature,
     String query,
   ) {
-    final needle = query.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    final needle = _normalizePhotonSearchText(query);
     if (needle.isEmpty) return 0;
     final raw = feature['properties'];
     final properties = raw is Map
         ? Map<String, dynamic>.from(raw)
         : <String, dynamic>{};
     String value(String key) =>
-        (properties[key] ?? '').toString().trim().toLowerCase();
-    String normalize(String value) => value
-        .replaceAll('ё', 'е')
-        .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+        _normalizePhotonSearchText((properties[key] ?? '').toString());
+    String normalize(String value) => _normalizePhotonSearchText(value);
     final normalizedNeedle = normalize(needle);
     final name = normalize(value('name'));
     final label = normalize([
@@ -3366,9 +3369,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
     }
     if (!_isLikelyCityQuery(trimmed)) {
-      final queryTokens = trimmed.toLowerCase()
-          .replaceAll('ё', 'е')
-          .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ')
+      final queryTokens = _normalizePhotonSearchText(trimmed)
           .split(RegExp(r'\s+'))
           .where((token) => token.length > 1 &&
               token != 'шымкент' && token != 'город' && token != 'г')
@@ -3378,7 +3379,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         final properties = raw is Map
             ? Map<String, dynamic>.from(raw)
             : <String, dynamic>{};
-        final searchable = [
+        final searchable = _normalizePhotonSearchText([
           properties['name'],
           properties['display_label'],
           properties['label'],
@@ -3389,11 +3390,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           properties['district'],
           properties['suburb'],
           properties['city'],
-        ].whereType<Object>().join(' ').toLowerCase()
-            .replaceAll('ё', 'е')
-            .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ')
-            .replaceAll(RegExp(r'\s+'), ' ')
-            .trim();
+        ].whereType<Object>().join(' '));
         return queryTokens.isNotEmpty &&
             queryTokens.every((token) => searchable.contains(token));
       });
@@ -4251,6 +4248,7 @@ _navigationMatchedLocation = null;
       _navigationActive = false;
       _routeActionDismissed = true;
       _routeReady = false;
+      _navigationAlternativesCleared = true;
       _selectedMapPointAddress = '';
       _routeProgressSegmentIndex = 0;
 _navigationMatchedLocation = null;
