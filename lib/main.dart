@@ -1271,7 +1271,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         RegExp(r'^как\\s+проехать(?:\\s+до)?\\s*'),
         RegExp(r'^доехать\\s+до\\s*'),
         RegExp(r'^маршрут(?:\\s+до)?\\s*'),
-        RegExp(r'^поехали\\s*'),
+        RegExp(r'^поехали\\s*(?:до\\s*)?'),
         RegExp(r'^найди\\s*'),
         RegExp(r'^айя[\\s,.:;-]*'),
       ];
@@ -9031,7 +9031,7 @@ _navigationMatchedLocation = null;
                 ),
               ),
             ),
-          if (_ayaPanelVisible || true) _buildAyaAssistant(),
+          _buildAyaAssistant(),
           if (!_navigationActive)
             Positioned(
               left: 12,
