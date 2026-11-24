@@ -21,7 +21,6 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 import 'kazakh_voice_service.dart';
 import 'services/road_alert_service.dart';
 import 'services/offline_address_search.dart';
@@ -924,16 +923,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   final FlutterTts _tts = FlutterTts();
   Future<void> _speechQueue = Future<void>.value();
-  final SpeechToText _ayaSpeech = SpeechToText();
-  late final AnimationController _ayaPulseController;
-  bool _ayaListening = false;
-  bool _ayaInitialized = false;
-  bool _ayaPanelVisible = false;
-  String _ayaRecognizedText = '';
-  String _ayaStatus = 'Нажмите микрофон и скажите адрес';
-  bool _ayaCommandInProgress = false;
-  bool _ayaFinalizing = false;
-  Timer? _ayaIdleTimer;
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
   List<RoadFeature> _roadFeatures = <RoadFeature>[];
@@ -1064,12 +1053,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   @override
   void initState() {
     super.initState();
-    _ayaPulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 850),
-      lowerBound: 0.94,
-      upperBound: 1.06,
-    );
     WidgetsBinding.instance.addObserver(this);
     // Start expensive work only after the root splash has painted its first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1160,425 +1143,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     unawaited(_locateMe());
   }
 
-  Future<void> _ayaSpeak(String text) => _speakText(text);
-
-  Future<void> _toggleAyaListening() async {
-    if (_ayaListening) {
-      _ayaIdleTimer?.cancel();
-      await _ayaSpeech.stop();
-      if (mounted) setState(() => _ayaListening = false);
-      _ayaPulseController.stop();
-      return;
-    }
-    _ayaIdleTimer?.cancel();
-    _ayaFinalizing = false;
-    if (mounted) {
-      setState(() {
-        _ayaPanelVisible = true;
-        _ayaRecognizedText = '';
-        _ayaStatus = 'Айя слушает...';
-      });
-    }
-    try {
-      if (!_ayaInitialized) {
-        _ayaInitialized = await _ayaSpeech.initialize(
-          onStatus: (status) {
-            if (!mounted) return;
-            final active = status == 'listening';
-            setState(() {
-              _ayaListening = active;
-              if ((status == 'done' || status == 'notListening') &&
-                  _ayaRecognizedText.trim().isNotEmpty &&
-                  !_ayaFinalizing) {
-                _ayaStatus = 'Обрабатываю команду...';
-              } else if (status == 'notListening' &&
-                  !_ayaCommandInProgress &&
-                  _ayaRecognizedText.trim().isEmpty) {
-                _ayaStatus = 'Нажмите микрофон, чтобы повторить';
-              }
-            });
-            if (active) {
-              if (!_ayaPulseController.isAnimating) {
-                _ayaPulseController.repeat(reverse: true);
-              }
-            } else {
-              _ayaPulseController.stop();
-              _ayaPulseController.value = 1;
-            }
-            if ((status == 'done' || status == 'notListening') &&
-                _ayaRecognizedText.trim().isNotEmpty &&
-                !_ayaFinalizing) {
-              unawaited(_finalizeAyaListening());
-            }
-          },
-          onError: (error) {
-            _ayaIdleTimer?.cancel();
-            if (!mounted) return;
-            setState(() {
-              _ayaListening = false;
-              _ayaStatus = 'Распознавание недоступно: ' + error.errorMsg;
-            });
-            _ayaPulseController.stop();
-            _ayaPulseController.value = 1;
-          },
-          debugLogging: false,
-        );
-      }
-      if (!_ayaInitialized) {
-        if (mounted) {
-          setState(() => _ayaStatus = 'На телефоне нет доступного распознавания речи');
-        }
-        return;
-      }
-      await _ayaSpeech.listen(
-        listenOptions: SpeechListenOptions(
-          localeId: _navigationLanguage.replaceAll('-', '_'),
-          partialResults: true,
-          cancelOnError: true,
-          listenMode: ListenMode.dictation,
-          pauseFor: const Duration(seconds: 2),
-          listenFor: const Duration(seconds: 10),
-        ),
-        onResult: (result) {
-          if (!mounted || _ayaFinalizing) return;
-          final recognized = result.recognizedWords.trim();
-          setState(() {
-            _ayaRecognizedText = result.recognizedWords;
-            _ayaStatus = result.finalResult ? 'Обрабатываю команду...' : 'Айя слушает...';
-          });
-          _ayaIdleTimer?.cancel();
-          if (recognized.isNotEmpty && !result.finalResult) {
-            _ayaIdleTimer = Timer(
-              const Duration(seconds: 2),
-              () => unawaited(_finalizeAyaListening()),
-            );
-          }
-          if (result.finalResult && recognized.isNotEmpty) {
-            unawaited(_finalizeAyaListening());
-          }
-        },
-      );
-      if (mounted) setState(() => _ayaListening = _ayaSpeech.isListening);
-    } catch (error) {
-      _ayaIdleTimer?.cancel();
-      if (mounted) {
-        setState(() {
-          _ayaListening = false;
-          _ayaStatus = 'Не удалось включить микрофон: ' + error.toString();
-        });
-      }
-    }
-  }
-
-  Future<void> _finalizeAyaListening() async {
-    if (_ayaFinalizing || _ayaCommandInProgress) return;
-    final command = _ayaRecognizedText.trim();
-    if (command.isEmpty) return;
-    _ayaFinalizing = true;
-    _ayaIdleTimer?.cancel();
-    try {
-      await _ayaSpeech.stop();
-    } catch (_) {
-      // A stopped or completed recognizer may reject a redundant stop call.
-    }
-    _ayaPulseController.stop();
-    _ayaPulseController.value = 1;
-    if (mounted) {
-      setState(() {
-        _ayaListening = false;
-        _ayaPanelVisible = true;
-        _ayaRecognizedText = command;
-        _ayaStatus = 'Обрабатываю команду...';
-      });
-    }
-    await _handleAyaCommand(command);
-    _ayaFinalizing = false;
-  }
-
-  Future<void> _cancelAyaListening() async {
-    _ayaIdleTimer?.cancel();
-    _ayaFinalizing = true;
-    _ayaPulseController.stop();
-    _ayaPulseController.value = 1;
-    if (mounted) {
-      setState(() {
-        _ayaListening = false;
-        _ayaPanelVisible = false;
-        _ayaRecognizedText = '';
-        _ayaStatus = '';
-        _mapPreviewPoint = null;
-        _mapPreviewAddress = 'Адрес определяется…';
-        _routeActionDismissed = true;
-      });
-    }
-    try {
-      await _ayaSpeech.stop();
-    } catch (_) {}
-    _ayaFinalizing = false;
-  }
-
-  Future<void> _dismissAyaPreviewUi() async {
-    _ayaIdleTimer?.cancel();
-    _ayaFinalizing = true;
-    _ayaPulseController.stop();
-    _ayaPulseController.value = 1;
-    if (mounted) {
-      setState(() {
-        _ayaListening = false;
-        _ayaPanelVisible = false;
-        _ayaRecognizedText = '';
-        _ayaStatus = '';
-        _mapPreviewPoint = null;
-        _mapPreviewAddress = 'Адрес определяется…';
-        _routeActionDismissed = true;
-      });
-    }
-    try {
-      await _ayaSpeech.stop();
-    } catch (_) {}
-    _ayaFinalizing = false;
+  void _dismissMapPointPreview() {
+    if (!mounted) return;
+    setState(() {
+      _mapPreviewPoint = null;
+      _mapPreviewAddress = 'Адрес определяется…';
+      _routeActionDismissed = true;
+    });
   }
 
   Future<void> _startNavigationFromPreview() async {
-    await _dismissAyaPreviewUi();
+    _dismissMapPointPreview();
     if (!mounted) return;
     await _startNavigation();
-    if (mounted && _navigationActive) {
-      await _ayaSpeak('Поехали!');
-    }
-  }
-
-  Future<void> _handleAyaCommand(String rawCommand) async {
-    if (_ayaCommandInProgress) return;
-    _ayaCommandInProgress = true;
-    final normalized = rawCommand.toLowerCase().replaceAll('ё', 'е')
-        .replaceAll(RegExp(r'[.!?,;:]+$'), '').trim();
-    try {
-      final isCancelCommand = _navigationLanguage == 'kk-KZ'
-          ? normalized.startsWith('бағытты өшір')
-          : _navigationLanguage == 'en-US'
-              ? normalized.startsWith('cancel route')
-              : RegExp(r'^(сбрось маршрут|отмени маршрут|отмена|завершить)(?:\s|$)').hasMatch(normalized);
-      final isStartCommand = normalized == 'поехали' ||
-          normalized == 'поехать' ||
-          normalized == 'жолға шығу' ||
-          normalized == 'go';
-      if (isStartCommand && _routeReady && _routePoints.length >= 2 &&
-          _destination != null) {
-        await _startNavigationFromPreview();
-        return;
-      }
-
-      if (isCancelCommand) {
-        if (_navigationActive) {
-          await _finishNavigation();
-        } else {
-          await _resetRoutePreview();
-        }
-        await _ayaSpeak(_localized('Маршрут отменён', 'Бағыт тоқтатылды', 'Route cancelled'));
-        if (mounted) setState(() => _ayaStatus = 'Маршрут отменён');
-        return;
-      }
-
-      final asksRemaining = _navigationLanguage == 'kk-KZ'
-          ? normalized.contains('қанша қалды')
-          : _navigationLanguage == 'en-US'
-              ? normalized.contains('how much left')
-              : normalized.contains('сколько осталось');
-      if (asksRemaining) {
-        if (!_navigationActive || _destination == null ||
-            _routeDistanceMeters == null || _routeDurationSeconds == null) {
-          await _ayaSpeak(_localized('Активного маршрута нет', 'Белсенді бағыт жоқ', 'There is no active route'));
-          if (mounted) setState(() => _ayaStatus = 'Активного маршрута нет');
-          return;
-        }
-        final totalMeters = _routeDistanceMeters!;
-        final remainingMeters = math.max(
-          0.0,
-          totalMeters - _navigationProgressMeters,
-        ).toDouble();
-        final ratio = totalMeters <= 0 ? 0.0 : (remainingMeters / totalMeters).clamp(0.0, 1.0);
-        final remainingMinutes = ( _routeDurationSeconds! * ratio / 60).ceil();
-        final distanceText = remainingMeters >= 1000
-            ? '${(remainingMeters / 1000).toStringAsFixed(1)} километра'
-            : '${remainingMeters.round()} метров';
-        final timeText = remainingMinutes >= 60
-            ? '${remainingMinutes ~/ 60} часов ${remainingMinutes % 60} минут'
-            : '${remainingMinutes} минут';
-        await _ayaSpeak(_localized('До точки назначения осталось $distanceText, примерно $timeText.', 'Межелі жерге дейін $distanceText қалды, шамамен $timeText.', '$distanceText remaining to your destination, about $timeText.'));
-        if (mounted) setState(() => _ayaStatus = 'Осталось $distanceText · $timeText');
-        return;
-      }
-
-      final isGreeting = _navigationLanguage == 'kk-KZ'
-          ? normalized == 'айя' || normalized == 'а я' || normalized == 'ая' || normalized == 'сәлем' || normalized == 'сәлем айя'
-          : _navigationLanguage == 'en-US'
-              ? normalized == 'aya' || normalized == 'hello' || normalized == 'hello aya'
-              : normalized == 'айя' || normalized == 'а я' || normalized == 'ая' || normalized == 'привет' || normalized == 'айя привет' || normalized == 'привет айя';
-      if (isGreeting) {
-        await _ayaSpeak(_localized('Слушаю вас, куда поедем?', 'Тыңдап тұрмын, қайда барамыз?', 'I am listening. Where would you like to go?'));
-        if (mounted) setState(() => _ayaStatus = 'Слушаю вас');
-        return;
-      }
-
-      var destinationQuery = normalized;
-      final serviceWords = RegExp(
-        r'^(?:(?:а\s*я|айя|ая|поехали|маршрут|найди|доехать\s+до|построй\s+маршрут|до)[\s,.:;!?-]*)+|(?:[\s,.:;!?-]*(?:а\s*я|айя|ая|поехали|маршрут|найди|доехать\s+до|построй\s+маршрут|до))+$',
-        caseSensitive: false,
-      );
-      String previous;
-      do {
-        previous = destinationQuery;
-        destinationQuery = destinationQuery.replaceAll(serviceWords, '').trim();
-      } while (destinationQuery != previous);
-      destinationQuery = destinationQuery
-          .replaceAll(RegExp(r'^[,.:;!?\s-]+|[,.:;!?\s-]+$'), '')
-          .trim();
-      if (destinationQuery.isEmpty) {
-        await _ayaSpeak(_localized('Слушаю вас, куда поедем?', 'Тыңдап тұрмын, қайда барамыз?', 'I am listening. Where would you like to go?'));
-        return;
-      }
-
-      if (mounted) {
-        setState(() {
-          _ayaStatus = 'Ищу: ' + destinationQuery;
-          _isSearching = true;
-        });
-      }
-      final anchor = _currentLocation ?? _shymkent;
-      final results = await _fetchAddressFeatures(
-        destinationQuery,
-        near: anchor,
-      );
-      final shymkentResults = results
-          .where(_isInsideShymkentBounds)
-          .toList(growable: true);
-      _sortSearchFeatures(shymkentResults, destinationQuery);
-      if (!mounted) return;
-      if (shymkentResults.isEmpty) {
-        await _ayaSpeak(_localized('Адрес не найден, повторите ещё раз', 'Мекенжай табылмады, қайталап айтыңыз', 'Address not found. Please try again'));
-        if (mounted) setState(() => _ayaStatus = 'Адрес не найден');
-        return;
-      }
-
-      final selected = shymkentResults.first;
-      final geometry = selected['geometry'];
-      final coordinates = geometry is Map ? geometry['coordinates'] : null;
-      if (coordinates is! List || coordinates.length < 2) {
-        await _ayaSpeak(_localized('Адрес не найден, повторите ещё раз', 'Мекенжай табылмады, қайталап айтыңыз', 'Address not found. Please try again'));
-        return;
-      }
-      final lon = double.tryParse(coordinates[0].toString());
-      final lat = double.tryParse(coordinates[1].toString());
-      if (lat == null || lon == null) {
-        await _ayaSpeak('Адрес не найден, повторите ещё раз');
-        return;
-      }
-      final point = LatLng(lat, lon);
-      final destinationName = _photonDestinationAddress(selected);
-      final displayName = destinationName.isEmpty ? destinationQuery : destinationName;
-      setState(() {
-        _mapPreviewPoint = point;
-        _mapPreviewAddress = displayName;
-        _ayaPanelVisible = true;
-        _ayaStatus = 'Строю маршрут до $displayName...';
-      });
-      _selectDestination(point);
-      _moveMapCamera(point, 16);
-      setState(() {
-        _selectedMapPointAddress = displayName;
-        _message = _selectedMapPointAddress;
-        _ayaStatus = 'Строю маршрут до ' + _selectedMapPointAddress + '...';
-      });
-      await _buildRoute();
-      if (!mounted) return;
-      if (_routeReady && _routePoints.length >= 2) {
-        final routeName = destinationName.isEmpty ? destinationQuery : destinationName;
-        await _ayaSpeak(_localized('Маршрут построен до $routeName', '$routeName бағыты құрылды', 'Route built to $routeName'));
-        if (mounted) {
-          setState(() {
-            _ayaPanelVisible = false;
-            _ayaRecognizedText = '';
-            _ayaStatus = '';
-          });
-        }
-      } else {
-        await _ayaSpeak(_localized('Не удалось построить маршрут, повторите ещё раз', 'Бағыт құру мүмкін болмады, қайталап көріңіз', 'Could not build the route. Please try again'));
-        if (mounted) {
-          setState(() {
-            _ayaPanelVisible = false;
-            _ayaRecognizedText = '';
-            _ayaStatus = '';
-          });
-        }
-      }
-    } catch (error) {
-      debugPrint('BAKE Aya command failed: ' + error.toString());
-      if (mounted) setState(() => _ayaStatus = 'Ошибка команды: ' + error.toString());
-    } finally {
-      _ayaCommandInProgress = false;
-      if (mounted) {
-        setState(() {
-          _isSearching = false;
-          _ayaPanelVisible = false;
-          _ayaRecognizedText = '';
-          _ayaStatus = '';
-        });
-      }
-    }
-  }
-
-  Widget _buildAyaAssistant() {
-    if (_ayaPanelVisible || _mapPreviewPoint != null ||
-        (_routeReady && !_navigationActive && !_routeActionDismissed)) {
-      return const SizedBox.shrink();
-    }
-    return Positioned(
-      left: 16,
-      bottom: 150,
-      child: SafeArea(
-        top: false,
-        child: AnimatedBuilder(
-          animation: _ayaPulseController,
-          builder: (context, child) => Transform.scale(
-            scale: _ayaListening ? _ayaPulseController.value : 1,
-            child: child,
-          ),
-          child: Material(
-            color: const Color(0xFF071326),
-            elevation: 8,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: _toggleAyaListening,
-              child: Container(
-                width: 66,
-                height: 66,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF35E2D7), width: 2),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0x6635E2D7), blurRadius: 15, spreadRadius: 1),
-                  ],
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      _ayaListening ? Icons.mic : Icons.mic_none,
-                      color: const Color(0xFF35E2D7),
-                      size: 25,
-                    ),
-                    const SizedBox(height: 1),
-                    const Text('Айя', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   Future<void> _loadBundledRoadAlerts() async {
@@ -1786,8 +1363,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   Future<void> _speakText(String text) {
     if (_voiceMode == 0 || text.trim().isEmpty) return Future<void>.value();
 
-    // All spoken output (navigation and Aya) goes through one serialized
-    // Android TTS queue. Await completion prevents utterances from overlapping.
+    // Navigation prompts use the standard Android TTS queue.
     final completion = Completer<void>();
     _speechQueue = _speechQueue.catchError((Object _) {}).then((_) async {
       try {
@@ -1795,9 +1371,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         await _tts.setLanguage('ru-RU');
         await _tts.setSpeechRate(0.5);
         await _tts.setPitch(1.0);
-        try {
-          await _ayaSpeech.stop();
-        } catch (_) {}
         await Future.delayed(const Duration(milliseconds: 250));
         await _tts.speak(text);
       } catch (error) {
@@ -2049,7 +1622,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _ayaIdleTimer?.cancel();
     _roadReportRetryTimer?.cancel();
     unawaited(_stopLiveLocationUpdates(reason: 'widget_disposed'));
     _headingUpResumeTimer?.cancel();
@@ -2057,8 +1629,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _disposeOfflineMap();
     _searchController.dispose();
     _searchFocusNode.dispose();
-    _ayaPulseController.dispose();
-    _ayaSpeech.stop();
     _tts.stop();
     unawaited(_kazakhVoiceService.dispose());
     _roadAlertService.dispose();
@@ -4687,16 +4257,9 @@ _navigationMatchedLocation = null;
 
   Future<void> _resetRoutePreview() async {
     if (!mounted) return;
-    _ayaIdleTimer?.cancel();
-    _ayaPulseController.stop();
-    _ayaPulseController.value = 1;
     setState(() {
       _routeReady = false;
       _routeActionDismissed = true;
-      _ayaListening = false;
-      _ayaPanelVisible = false;
-      _ayaRecognizedText = '';
-      _ayaStatus = '';
       _mapPreviewPoint = null;
       _mapPreviewAddress = 'Адрес определяется…';
       _selectedMapPointAddress = '';
@@ -4717,10 +4280,6 @@ _navigationMatchedLocation = null;
       _message = '';
       _searchController.clear();
     });
-    try {
-      await _ayaSpeech.stop();
-    } catch (_) {}
-    _ayaFinalizing = false;
     await _tts.stop();
     await _kazakhVoiceService.stop();
     await _removeSavedRoutePoint(_savedRouteDestinationKey);
@@ -7394,7 +6953,7 @@ _navigationMatchedLocation = null;
     if (_routeReady) {
       unawaited(_resetRoutePreview());
     } else {
-      unawaited(_dismissAyaPreviewUi());
+      _dismissMapPointPreview();
     }
   }
 
@@ -9119,7 +8678,6 @@ _navigationMatchedLocation = null;
               ],
             ),
             ),
-          _buildAyaAssistant(),
           Positioned(
             // Place the route action beside, not underneath, the zoom/compass
             // column. Keep it aligned with that column as its bottom changes.
@@ -9659,7 +9217,7 @@ _navigationMatchedLocation = null;
                 ),
               ),
             ),
-          if (_mapPreviewPoint != null || _ayaPanelVisible)
+          if (_mapPreviewPoint != null)
             Positioned(
               left: 12,
               right: 12,
@@ -9676,51 +9234,6 @@ _navigationMatchedLocation = null;
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        if (_ayaPanelVisible)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              children: [
-                                AnimatedBuilder(
-                                  animation: _ayaPulseController,
-                                  builder: (context, child) => Opacity(
-                                    opacity: _ayaListening
-                                        ? 0.55 + (_ayaPulseController.value * 0.45)
-                                        : 1,
-                                    child: child,
-                                  ),
-                                  child: const Icon(
-                                    Icons.mic,
-                                    color: Color(0xFF169B55),
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _ayaRecognizedText.trim().isEmpty
-                                        ? _ayaStatus
-                                        : _ayaRecognizedText,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF30343A),
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: 'Отмена',
-                                  visualDensity: VisualDensity.compact,
-                                  constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-                                  padding: EdgeInsets.zero,
-                                  onPressed: _cancelAyaListening,
-                                  icon: const Icon(Icons.close, size: 21),
-                                ),
-                              ],
-                            ),
-                          ),
                         if (_mapPreviewPoint != null)
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
