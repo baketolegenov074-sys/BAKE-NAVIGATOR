@@ -1010,6 +1010,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _isLocating = false;
   bool _gpsAvailable = false;
   bool _isSearching = false;
+  bool _peliasTestMode = false;
+  String _peliasApiBaseUrl = '';
   bool _isBuildingRoute = false;
   int _voiceMode = 3;
   double? _gpsHeadingDegrees;
@@ -1043,6 +1045,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _loadSavedOfflineMap();
     _loadSavedRoutePoints();
     unawaited(_loadTrafficLayerPreference());
+    unawaited(_loadPeliasSettings());
     // Ask for location after the first frame so the permission dialog has a valid context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1141,6 +1144,126 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       debugPrint('BAKE traffic layer preference load failed: $error');
     }
   }
+  Future<void> _loadPeliasSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final endpoint = (prefs.getString('pelias_api_base_url') ?? '').trim();
+      final enabled = prefs.getBool('pelias_test_mode') ?? false;
+      if (!mounted) return;
+      setState(() {
+        _peliasApiBaseUrl = endpoint;
+        _peliasTestMode = enabled && endpoint.isNotEmpty;
+      });
+    } catch (error) {
+      debugPrint('BAKE Pelias settings load failed: $error');
+    }
+  }
+
+  Future<bool> _configurePeliasEndpoint() async {
+    final controller = TextEditingController(text: _peliasApiBaseUrl);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Сервер Pelias'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.url,
+          autocorrect: false,
+          decoration: const InputDecoration(
+            labelText: 'Адрес сервера',
+            hintText: 'https://адрес-сервера',
+            helperText: 'Укажите корневой URL своего Pelias API',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null || value.isEmpty || !mounted) return false;
+    final uri = Uri.tryParse(value);
+    if (uri == null || !uri.hasAuthority ||
+        (uri.scheme != 'https' && uri.scheme != 'http') ||
+        uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment) {
+      setState(() => _message = 'Неверный адрес Pelias API.');
+      return false;
+    }
+    final cleanUrl = uri.replace(
+      path: uri.path.replaceFirst(RegExp(r'/+$'), ''),
+    ).toString();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('pelias_api_base_url', cleanUrl);
+    if (!mounted) return false;
+    setState(() => _peliasApiBaseUrl = cleanUrl);
+    return true;
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPeliasFeatures(
+    String query, {
+    required bool autocomplete,
+    LatLng? near,
+  }) async {
+    final baseUrl = _peliasApiBaseUrl.trim();
+    if (baseUrl.isEmpty) {
+      throw StateError('Pelias API endpoint is not configured.');
+    }
+    final base = Uri.tryParse(baseUrl);
+    if (base == null || !base.hasAuthority ||
+        (base.scheme != 'https' && base.scheme != 'http')) {
+      throw StateError('Pelias API endpoint is invalid.');
+    }
+    final focus = near ?? _currentLocation ?? _shymkent;
+    final path = base.path.replaceFirst(RegExp(r'/+$'), '');
+    final endpoint = base.replace(
+      path: '$path/v1/${autocomplete ? 'autocomplete' : 'search'}',
+      queryParameters: <String, String>{
+        'text': query.trim(),
+        'size': autocomplete ? '12' : '30',
+        'boundary.country': 'KZ',
+        'lang': 'ru',
+        'focus.point.lat': focus.latitude.toString(),
+        'focus.point.lon': focus.longitude.toString(),
+      },
+    );
+    final response = await http.get(endpoint, headers: const {
+      'User-Agent': 'BAKE-Navigator/1.0 (Pelias test mode)',
+      'Accept': 'application/geo+json, application/json',
+    }).timeout(Duration(seconds: autocomplete ? 3 : 8));
+    if (response.statusCode != 200) {
+      throw HttpException('Pelias HTTP ${response.statusCode}', uri: endpoint);
+    }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    final rawFeatures = decoded is Map ? decoded['features'] : null;
+    if (rawFeatures is! List) return <Map<String, dynamic>>[];
+    return rawFeatures.whereType<Map>().map((raw) {
+      final feature = Map<String, dynamic>.from(raw);
+      final rawProperties = feature['properties'];
+      final properties = rawProperties is Map
+          ? Map<String, dynamic>.from(rawProperties)
+          : <String, dynamic>{};
+      final label = (properties['label'] ?? properties['name'] ?? '').toString().trim();
+      properties['display_label'] = label;
+      properties['district'] ??= properties['neighbourhood'] ?? properties['borough'];
+      properties['city'] ??= properties['locality'] ?? properties['localadmin'];
+      properties['source'] = 'pelias';
+      feature['properties'] = properties;
+      return feature;
+    }).where((feature) {
+      final geometry = feature['geometry'];
+      final coordinates = geometry is Map ? geometry['coordinates'] : null;
+      return coordinates is List && coordinates.length >= 2 &&
+          coordinates[0] is num && coordinates[1] is num;
+    }).toList(growable: false);
+  }
+
   Future<void> _loadSavedRoutePoints() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -3277,6 +3400,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return merged.take(150).toList();
   }
   Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true, bool includeExpandedPhotonQueries = true}) async {
+    if (_peliasTestMode) {
+      try {
+        // Isolated test: do not mix Photon, Nominatim, local index,
+        // saved places, or road reports into Pelias results.
+        final peliasResults = await _fetchPeliasFeatures(
+          query,
+          autocomplete: false,
+          near: near,
+        );
+        _sortSearchFeatures(peliasResults, query);
+        return peliasResults;
+      } catch (error) {
+        debugPrint('BAKE Pelias full search failed: $error');
+        return <Map<String, dynamic>>[];
+      }
+    }
     final needle = query.trim().toLowerCase();
     final reportFeatures = <Map<String, dynamic>>[];
     final seenReports = <String>{};
@@ -5714,9 +5853,84 @@ _navigationMatchedLocation = null;
               children: [
                 StatefulBuilder(
                   builder: (searchContext, refreshSearch) {
+                    Future<void> loadPeliasSuggestions(String query, int version) async {
+                      try {
+                        final found = await _fetchPeliasFeatures(
+                          query,
+                          autocomplete: true,
+                        );
+                        if (!searchContext.mounted || version != photonRequestVersion) return;
+                        _sortSearchFeatures(found, query);
+                        refreshSearch(() {
+                          photonSuggestions = found;
+                          photonLoadingSuggestions = false;
+                        });
+                      } catch (error) {
+                        debugPrint('BAKE Pelias autocomplete failed: $error');
+                        if (searchContext.mounted && version == photonRequestVersion) {
+                          refreshSearch(() => photonLoadingSuggestions = false);
+                        }
+                      }
+                    }
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SegmentedButton<bool>(
+                                showSelectedIcon: false,
+                                segments: const [
+                                  ButtonSegment<bool>(
+                                    value: false,
+                                    icon: Icon(Icons.bolt_outlined),
+                                    label: Text('Photon'),
+                                  ),
+                                  ButtonSegment<bool>(
+                                    value: true,
+                                    icon: Icon(Icons.science_outlined),
+                                    label: Text('Тест Pelias'),
+                                  ),
+                                ],
+                                selected: <bool>{_peliasTestMode},
+                                onSelectionChanged: (selection) async {
+                                  final enablePelias = selection.first;
+                                  if (enablePelias && _peliasApiBaseUrl.isEmpty) {
+                                    final configured = await _configurePeliasEndpoint();
+                                    if (!configured) return;
+                                  }
+                                  final prefs = await SharedPreferences.getInstance();
+                                  await prefs.setBool('pelias_test_mode', enablePelias);
+                                  if (!mounted || !searchContext.mounted) return;
+                                  setState(() => _peliasTestMode = enablePelias);
+                                  refreshSearch(() {
+                                    photonSuggestions = <Map<String, dynamic>>[];
+                                    photonLoadingSuggestions = false;
+                                  });
+                                },
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Адрес сервера Pelias',
+                              onPressed: () async {
+                                await _configurePeliasEndpoint();
+                                refreshSearch(() {
+                                  photonSuggestions = <Map<String, dynamic>>[];
+                                  photonLoadingSuggestions = false;
+                                });
+                              },
+                              icon: const Icon(Icons.settings_outlined),
+                            ),
+                          ],
+                        ),
+                        if (_peliasTestMode)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 8),
+                            child: Text(
+                              'Изолированный тест: запросы идут только в Pelias. Нужен работающий сервер.',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF687786)),
+                            ),
+                          ),
                         VoiceTextField(
                           controller: _searchController,
                           autofocus: true,
@@ -5786,8 +6000,12 @@ _navigationMatchedLocation = null;
                                 photonRequestRunning = false;
                               }
                             }
-                            photonDebounce = Timer(const Duration(milliseconds: 350), () {
-                              unawaited(loadLatestPhotonSuggestions(value, requestVersion));
+                            photonDebounce = Timer(const Duration(milliseconds: 300), () {
+                              if (_peliasTestMode) {
+                                unawaited(loadPeliasSuggestions(value, requestVersion));
+                              } else {
+                                unawaited(loadLatestPhotonSuggestions(value, requestVersion));
+                              }
                             });
                           },
                           onSubmitted: (_) {
