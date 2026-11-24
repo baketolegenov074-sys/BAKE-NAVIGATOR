@@ -6426,7 +6426,9 @@ _navigationMatchedLocation = null;
   bool _alternativeTapInProgress = false;
 
   bool _trySelectAlternativeAt(LatLng point) {
-    if (_lastMapPointerHoldDuration >= const Duration(seconds: 1)) return false;
+    // MapOptions.onTap is a tap-recognizer callback; long presses are
+    // handled separately by onLongPress. Do not gate this callback using
+    // the Listener's last pointer-up duration, which can be stale.
     if (!_routeReady || _routeAlternatives.length < 2) return false;
 
     final hitTestRoutes = _cachedAlternativeHitTestPoints();
