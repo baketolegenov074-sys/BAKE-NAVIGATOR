@@ -5652,6 +5652,8 @@ _navigationMatchedLocation = null;
       {'name': 'Магазины', 'query': 'магазин', 'icon': Icons.store},
       {'name': 'Гостиницы', 'query': 'гостиница', 'icon': Icons.hotel},
       {'name': 'Аптеки', 'query': 'аптека', 'icon': Icons.local_pharmacy},
+      {'name': 'Парковки', 'query': 'парковка', 'icon': Icons.local_parking},
+      {'name': 'Больницы', 'query': 'больница', 'icon': Icons.local_hospital},
       {'name': 'Ещё', 'query': '', 'icon': Icons.apps},
     ];
 
@@ -5895,8 +5897,14 @@ _navigationMatchedLocation = null;
       {'name': 'Банкоматы', 'query': 'банкомат', 'icon': Icons.atm},
       {'name': 'Автомойки', 'query': 'автомойка', 'icon': Icons.local_car_wash},
       {'name': 'Автосервисы', 'query': 'автосервис', 'icon': Icons.car_repair},
-      {'name': 'Больницы', 'query': 'больница', 'icon': Icons.local_hospital},
+      {'name': 'Школы', 'query': 'школа', 'icon': Icons.school},
+      {'name': 'Остановки', 'query': 'автобусная остановка', 'icon': Icons.directions_bus},
+      {'name': 'Полиция', 'query': 'полиция', 'icon': Icons.local_police},
+      {'name': 'Парки', 'query': 'парк', 'icon': Icons.park},
+      {'name': 'Торговые центры', 'query': 'торговый центр', 'icon': Icons.shopping_bag},
+      {'name': 'Пункты выдачи', 'query': 'пункт выдачи заказов', 'icon': Icons.inventory_2},
       {'name': 'Кинотеатры', 'query': 'кинотеатр', 'icon': Icons.movie},
+      {'name': 'Почта', 'query': 'почтовое отделение', 'icon': Icons.local_post_office},
     ];
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
