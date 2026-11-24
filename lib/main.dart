@@ -1247,7 +1247,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _ayaCommandInProgress = true;
     final normalized = rawCommand.toLowerCase().replaceAll('ё', 'е').trim();
     try {
-      if (RegExp(r'^(сбрось маршрут|отмени маршрут|отмена|завершить)(?:\\b|$)')
+      if (RegExp(r'^(сбрось маршрут|отмени маршрут|отмена|завершить)(?:\b|$)')
           .hasMatch(normalized)) {
         if (_navigationActive) {
           await _finishNavigation();
@@ -1268,12 +1268,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
       var destinationQuery = normalized;
       final prefixes = <RegExp>[
-        RegExp(r'^как\\s+проехать(?:\\s+до)?\\s*'),
-        RegExp(r'^доехать\\s+до\\s*'),
-        RegExp(r'^маршрут(?:\\s+до)?\\s*'),
-        RegExp(r'^поехали\\s*(?:до\\s*)?'),
-        RegExp(r'^найди\\s*'),
-        RegExp(r'^айя[\\s,.:;-]*'),
+        RegExp(r'^как\s+проехать(?:\s+до)?\s*'),
+        RegExp(r'^доехать\s+до\s*'),
+        RegExp(r'^маршрут(?:\s+до)?\s*'),
+        RegExp(r'^поехали\s*(?:до\s*)?'),
+        RegExp(r'^найди\s*'),
+        RegExp(r'^айя[\s,.:;-]*'),
       ];
       var removedPrefix = false;
       var changed = true;
@@ -1290,7 +1290,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         }
       }
       if (!removedPrefix) return;
-      destinationQuery = destinationQuery.replaceAll(RegExp(r'^[,.:;\\s]+|[,.:;\\s]+
+      destinationQuery = destinationQuery.replaceAll(RegExp(r'^[,.:;\s]+|[,.:;\s]+
     final bundled = <RoadAlert>[];
     // Restore the full Kazakhstan database first. The APK workflow downloads
     // this CSV before packaging, so it is available offline after installation.
