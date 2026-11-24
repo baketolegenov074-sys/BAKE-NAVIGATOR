@@ -3378,7 +3378,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           query,
           includeCitySearch: true,
           includeNominatimCitySearch: includeNominatimCitySearch,
-        ).timeout(const Duration(seconds: 8));
+        ).timeout(const Duration(seconds: 18));
         final merged = <Map<String, dynamic>>[];
         final seen = <String>{};
         // Keep exact city matches ahead of the Shymkent local index so a
@@ -3417,7 +3417,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         otherResults = await _fetchPhotonFeatures(
           query,
           includeNominatimCitySearch: includeNominatimCitySearch,
-        ).timeout(const Duration(seconds: 8));
+        ).timeout(const Duration(seconds: 18));
       } catch (error) {
         debugPrint('BAKE Photon address search unavailable: $error');
         otherResults = <Map<String, dynamic>>[];
