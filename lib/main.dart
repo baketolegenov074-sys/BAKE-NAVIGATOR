@@ -8216,7 +8216,6 @@ _navigationMatchedLocation = null;
                     minZoom: 5,
                     maxZoom: 22,
                     maxNativeZoom: 22,
-                    tileDimension: 256,
                     keepBuffer: 2,
                     panBuffer: 0,
                   ),
@@ -8239,7 +8238,7 @@ _navigationMatchedLocation = null;
                     ],
                   ),
                 MarkerLayer(markers: markers),
-                const RichAttributionWidget(
+                RichAttributionWidget(
                   attributions: [
                     TextSourceAttribution('© OpenStreetMap contributors'),
                     if (!_isOfflineMapActive &&
