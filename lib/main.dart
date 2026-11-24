@@ -1102,7 +1102,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     unawaited(_loadFlutterMapOnlineStyle());
     unawaited(_loadGpsDiagnosticsSetting());
     unawaited(_loadBundledRoadAlerts());
-    unawaited(_loadSavedOfflineMap());
     unawaited(_loadSavedRoutePoints());
     unawaited(_loadTrafficLayerPreference());
     unawaited(_loadNominatimTestMode());
@@ -1146,8 +1145,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
     }());
 
+    // Defer disk-heavy MBTiles discovery and Valhalla graph preparation until
+    // the map has been visible for one second.
+    unawaited(Future<void>(() async {
+      await Future.delayed(const Duration(seconds: 1));
+      if (!mounted) return;
+      unawaited(_loadSavedOfflineMap());
+      unawaited(_ensureValhallaReady());
+    }()));
+
     // One-time startup checks; never repeated on AppLifecycleState.resumed.
-    unawaited(_ensureValhallaReady());
     unawaited(_locateMe());
   }
 
@@ -9886,49 +9893,21 @@ class _BakeStartupGate extends StatefulWidget {
 }
 
 class _BakeStartupGateState extends State<_BakeStartupGate> {
-  // Do not build the map before the splash has been painted and held.
-  // NavigatorScreen's first build can be expensive on slower devices.
   bool _showNavigator = false;
-  bool _showSplash = true;
   bool _keepSplash = true;
-  Timer? _startupTimer;
-  Timer? _fadeTimer;
-  Timer? _removeTimer;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-
-      // The first Flutter frame contains only the lightweight splash.
-      // Keep it visible for at least 1.7 seconds before creating the map.
-      _startupTimer = Timer(const Duration(milliseconds: 1700), () {
-        if (!mounted) return;
-        setState(() => _showNavigator = true);
-
-        // Wait until NavigatorScreen has completed its first frame before
-        // fading the splash, so a slow map build cannot hide the splash.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          _fadeTimer = Timer(const Duration(milliseconds: 100), () {
-            if (!mounted) return;
-            setState(() => _showSplash = false);
-            _removeTimer = Timer(const Duration(milliseconds: 350), () {
-              if (mounted) setState(() => _keepSplash = false);
-            });
-          });
-        });
+      await Future.delayed(const Duration(milliseconds: 1500));
+      if (!mounted) return;
+      setState(() {
+        _showNavigator = true;
+        _keepSplash = false;
       });
     });
-  }
-
-  @override
-  void dispose() {
-    _startupTimer?.cancel();
-    _fadeTimer?.cancel();
-    _removeTimer?.cancel();
-    super.dispose();
   }
 
   @override
@@ -9938,15 +9917,8 @@ class _BakeStartupGateState extends State<_BakeStartupGate> {
       children: [
         if (_showNavigator) const NavigatorScreen(),
         if (_keepSplash)
-          Positioned.fill(
-            child: AnimatedOpacity(
-              opacity: _showSplash ? 1 : 0,
-              duration: const Duration(milliseconds: 350),
-              child: IgnorePointer(
-                ignoring: !_showSplash,
-                child: const _BakeStartupSplash(),
-              ),
-            ),
+          const Positioned.fill(
+            child: _BakeStartupSplash(),
           ),
       ],
     );
