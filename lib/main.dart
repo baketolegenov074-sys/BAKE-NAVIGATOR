@@ -1369,7 +1369,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
       var destinationQuery = normalized;
       final serviceWords = RegExp(
-        r'^(?:(?:а\s*я|айя|ая|поехали|маршрут|найди|доехать\s+до|построй\s+маршрут)[\s,.:;!?-]*)+|(?:[\s,.:;!?-]*(?:а\s*я|айя|ая|поехали|маршрут|найди|доехать\s+до|построй\s+маршрут))+$',
+        r'^(?:(?:а\s*я|айя|ая|поехали|маршрут|найди|доехать\s+до|построй\s+маршрут|до)[\s,.:;!?-]*)+|(?:[\s,.:;!?-]*(?:а\s*я|айя|ая|поехали|маршрут|найди|доехать\s+до|построй\s+маршрут|до))+$',
         caseSensitive: false,
       );
       String previous;
@@ -1435,8 +1435,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       if (!mounted) return;
       if (_routeReady && _routePoints.length >= 2) {
         final routeName = destinationName.isEmpty ? destinationQuery : destinationName;
-        final routeKm = (_routeDistanceMeters ?? 0) / 1000;
-        final routeMinutes = ((_routeDurationSeconds ?? 0) / 60).ceil();
         await _ayaSpeak(_localized('Маршрут построен до $routeName', '$routeName бағыты құрылды', 'Route built to $routeName'));
         if (mounted) setState(() => _ayaStatus = 'Маршрут построен');
       } else {
@@ -2021,6 +2019,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _ayaIdleTimer?.cancel();
     _roadReportRetryTimer?.cancel();
     unawaited(_stopLiveLocationUpdates(reason: 'widget_disposed'));
     _headingUpResumeTimer?.cancel();
