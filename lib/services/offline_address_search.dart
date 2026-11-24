@@ -246,6 +246,36 @@ class OfflineAddressSearch {
     ].take(limit).toList(growable: false);
   }
 
+  bool _matchesSearchToken(String queryToken, Iterable<String> candidates) {
+    for (final candidate in candidates) {
+      if (candidate == queryToken) return true;
+      if (RegExp(r'^\d').hasMatch(queryToken)) continue;
+      if (queryToken.length >= 3 && candidate.startsWith(queryToken)) return true;
+      final limit = queryToken.length >= 9 ? 2 : queryToken.length >= 5 ? 1 : 0;
+      if (limit == 0 || (candidate.length - queryToken.length).abs() > limit) continue;
+      if (_editDistanceAtMost(queryToken, candidate, limit) <= limit) return true;
+    }
+    return false;
+  }
+
+  int _editDistanceAtMost(String a, String b, int limit) {
+    if ((a.length - b.length).abs() > limit) return limit + 1;
+    var previous = List<int>.generate(b.length + 1, (index) => index);
+    for (var i = 1; i <= a.length; i++) {
+      final current = List<int>.filled(b.length + 1, limit + 1);
+      current[0] = i;
+      var rowMinimum = current[0];
+      for (var j = 1; j <= b.length; j++) {
+        final substitution = previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1);
+        current[j] = math.min(math.min(previous[j] + 1, current[j - 1] + 1), substitution);
+        if (current[j] < rowMinimum) rowMinimum = current[j];
+      }
+      if (rowMinimum > limit) return limit + 1;
+      previous = current;
+    }
+    return previous[b.length];
+  }
+
   List<Map<String, dynamic>> _searchDirectory(
     String originalQuery,
     String normalizedQuery, {
@@ -276,13 +306,12 @@ class OfflineAddressSearch {
         } else {
           final queryWords = normalizedQuery.split(' ');
           final aliasWords = foldedAlias.split(' ');
-          final allWordsFound = queryWords.every(
-            (word) => aliasWords.any(
-              (candidate) => candidate == word ||
-                  (word.length >= 4 && candidate.startsWith(word)),
-            ),
-          );
-          if (allWordsFound && bestScore < 65) bestScore = 65;
+          final allWordsFound = queryWords.every((word) => _matchesSearchToken(word, aliasWords));
+          if (allWordsFound) {
+            final exactWords = queryWords.every(aliasWords.contains);
+            final score = exactWords ? 65 : 56;
+            if (bestScore < score) bestScore = score;
+          }
         }
       }
       if (bestScore == 0) continue;
@@ -336,14 +365,14 @@ class OfflineAddressSearch {
     for (final item in _items) {
       final haystack = item['_searchFolded']?.toString() ?? '';
       if (haystack.isEmpty) continue;
+      final haystackWords = haystack.split(' ').where((word) => word.isNotEmpty).toList();
       var score = 0;
       var allTokensMatch = true;
       for (final token in queryTokens) {
-        final hasWholeToken = RegExp(
-          '(^| )${RegExp.escape(token)}(\$| )',
-        ).hasMatch(haystack);
-        if (hasWholeToken) {
+        if (haystackWords.contains(token)) {
           score += 20;
+        } else if (_matchesSearchToken(token, haystackWords)) {
+          score += 12;
         } else {
           allTokensMatch = false;
           break;
@@ -379,7 +408,7 @@ class OfflineAddressSearch {
             .where((word) => word.isNotEmpty)
             .toSet();
         if (textTokens.isNotEmpty &&
-            !textTokens.every((token) => addressWords.contains(token))) {
+            !textTokens.every((token) => _matchesSearchToken(token, addressWords))) {
           continue;
         }
         if (numericTokens.isNotEmpty) score += 45;
