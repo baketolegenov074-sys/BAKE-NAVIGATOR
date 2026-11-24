@@ -2748,6 +2748,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   String _photonQuery(String value) => value.trim();
 
+  bool _startsWithShymkent(String value) => RegExp(
+    r'^(?:(?:г\.?\s*)?шымкент)(?:$|[\s,])',
+    caseSensitive: false,
+  ).hasMatch(value.trim());
+
+  String _normalizeShymkentPhotonQuery(String value) {
+    final trimmed = value.trim();
+    final normalized = trimmed.replaceFirst(
+      RegExp(r'^(?:(?:г\.?\s*)?шымкент)(?:\s*,\s*|\s+)?', caseSensitive: false),
+      '',
+    ).trim();
+    return normalized.isEmpty ? 'Шымкент' : normalized;
+  }
+
   bool _isLikelyCityQuery(String value) {
     final query = value.trim().toLowerCase().replaceAll('ё', 'е');
     if (query.length < 2 || query.length > 48) return false;
@@ -3177,12 +3191,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
     }
 
-    final trimmed = query.trim();
-    if (trimmed.isEmpty) return <Map<String, dynamic>>[];
+    final originalQuery = query.trim();
+    if (originalQuery.isEmpty) return <Map<String, dynamic>>[];
 
-    // Intercity destination lookup is handled by Nominatim, independently
-    // from Photon-based Shymkent address and organization search.
-    if (includeCitySearch && _isLikelyCityQuery(trimmed)) {
+    final hasShymkentPrefix = _startsWithShymkent(originalQuery);
+    final trimmed = hasShymkentPrefix
+        ? _normalizeShymkentPhotonQuery(originalQuery)
+        : originalQuery;
+    // Shymkent addresses always stay on Photon. Nominatim city lookup remains
+    // reserved for actual intercity/settlement queries.
+    final isShymkentLocalQuery = hasShymkentPrefix ||
+        (includeCitySearch && !_isLikelyCityQuery(trimmed)) ||
+        trimmed.toLowerCase().contains('шымкент');
+
+    if (includeCitySearch &&
+        includeNominatimCitySearch &&
+        !isShymkentLocalQuery &&
+        _isLikelyCityQuery(trimmed)) {
       return _fetchNominatimCityFeatures(trimmed);
     }
 
@@ -3218,32 +3243,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final requestUris = <Uri>[];
     // Start the city lookup alongside Photon so a slow Nominatim response
     // cannot consume the entire online-search timeout before Photon starts.
-    final nominatimCityFuture = includeCitySearch && includeNominatimCitySearch && _isLikelyCityQuery(trimmed)
+    final nominatimCityFuture = includeCitySearch &&
+            includeNominatimCitySearch &&
+            !isShymkentLocalQuery &&
+            _isLikelyCityQuery(trimmed)
         ? _fetchNominatimCityFeatures(trimmed)
         : Future<List<Map<String, dynamic>>>.value(<Map<String, dynamic>>[]);
     for (final apiQuery in apiQueries.take(4)) {
       requestUris.add(Uri.https('photon.komoot.io', '/api/', {
         'q': apiQuery,
-        'lang': 'ru',
+        'lat': '42.3417',
+        'lon': '69.5901',
+        'bbox': '69.35,42.20,69.85,42.50',
         'limit': resultLimit.toString(),
         'countrycode': 'KZ',
-      }));
-    }
-
-    // Address-shaped input also gets a structured street + house-number lookup.
-    if (addressMatch != null && schoolNumber == null &&
-        !RegExp(r'школа|мектеп|мега|центр|базар|рынок|плаза|plaza|mall|аэропорт|вокзал', caseSensitive: false)
-            .hasMatch(addressMatch.group(1)!)) {
-      final street = addressMatch.group(1)!.trim();
-      final house = addressMatch.group(2)!.trim();
-      // Use the street field for a street name. The previous implementation
-      // incorrectly sent the street text as a district, wasting a Photon request.
-      requestUris.add(Uri.https('photon.komoot.io', '/structured', {
-        'street': street,
-        'housenumber': house,
-        'city': 'Шымкент',
-        'lang': 'ru',
-        'limit': resultLimit.toString(),
       }));
     }
     final groups = await Future.wait(
@@ -3297,7 +3310,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         return queryTokens.isNotEmpty &&
             queryTokens.every((token) => searchable.contains(token));
       });
-      if (includeNominatimAddressFallback && (merged.isEmpty || !hasStrongMatch)) {
+      if (includeNominatimAddressFallback &&
+          !isShymkentLocalQuery &&
+          (merged.isEmpty || !hasStrongMatch)) {
         // Photon can return nearby but unrelated objects and suppress a valid
         // OSM match. Retry the full place/street phrase through Nominatim.
         final fallbackQuery = includeCitySearch &&
@@ -5882,7 +5897,7 @@ _navigationMatchedLocation = null;
                                 photonRequestRunning = false;
                               }
                             }
-                            photonDebounce = Timer(const Duration(milliseconds: 300), () {
+                            photonDebounce = Timer(const Duration(milliseconds: 500), () {
                               unawaited(loadLatestPhotonSuggestions(value, requestVersion));
                             });
                           },
@@ -6829,7 +6844,30 @@ _navigationMatchedLocation = null;
     );
   }
 
-    Future<String> _lookupPhotonReverseAddress(LatLng point) async {
+    String _formatShymkentMapAddress({
+    String name = '',
+    String street = '',
+    String house = '',
+    String district = '',
+  }) {
+    final place = street.trim().isNotEmpty ? street.trim() : district.trim();
+    final parts = <String>[
+      if (name.trim().isNotEmpty && name.trim() != place) name.trim(),
+      if (place.isNotEmpty)
+        house.trim().isNotEmpty ? '$place ${house.trim()}' : place,
+      'Шымкент',
+    ];
+    final unique = <String>[];
+    for (final part in parts) {
+      if (part.isNotEmpty &&
+          !unique.any((item) => item.toLowerCase() == part.toLowerCase())) {
+        unique.add(part);
+      }
+    }
+    return unique.join(', ');
+  }
+
+  Future<String> _lookupPhotonReverseAddress(LatLng point) async {
     // Photon is the primary geocoder. Its reverse endpoint can return an
     // empty feature list for mapped streets, so fall back to OSM Nominatim.
     try {
@@ -6862,7 +6900,18 @@ _navigationMatchedLocation = null;
             }
           }
           if (bestFeature != null) {
-            final address = _photonDestinationAddress(bestFeature);
+            final raw = bestFeature['properties'];
+            final properties = raw is Map
+                ? Map<String, dynamic>.from(raw)
+                : <String, dynamic>{};
+            final address = _formatShymkentMapAddress(
+              name: (properties['name'] ?? '').toString(),
+              street: (properties['street'] ?? '').toString(),
+              house: (properties['housenumber'] ??
+                  properties['house_number'] ?? '').toString(),
+              district: (properties['district'] ?? properties['suburb'] ?? '')
+                  .toString(),
+            );
             if (address.isNotEmpty) return address;
           }
         }
@@ -6919,21 +6968,12 @@ _navigationMatchedLocation = null;
           : '';
       final rawName = decoded['name']?.toString().trim() ?? '';
       final name = rawName.isNotEmpty ? rawName : namedName;
-      final parts = <String>[
-        if (district.isNotEmpty && district != city) district,
-        if (name.isNotEmpty && name != street && name != house) name,
-        if (street.isNotEmpty) street,
-        if (house.isNotEmpty && house != street) 'дом $house',
-        if (city.isNotEmpty && city != district) city,
-      ];
-      final uniqueParts = <String>[];
-      for (final part in parts) {
-        if (part.isNotEmpty && !uniqueParts.any((item) => item.toLowerCase() == part.toLowerCase())) {
-          uniqueParts.add(part);
-        }
-      }
-      if (uniqueParts.isNotEmpty) return uniqueParts.join(', ');
-      return decoded['display_name']?.toString().trim() ?? '';
+      return _formatShymkentMapAddress(
+        name: name,
+        street: street,
+        house: house,
+        district: district,
+      );
     } catch (error) {
       debugPrint('BAKE Nominatim reverse failed: $error');
       return '';
