@@ -9018,6 +9018,7 @@ _navigationMatchedLocation = null;
               ],
             ),
             ),
+          _buildAyaAssistant(),
           Positioned(
             // Place the route action beside, not underneath, the zoom/compass
             // column. Keep it aligned with that column as its bottom changes.
