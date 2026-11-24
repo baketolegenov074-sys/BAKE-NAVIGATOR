@@ -1010,6 +1010,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _isLocating = false;
   bool _gpsAvailable = false;
   bool _isSearching = false;
+  bool _nominatimTestMode = false;
+  DateTime? _lastNominatimTestRequestAt;
   bool _isBuildingRoute = false;
   int _voiceMode = 3;
   double? _gpsHeadingDegrees;
@@ -1043,6 +1045,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _loadSavedOfflineMap();
     _loadSavedRoutePoints();
     unawaited(_loadTrafficLayerPreference());
+    unawaited(_loadNominatimTestMode());
     // Ask for location after the first frame so the permission dialog has a valid context.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1122,6 +1125,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       return null;
     }
   }
+  Future<void> _loadNominatimTestMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final enabled = prefs.getBool('nominatim_test_mode') ?? false;
+      if (!mounted || _nominatimTestMode == enabled) return;
+      setState(() => _nominatimTestMode = enabled);
+    } catch (error) {
+      debugPrint('BAKE Nominatim test setting load failed: $error');
+    }
+  }
+
   Future<void> _loadTrafficLayerPreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -3062,6 +3076,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
+  Future<List<Map<String, dynamic>>> _fetchNominatimTestFeatures(String query) async {
+    final now = DateTime.now();
+    final previous = _lastNominatimTestRequestAt;
+    if (previous != null) {
+      final elapsed = now.difference(previous);
+      if (elapsed < const Duration(seconds: 1)) {
+        await Future<void>.delayed(const Duration(seconds: 1) - elapsed);
+      }
+    }
+    _lastNominatimTestRequestAt = DateTime.now();
+    return _fetchNominatimAddressFeatures(query);
+  }
+
   Future<List<Map<String, dynamic>>> _fetchNominatimAddressFeatures(String query) async {
     final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
       'q': query.trim(),
@@ -3277,6 +3304,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return merged.take(150).toList();
   }
   Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true, bool includeExpandedPhotonQueries = true}) async {
+    if (_nominatimTestMode) {
+      try {
+        // Isolated provider test: no Photon, local index, saved places, or road reports.
+        final results = await _fetchNominatimTestFeatures(query);
+        _sortSearchFeatures(results, query);
+        return results;
+      } catch (error) {
+        debugPrint('BAKE Nominatim isolated search failed: $error');
+        return <Map<String, dynamic>>[];
+      }
+    }
     final needle = query.trim().toLowerCase();
     final reportFeatures = <Map<String, dynamic>>[];
     final seenReports = <String>{};
@@ -5680,6 +5718,10 @@ _navigationMatchedLocation = null;
 
   Future<void> _openSearchPanel() async {
     final prefs = await SharedPreferences.getInstance();
+    final savedNominatimTestMode = prefs.getBool('nominatim_test_mode') ?? false;
+    if (mounted && _nominatimTestMode != savedNominatimTestMode) {
+      setState(() => _nominatimTestMode = savedNominatimTestMode);
+    }
     List<Map<String, dynamic>> photonSuggestions = <Map<String, dynamic>>[];
     bool photonLoadingSuggestions = false;
     Timer? photonDebounce;
@@ -5717,12 +5759,58 @@ _navigationMatchedLocation = null;
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        SegmentedButton<bool>(
+                          showSelectedIcon: false,
+                          segments: const [
+                            ButtonSegment<bool>(
+                              value: false,
+                              icon: Icon(Icons.bolt_outlined),
+                              label: Text('Photon'),
+                            ),
+                            ButtonSegment<bool>(
+                              value: true,
+                              icon: Icon(Icons.science_outlined),
+                              label: Text('Тест Nominatim'),
+                            ),
+                          ],
+                          selected: <bool>{_nominatimTestMode},
+                          onSelectionChanged: (selection) async {
+                            final enabled = selection.first;
+                            photonDebounce?.cancel();
+                            photonRequestVersion++;
+                            pendingPhotonQuery = null;
+                            await prefs.setBool('nominatim_test_mode', enabled);
+                            if (!mounted || !searchContext.mounted) return;
+                            setState(() => _nominatimTestMode = enabled);
+                            refreshSearch(() {
+                              photonSuggestions = <Map<String, dynamic>>[];
+                              photonLoadingSuggestions = false;
+                            });
+                          },
+                        ),
+                        if (_nominatimTestMode)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 6, bottom: 8),
+                            child: Text(
+                              'Изолированный тест: только Nominatim. Подсказки при вводе отключены; поиск выполняется после Enter или нажатия кнопки. Ограничение — не чаще 1 запроса в секунду.',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF687786)),
+                            ),
+                          ),
                         VoiceTextField(
                           controller: _searchController,
                           autofocus: true,
                           textInputAction: TextInputAction.search,
                           onChanged: (value) {
                             photonDebounce?.cancel();
+                            if (_nominatimTestMode) {
+                              photonRequestVersion++;
+                              pendingPhotonQuery = null;
+                              refreshSearch(() {
+                                photonSuggestions = <Map<String, dynamic>>[];
+                                photonLoadingSuggestions = false;
+                              });
+                              return;
+                            }
                             final requestVersion = ++photonRequestVersion;
                             if (value.trim().length < 2) {
                               pendingPhotonQuery = null;
