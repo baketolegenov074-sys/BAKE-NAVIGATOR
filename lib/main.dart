@@ -2812,43 +2812,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   String? _requestedHouseNumber(String query) {
     final normalized = query.trim().toLowerCase().replaceAll('ё', 'е');
     final match = RegExp(
-      r'(?:^|[\s,])(?:дом\s*|д\.?\s*|№\s*)?(\d+[0-9a-zа-я]?(?:/\d+[0-9a-zа-я]?)?)\s*$',
-      caseSensitive: false,
-    ).firstMatch(normalized);
-    if (match == null) return null;
-    final streetPart = normalized.substring(0, match.start).trim();
-    if (streetPart.isEmpty ||
-        RegExp(r'\b(?:школа|мектеп|микрорайон|мкр|район|№)\b').hasMatch(streetPart) ||
-        streetPart.split(RegExp(r'\s+')).where((part) => part.isNotEmpty).length < 2) {
-      return null;
-    }
-    return _normalizeHouseNumber(match.group(1)!);
-  }
-
-  String _normalizeHouseNumber(String value) => value
-      .toLowerCase()
-      .replaceAll('ё', 'е')
-      .replaceAll(RegExp(r'[^0-9a-zа-я/]'), '');
-
-  bool _matchesRequestedHouseNumber(Map<String, dynamic> feature, String query) {
-    final requested = _requestedHouseNumber(query);
-    if (requested == null) return true;
-    final raw = feature['properties'];
-    final properties = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
-    final actual = properties['housenumber'] ?? properties['house_number'] ?? properties['house'];
-    if (actual == null || actual.toString().trim().isEmpty) return false;
-    return _normalizeHouseNumber(actual.toString()) == requested;
-  }
-
-  List<Map<String, dynamic>> _keepExactHouseNumber(
-    List<Map<String, dynamic>> features,
-    String query,
-  ) {
-    if (_requestedHouseNumber(query) == null) return features;
-    return features.where((feature) => _matchesRequestedHouseNumber(feature, query)).toList(growable: false);
-  }
-
-  String _photonDestinationAddress(Map<String, dynamic> feature) {
+      r'(?:^|[\s,])(?:дом\s*|д\.?\s*|№\s*)?(\d+[0-9a-zа-я]?(?:/\d+[0-9a-zа-я]?)?)\s*
     final raw = feature['properties'];
     final p = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
     String value(String key) => (p[key] ?? '').toString().trim();
@@ -9533,7 +9497,9 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     String query,
   ) {
     if (_requestedHouseNumber(query) == null) return features;
-    return features.where((feature) => _matchesRequestedHouseNumber(feature, query)).toList(growable: false);
+    return features
+        .where((feature) => _matchesRequestedHouseNumber(feature, query))
+        .toList(growable: false);
   }
 
   String _photonDestinationAddress(Map<String, dynamic> feature) {
