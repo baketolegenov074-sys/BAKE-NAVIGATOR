@@ -1029,7 +1029,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     // graph validation, camera data, cloud sync and GPS all start afterwards.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _startupSplashTimer = Timer(const Duration(milliseconds: 1350), () {
+      _startupSplashTimer = Timer(const Duration(milliseconds: 1150), () {
         if (mounted) setState(() => _showStartupSplash = false);
       });
       unawaited(_initializeStartupServices());
@@ -9355,8 +9355,16 @@ _navigationMatchedLocation = null;
               ),
             ),
 
-          if (_showStartupSplash)
-            const Positioned.fill(child: _BakeStartupSplash()),
+          Positioned.fill(
+            child: AnimatedOpacity(
+              opacity: _showStartupSplash ? 1 : 0,
+              duration: const Duration(milliseconds: 350),
+              child: IgnorePointer(
+                ignoring: !_showStartupSplash,
+                child: const _BakeStartupSplash(),
+              ),
+            ),
+          ),
         ],
       ),
     );
