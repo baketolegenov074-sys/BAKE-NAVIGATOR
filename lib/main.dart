@@ -3514,7 +3514,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return _fetchNominatimAddressFeatures(query);
   }
 
-  Future<List<Map<String, dynamic>>> _fetchPeliasTestFeatures(String query) async {
+  Future<List<Map<String, dynamic>>> _fetchPeliasTestFeatures(String query, {http.Client? requestClient}) async {
     final base = Uri.tryParse(_peliasBaseUrl.trim());
     if (base == null || !base.hasAuthority ||
         (base.scheme != 'https' && base.scheme != 'http')) {
@@ -3539,10 +3539,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (_peliasApiKey.trim().isNotEmpty) parameters['api_key'] = _peliasApiKey.trim();
     final uri = base.replace(path: path, queryParameters: parameters);
     try {
-      final response = await http.get(uri, headers: const {
-        'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
-        'Accept': 'application/geo+json, application/json',
-      }).timeout(const Duration(seconds: 8));
+      final response = await (requestClient == null
+          ? http.get(uri, headers: const {
+              'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+              'Accept': 'application/geo+json, application/json',
+            })
+          : requestClient.get(uri, headers: const {
+              'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+              'Accept': 'application/geo+json, application/json',
+            })).timeout(const Duration(seconds: 8));
       if (response.statusCode != 200) {
         debugPrint('BAKE Pelias test: HTTP ${response.statusCode}; path=${uri.path}');
         return <Map<String, dynamic>>[];
@@ -3648,13 +3653,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
-  Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true, int resultLimit = 50}) async {
+  Future<List<Map<String, dynamic>>> _fetchPhotonFeatures(String query, {bool includeCitySearch = false, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true, int resultLimit = 50, http.Client? requestClient}) async {
     Future<List<Map<String, dynamic>>> request(Uri uri) async {
       try {
-        final response = await http.get(uri, headers: const {
-          'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
-          'Accept': 'application/geo+json, application/json',
-        }).timeout(const Duration(seconds: 7));
+        final response = await (requestClient == null
+            ? http.get(uri, headers: const {
+                'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+                'Accept': 'application/geo+json, application/json',
+              })
+            : requestClient.get(uri, headers: const {
+                'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)',
+                'Accept': 'application/geo+json, application/json',
+              })).timeout(const Duration(seconds: 7));
         if (response.statusCode != 200) {
           debugPrint('BAKE Photon search: HTTP ${response.statusCode}; path=${uri.path}');
           return <Map<String, dynamic>>[];
@@ -3746,8 +3756,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         'countrycode': 'KZ',
       }));
     }
+    // Autocomplete uses one Photon request per settled query. Expanded variants
+    // remain available to explicit full searches, but must not fan out on every keystroke.
+    final requestLimit = includeNominatimAddressFallback
+        ? 6
+        : (schoolNumber != null ? 3 : 1);
     final groups = await Future.wait(
-      requestUris.toSet().take(6).map(request),
+      requestUris.toSet().take(requestLimit).map(request),
     );
     final nominatimCityResults = await nominatimCityFuture;
     final merged = <Map<String, dynamic>>[...nominatimCityResults];
@@ -6344,6 +6359,7 @@ _navigationMatchedLocation = null;
     bool photonLoadingSuggestions = false;
     bool localLoadingSuggestions = false;
     Timer? photonDebounce;
+    http.Client? autocompleteClient;
     var photonRequestVersion = 0;
     final history = prefs.getStringList('search_history') ?? <String>[];
     const categories = <Map<String, Object>>[
@@ -6401,6 +6417,8 @@ _navigationMatchedLocation = null;
                             final nominatimEnabled = provider == 'nominatim';
                             final peliasEnabled = provider == 'pelias';
                             photonDebounce?.cancel();
+                            autocompleteClient?.close();
+                            autocompleteClient = null;
                             photonRequestVersion++;
                             await prefs.setBool('nominatim_test_mode', nominatimEnabled);
                             await prefs.setBool('pelias_test_mode', peliasEnabled);
@@ -6470,6 +6488,9 @@ _navigationMatchedLocation = null;
                           textInputAction: TextInputAction.search,
                           onChanged: (value) {
                             photonDebounce?.cancel();
+                            autocompleteClient?.close();
+                            final requestClient = http.Client();
+                            autocompleteClient = requestClient;
                             final requestVersion = ++photonRequestVersion;
                             photonOnlySuggestions.clear();
                             localOnlySuggestions.clear();
@@ -6514,7 +6535,7 @@ _navigationMatchedLocation = null;
                               if (_peliasTestMode) {
                                 unawaited(() async {
                                   try {
-                                    final found = await _fetchPeliasTestFeatures(value);
+                                    final found = await _fetchPeliasTestFeatures(value, requestClient: requestClient);
                                     if (!searchContext.mounted || requestVersion != photonRequestVersion) return;
                                     photonOnlySuggestions..clear()..addAll(found);
                                     publishSuggestions();
@@ -6534,6 +6555,7 @@ _navigationMatchedLocation = null;
                                     includeCitySearch: true,
                                     includeNominatimCitySearch: false,
                                     includeNominatimAddressFallback: false,
+                                    requestClient: requestClient,
                                   ).timeout(const Duration(seconds: 8));
                                   if (!searchContext.mounted || requestVersion != photonRequestVersion) return;
                                   photonOnlySuggestions..clear()..addAll(found);
@@ -6573,6 +6595,8 @@ _navigationMatchedLocation = null;
                           },
                           onSubmitted: (_) {
                             photonDebounce?.cancel();
+                            autocompleteClient?.close();
+                            autocompleteClient = null;
                             Navigator.pop(pageContext);
                             _searchAddress();
                           },
@@ -6585,6 +6609,8 @@ _navigationMatchedLocation = null;
                                   ? null
                                   : () {
                                       photonDebounce?.cancel();
+                                      autocompleteClient?.close();
+                                      autocompleteClient = null;
                                       Navigator.pop(pageContext);
                                       _searchAddress();
                                     },
