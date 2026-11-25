@@ -364,7 +364,7 @@ class BakeNavigatorApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: const Color(0xFFFFFFFF),
       ),
-      home: const _BakeStartupGate(),
+      home: const NavigatorScreen(),
     );
   }
 }
@@ -8888,7 +8888,14 @@ _navigationMatchedLocation = null;
                 else if (_isOfflineMapActive)
                   TileLayer(tileProvider: _offlineTileProvider!)
                 else
-                  const SizedBox.expand(),
+                  TileLayer(
+                    // Keep a real map visible while the remote vector style loads.
+                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'kz.bake.bake_navigator',
+                    maxNativeZoom: 19,
+                    maxZoom: 20,
+                    keepBuffer: 2,
+                  ),
                 if (!_isOfflineMapActive &&
                     _trafficLayerEnabled &&
                     _tomtomTrafficApiKey.isNotEmpty)
@@ -9680,221 +9687,6 @@ _navigationMatchedLocation = null;
             ),
 
         ],
-      ),
-    );
-  }
-}
-
-class _BakeStartupGate extends StatefulWidget {
-  const _BakeStartupGate();
-
-  @override
-  State<_BakeStartupGate> createState() => _BakeStartupGateState();
-}
-
-class _BakeStartupGateState extends State<_BakeStartupGate> {
-  bool _showNavigator = false;
-  bool _keepSplash = true;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
-      await Future.delayed(const Duration(milliseconds: 1500));
-      if (!mounted) return;
-      setState(() {
-        _showNavigator = true;
-        _keepSplash = false;
-      });
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (_showNavigator) const NavigatorScreen(),
-        if (_keepSplash)
-          const Positioned.fill(
-            child: _BakeStartupSplash(),
-          ),
-      ],
-    );
-  }
-}
-
-class _BakeStartupSplash extends StatefulWidget {
-  const _BakeStartupSplash();
-
-  @override
-  State<_BakeStartupSplash> createState() => _BakeStartupSplashState();
-}
-
-class _BakeStartupSplashState extends State<_BakeStartupSplash>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1900),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF071326),
-      child: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return Column(
-              children: [
-                const Spacer(flex: 3),
-                SizedBox(
-                  width: 330,
-                  height: 330,
-                  child: AnimatedBuilder(
-                    animation: _controller,
-                    builder: (context, child) {
-                      return Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          for (var ring = 0; ring < 3; ring++)
-                            Builder(builder: (context) {
-                              final phase = (_controller.value + ring / 3) % 1.0;
-                              final diameter = 112.0 + phase * 190.0;
-                              return Opacity(
-                                opacity: (1.0 - phase) * 0.72,
-                                child: Container(
-                                  width: diameter,
-                                  height: diameter,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: const Color(0xFF35D9F4),
-                                      width: 1.8,
-                                    ),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Color(0x5535D9F4),
-                                        blurRadius: 12,
-                                        spreadRadius: 1,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            }),
-                          Container(
-                            width: 132,
-                            height: 132,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Color(0xAA00CFFF),
-                                  blurRadius: 54,
-                                  spreadRadius: 4,
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(
-                            Icons.navigation_rounded,
-                            size: 112,
-                            color: Color(0xFF42DDF7),
-                            shadows: [
-                              Shadow(color: Color(0xFF00BFFF), blurRadius: 30),
-                              Shadow(color: Color(0xFF007DFF), blurRadius: 48),
-                            ],
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const Text(
-                  'BAKE Navigator',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 34,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.7,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  'Шымкент',
-                  style: TextStyle(color: Colors.white, fontSize: 21),
-                ),
-                const Spacer(flex: 2),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 42),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: SizedBox(
-                      height: 8,
-                      child: LayoutBuilder(
-                        builder: (context, barConstraints) {
-                          return AnimatedBuilder(
-                            animation: _controller,
-                            builder: (context, child) {
-                              final width = barConstraints.maxWidth *
-                                  (0.48 + 0.42 * _controller.value);
-                              return Stack(
-                                children: [
-                                  Container(color: const Color(0xFF123B56)),
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Container(
-                                      width: width,
-                                      decoration: const BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            Color(0xFF08AEEA),
-                                            Color(0xFF24E5D2),
-                                          ],
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Color(0xAA00D9FF),
-                                            blurRadius: 12,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  'Загрузка карт...',
-                  style: TextStyle(color: Colors.white, fontSize: 17),
-                ),
-                const SizedBox(height: 34),
-              ],
-            );
-          },
-        ),
       ),
     );
   }
