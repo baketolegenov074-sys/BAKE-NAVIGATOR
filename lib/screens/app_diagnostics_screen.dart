@@ -75,10 +75,10 @@ class AppDiagnosticsScreen extends StatefulWidget {
     try {
       final prefs = await SharedPreferences.getInstance();
       if (!(prefs.getBool(_startupArmedKey) ?? false)) return;
-      await prefs.setString(_startupResultKey, 'STARTUP_ERROR:$source: \${error.runtimeType}: $error');
+      await prefs.setString(_startupResultKey, 'STARTUP_ERROR:$source: ${error.runtimeType}: $error');
       await prefs.setBool(_startupArmedKey, false);
       final history = prefs.getStringList('bake_app_diagnostics_history') ?? <String>[];
-      history.add('\${DateTime.now().toIso8601String()} | STARTUP_ERROR | $source | \${error.runtimeType}: $error');
+      history.add('${DateTime.now().toIso8601String()} | STARTUP_ERROR | $source | ${error.runtimeType}: $error');
       await prefs.setStringList('bake_app_diagnostics_history', history.length > 100 ? history.sublist(history.length - 100) : history);
     } catch (_) {}
   }
@@ -210,8 +210,8 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
       if (result.startsWith('MAP_READY:')) {
         final ms = int.tryParse(result.substring('MAP_READY:'.length)) ?? 0;
         return ms > 10000
-            ? (state: _CheckState.warning, details: 'Карта открылась за \${(ms / 1000).toStringAsFixed(1)} с — медленно.')
-            : (state: _CheckState.ok, details: 'Первый кадр карты готов за \${(ms / 1000).toStringAsFixed(1)} с.');
+            ? (state: _CheckState.warning, details: 'Карта открылась за ${(ms / 1000).toStringAsFixed(1)} с — медленно.')
+            : (state: _CheckState.ok, details: 'Первый кадр карты готов за ${(ms / 1000).toStringAsFixed(1)} с.');
       }
       return (state: _CheckState.error, details: result.replaceFirst('STARTUP_ERROR:', '').replaceFirst('MAP_TIMEOUT:', ''));
     });
@@ -436,7 +436,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
               const SizedBox(height: 6),
               const Text('Облако не опрашивается автоматически. Загрузка выполняется только после нажатия кнопки.'),
               Row(children: [
-                Expanded(child: Text('Загружено: \${_cloudErrors.length}')),
+                Expanded(child: Text('Загружено: ${_cloudErrors.length}')),
                 TextButton.icon(
                   onPressed: _cloudErrors.isEmpty ? null : _clearCloudErrorPanels,
                   icon: const Icon(Icons.delete_outline),
@@ -453,8 +453,8 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
               ..._cloudErrors.map((item) => Card(
                 child: ListTile(
                   dense: true,
-                  title: Text('\${item['category'] ?? 'Ошибка'} · \${item['platform'] ?? ''}'),
-                  subtitle: Text('\${item['message'] ?? ''}'),
+                  title: Text('${item['category'] ?? 'Ошибка'} · ${item['platform'] ?? ''}'),
+                  subtitle: Text('${item['message'] ?? ''}'),
                   trailing: IconButton(
                     tooltip: 'Убрать панель',
                     icon: const Icon(Icons.close),
