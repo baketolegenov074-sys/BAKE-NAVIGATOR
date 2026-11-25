@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -14,7 +16,9 @@ class RoadReportSyncService {
   static const String _publishableKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
   static bool _initialized = false;
+  static bool _diagnosticFlushInProgress = false;
   static bool adminModeActive = false;
+  static const String _diagnosticQueueKey = 'bake_app_error_queue_v1';
   static RealtimeChannel? _reportsChannel;
 
   static const String _expectedProjectRef = 'cnyshqvdonqhkkcqgucf';
@@ -51,6 +55,7 @@ class RoadReportSyncService {
     debugPrint('BAKE Supabase configuration: $configurationSummary');
     await Supabase.initialize(url: _url.trim(), anonKey: _publishableKey.trim());
     _initialized = true;
+    await flushPendingDiagnosticEvents();
   }
 
   static SupabaseClient get _client {
@@ -76,6 +81,128 @@ class RoadReportSyncService {
         '${hex.substring(20)}';
     await prefs.setString('bake_road_device_id_v1', id);
     return id;
+  }
+
+  static String _sanitizeDiagnosticText(String value) {
+    return value
+        .replaceAll(RegExp(r'https?://[^\\s]+'), '[url]')
+        .replaceAll(
+          RegExp(r'-?\\d{1,2}\\.\\d{4,}\\s*[,;]\\s*-?\\d{1,3}\\.\\d{4,}'),
+          '[coordinates]',
+        )
+        .replaceAll(RegExp(r'\\n{3,}'), '\\n\\n')
+        .trim();
+  }
+
+  /// Stores app diagnostics locally first, then uploads when Supabase is online.
+  /// Raw GPS coordinates, addresses, routes and search queries are never sent.
+  static Future<void> recordDiagnosticEvent({
+    required String category,
+    required String message,
+    String? stackTrace,
+    Map<String, dynamic>? details,
+  }) async {
+    try {
+      final safeDetails = <String, dynamic>{};
+      for (final entry in (details ?? const <String, dynamic>{}).entries) {
+        if (RegExp(r'(lat|lon|coord|address|route|query|destination)', caseSensitive: false)
+            .hasMatch(entry.key)) {
+          continue;
+        }
+        final value = entry.value;
+        if (value == null || value is num || value is bool) {
+          safeDetails[entry.key] = value;
+        } else if (value is String) {
+          safeDetails[entry.key] = _sanitizeDiagnosticText(value).substring(
+            0,
+            _sanitizeDiagnosticText(value).length.clamp(0, 300),
+          );
+        }
+      }
+
+      final now = DateTime.now().toUtc();
+      final id = '${now.microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
+      final record = <String, dynamic>{
+        'id': id,
+        'app_version': '1.0.0+1',
+        'platform': Platform.operatingSystem,
+        'category': category,
+        'message': _sanitizeDiagnosticText(message).substring(
+          0,
+          _sanitizeDiagnosticText(message).length.clamp(0, 4000),
+        ),
+        if (stackTrace != null && stackTrace.isNotEmpty)
+          'stack_trace': _sanitizeDiagnosticText(stackTrace).substring(
+            0,
+            _sanitizeDiagnosticText(stackTrace).length.clamp(0, 10000),
+          ),
+        'details': safeDetails,
+      };
+
+      final prefs = await SharedPreferences.getInstance();
+      final queue = prefs.getStringList(_diagnosticQueueKey) ?? <String>[];
+      queue.add(jsonEncode(record));
+      if (queue.length > 100) {
+        queue.removeRange(0, queue.length - 100);
+      }
+      await prefs.setStringList(_diagnosticQueueKey, queue);
+
+      if (_initialized) {
+        await flushPendingDiagnosticEvents();
+      }
+    } catch (error) {
+      debugPrint('BAKE diagnostic event could not be queued: ${error.runtimeType}');
+    }
+  }
+
+  /// Uploads queued diagnostics in the background. Failed records stay on-device.
+  static Future<void> flushPendingDiagnosticEvents() async {
+    if (!_initialized || _diagnosticFlushInProgress) return;
+    _diagnosticFlushInProgress = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final queued = prefs.getStringList(_diagnosticQueueKey) ?? <String>[];
+      if (queued.isEmpty) return;
+
+      final sentIds = <String>{};
+      for (final raw in queued.take(20)) {
+        try {
+          final record = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+          await _client.from('app_error_reports').insert(record);
+          sentIds.add(record['id'].toString());
+        } on PostgrestException catch (error) {
+          if (error.code == '23505') {
+            try {
+              final record = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+              sentIds.add(record['id'].toString());
+            } catch (_) {}
+            continue;
+          }
+          break;
+        } catch (_) {
+          break;
+        }
+      }
+
+      if (sentIds.isNotEmpty) {
+        // Re-read to avoid overwriting events queued while this upload was running.
+        final latest = prefs.getStringList(_diagnosticQueueKey) ?? <String>[];
+        final remaining = <String>[];
+        for (final raw in latest) {
+          try {
+            final record = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+            if (!sentIds.contains(record['id']?.toString())) remaining.add(raw);
+          } catch (_) {
+            // Drop only malformed local queue entries.
+          }
+        }
+        await prefs.setStringList(_diagnosticQueueKey, remaining);
+      }
+    } catch (error) {
+      debugPrint('BAKE diagnostic upload deferred: ${error.runtimeType}');
+    } finally {
+      _diagnosticFlushInProgress = false;
+    }
   }
 
   static Map<String, dynamic> _toDatabase(Map<String, dynamic> report) {
