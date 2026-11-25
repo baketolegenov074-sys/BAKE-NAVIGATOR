@@ -420,7 +420,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
             isScrollable: true,
             tabs: [
               Tab(icon: Icon(Icons.health_and_safety_outlined), text: 'Проверка'),
-              Tab(icon: Icon(Icons.gps_fixed), text: 'GPS'),
+              Tab(icon: Icon(Icons.route_outlined), text: 'Поездка'),
               Tab(icon: Icon(Icons.error_outline), text: 'Ошибки'),
               Tab(icon: Icon(Icons.cloud_outlined), text: 'Облако'),
             ],
@@ -642,6 +642,47 @@ class _TripDiagnosticsRecorder {
   final List<Map<String, Object?>> points = [];
   String? lastReport;
   int _saveCounter = 0;
+  FlutterExceptionHandler? _previousFlutterErrorHandler;
+  bool Function(Object, StackTrace)? _previousPlatformErrorHandler;
+  FlutterErrorHandler? _activeFlutterErrorHandler;
+  bool Function(Object, StackTrace)? _activePlatformErrorHandler;
+
+  void _installRuntimeErrorHooks() {
+    _previousFlutterErrorHandler = FlutterError.onError;
+    _activeFlutterErrorHandler = (details) {
+      if (active) {
+        unawaited(addEvent(
+          'Ошибка Flutter',
+          '${details.exception.runtimeType}: ${details.exception}',
+        ));
+      }
+      _previousFlutterErrorHandler?.call(details);
+    };
+    FlutterError.onError = _activeFlutterErrorHandler;
+
+    _previousPlatformErrorHandler = PlatformDispatcher.instance.onError;
+    _activePlatformErrorHandler = (error, stack) {
+      if (active) {
+        unawaited(addEvent('Необработанная ошибка приложения',
+            '${error.runtimeType}: $error'));
+      }
+      return _previousPlatformErrorHandler?.call(error, stack) ?? false;
+    };
+    PlatformDispatcher.instance.onError = _activePlatformErrorHandler;
+  }
+
+  void _removeRuntimeErrorHooks() {
+    if (identical(FlutterError.onError, _activeFlutterErrorHandler)) {
+      FlutterError.onError = _previousFlutterErrorHandler;
+    }
+    if (identical(PlatformDispatcher.instance.onError, _activePlatformErrorHandler)) {
+      PlatformDispatcher.instance.onError = _previousPlatformErrorHandler;
+    }
+    _previousFlutterErrorHandler = null;
+    _previousPlatformErrorHandler = null;
+    _activeFlutterErrorHandler = null;
+    _activePlatformErrorHandler = null;
+  }
 
   Future<void> load() async {
     if (_loaded) return;
@@ -663,7 +704,9 @@ class _TripDiagnosticsRecorder {
     }
     startedAt = DateTime.now();
     _previous = null; _previousTime = null; events.clear(); points.clear(); _saveCounter = 0;
-    active = true; revision.value++;
+    active = true;
+    _installRuntimeErrorHooks();
+    revision.value++;
     try {
       _subscription = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 1),
@@ -722,7 +765,9 @@ class _TripDiagnosticsRecorder {
 
   Future<void> stop() async {
     if (!active) return;
-    active = false; revision.value++;
+    active = false;
+    _removeRuntimeErrorHooks();
+    revision.value++;
     await _subscription?.cancel(); _subscription = null;
     final ended = DateTime.now();
     final prefs = await SharedPreferences.getInstance();
@@ -781,7 +826,7 @@ class TripDiagnosticsPanel extends StatelessWidget {
               if (recorder.active) const Chip(label: Text('Запись')),
             ]),
             const SizedBox(height: 6),
-            const Text('Работает независимо от открытого экрана приложения. Записывает GPS-точки, интервалы, точность, скачки координат и ошибки приложения. Данные остаются на телефоне.'),
+            const Text('Запускается только вручную из кабинета. После выхода продолжает запись GPS и необработанных ошибок приложения; при остановке перехват ошибок и GPS-поток отключаются. Данные остаются на телефоне.'),
             if (recorder.active) Text('GPS-точек: ${recorder.points.length} · событий: ${recorder.events.length}'),
             const SizedBox(height: 10),
             SizedBox(width: double.infinity, child: FilledButton.icon(
