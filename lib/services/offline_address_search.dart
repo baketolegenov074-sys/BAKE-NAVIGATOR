@@ -299,8 +299,7 @@ class OfflineAddressSearch {
     String query, {
     LatLng? near,
     int limit = 10,
-  }) async {
-    await initialize();
+  }) {
     final normalizedQuery = _normalizeQuery(query);
     final queryTokens = normalizedQuery
         .split(' ')
