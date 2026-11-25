@@ -66,6 +66,14 @@ class RoadReportSyncService {
     return 'Подключение подтверждено: чтение таблицы road_reports успешно.';
   }
 
+  /// Fetches cloud error reports only after an explicit user action.
+  static Future<List<Map<String, dynamic>>> fetchDiagnosticReports() async {
+    if (!_initialized) await initialize();
+    final rows = await _client.from('app_error_reports').select()
+        .order('created_at', ascending: false).limit(100);
+    return rows.map((row) => Map<String, dynamic>.from(row)).toList();
+  }
+
   /// Clears only the pending local diagnostic upload queue. Cloud rows are untouched.
   static Future<void> clearPendingDiagnosticEvents() async {
     final prefs = await SharedPreferences.getInstance();
