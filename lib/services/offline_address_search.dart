@@ -281,6 +281,26 @@ class OfflineAddressSearch {
     int limit = 10,
   }) async {
     await initialize();
+    // The full OSM index can contain many thousands of records. Run matching,
+    // sorting and deduplication away from the UI isolate so typing stays responsive.
+    return compute<Map<String, Object?>, List<Map<String, dynamic>>>(
+      _searchOfflineAddressInIsolate,
+      <String, Object?>{
+        'items': _items,
+        'query': query,
+        'nearLatitude': near?.latitude,
+        'nearLongitude': near?.longitude,
+        'limit': limit,
+      },
+    );
+  }
+
+  List<Map<String, dynamic>> _searchSync(
+    String query, {
+    LatLng? near,
+    int limit = 10,
+  }) async {
+    await initialize();
     final normalizedQuery = _normalizeQuery(query);
     final queryTokens = normalizedQuery
         .split(' ')
@@ -640,4 +660,27 @@ class OfflineAddressSearch {
     text = text.replaceAll(RegExp(r'[^0-9а-я]+'), ' ');
     return text.trim().replaceAll(RegExp(r'\s+'), ' ');
   }
+}
+
+
+List<Map<String, dynamic>> _searchOfflineAddressInIsolate(
+  Map<String, Object?> payload,
+) {
+  final service = OfflineAddressSearch();
+  final rawItems = payload['items'];
+  service._items = rawItems is List
+      ? rawItems.whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(growable: false)
+      : <Map<String, dynamic>>[];
+  final latitude = (payload['nearLatitude'] as num?)?.toDouble();
+  final longitude = (payload['nearLongitude'] as num?)?.toDouble();
+  final near = latitude == null || longitude == null
+      ? null
+      : LatLng(latitude, longitude);
+  return service._searchSync(
+    payload['query']?.toString() ?? '',
+    near: near,
+    limit: (payload['limit'] as num?)?.toInt() ?? 10,
+  );
 }
