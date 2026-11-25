@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:ui' show PlatformDispatcher;
+import 'dart:ui' show FrameTiming, PlatformDispatcher;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart' show FrameTiming, SchedulerBinding;
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
