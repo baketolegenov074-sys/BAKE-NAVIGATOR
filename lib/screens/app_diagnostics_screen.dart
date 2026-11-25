@@ -125,8 +125,8 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
     });
 
     await check('Поиск адресов и офлайн-индекс', () async {
-      final manifest = await rootBundle.loadString('AssetManifest.json');
-      final hasIndex = manifest.contains('assets/data/shymkent_search.json.gz');
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      final hasIndex = manifest.listAssets().contains('assets/data/shymkent_search.json.gz');
       return hasIndex
           ? (state: _CheckState.ok, details: 'Файл офлайн-индекса найден в ресурсах приложения. Запросы поиска не выполнялись.')
           : (state: _CheckState.error, details: 'Офлайн-индекс адресов отсутствует в ресурсах сборки.');
@@ -180,13 +180,14 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
     });
 
     await check('Камеры и дорожные данные', () async {
-      final manifest = await rootBundle.loadString('AssetManifest.json');
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      final bundledAssets = manifest.listAssets();
       const assets = [
         'assets/data/kazakhstan_speed_cameras.csv',
         'assets/data/shymkent_camera_candidates.csv',
         'assets/data/shymkent_cameras.json',
       ];
-      final missing = assets.where((asset) => !manifest.contains(asset)).toList();
+      final missing = assets.where((asset) => !bundledAssets.contains(asset)).toList();
       return missing.isEmpty
           ? (state: _CheckState.ok, details: 'Файлы данных камер присутствуют в сборке. Камера устройства и актуальность внешних данных не проверялись.')
           : (state: _CheckState.error, details: 'Не найдены ресурсы: ${missing.join(', ')}');
