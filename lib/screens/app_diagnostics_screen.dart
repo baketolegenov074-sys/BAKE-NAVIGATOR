@@ -653,6 +653,7 @@ class _TripDiagnosticsRecorder {
   final List<File> reportFiles = <File>[];
   String? lastReport;
   int _saveCounter = 0;
+  DateTime? _lastSlowFrameEventAt;
   FlutterExceptionHandler? _previousFlutterErrorHandler;
   bool Function(Object, StackTrace)? _previousPlatformErrorHandler;
   FlutterExceptionHandler? _activeFlutterErrorHandler;
@@ -687,7 +688,11 @@ class _TripDiagnosticsRecorder {
     if (!active) return;
     for (final timing in timings) {
       final totalMs = (timing.buildDuration + timing.rasterDuration).inMilliseconds;
-      if (totalMs >= 250) {
+      final now = DateTime.now();
+      if (totalMs >= 250 &&
+          (_lastSlowFrameEventAt == null ||
+              now.difference(_lastSlowFrameEventAt!) >= const Duration(seconds: 5))) {
+        _lastSlowFrameEventAt = now;
         unawaited(addEvent(
           'Медленный кадр интерфейса',
           'Построение: ${timing.buildDuration.inMilliseconds} мс; отрисовка: ${timing.rasterDuration.inMilliseconds} мс; всего: $totalMs мс.',
