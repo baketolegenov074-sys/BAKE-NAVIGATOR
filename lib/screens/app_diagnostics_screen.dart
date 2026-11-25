@@ -623,6 +623,8 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
       ],
     );
   }
+  }
+}
 
 
 
