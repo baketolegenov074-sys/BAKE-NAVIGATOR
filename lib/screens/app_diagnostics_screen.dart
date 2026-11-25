@@ -10,6 +10,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/road_report_sync_service.dart';
+
 enum _CheckState { ok, warning, error, notChecked }
 
 class _CheckResult {
@@ -40,6 +42,18 @@ class _CheckResult {
 
 class AppDiagnosticsScreen extends StatefulWidget {
   const AppDiagnosticsScreen({super.key});
+
+  // Record unexpected runtime errors only while the user explicitly records a trip.
+  static Future<void> recordTripRuntimeError(String source, Object error) async {
+    try {
+      await _TripDiagnosticsRecorder.instance.addEvent(
+        'Ошибка приложения: $source',
+        '${error.runtimeType}: $error',
+      );
+    } catch (_) {
+      // Diagnostics must never interrupt normal error handling.
+    }
+  }
 
   // Runtime errors are retained on this device only. No network request is made.
   static Future<void> recordRuntimeError(String source, Object error) async {
@@ -203,14 +217,10 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
       return (state: _CheckState.ok, details: 'Внутренняя папка приложения доступна для чтения и записи.');
     });
 
-    // Network/Supabase and live route/search calls are intentionally not run
-    // as part of this safe batch: they need explicit active tests.
-    results.add(_CheckResult(
-      'Supabase и интернет-сервисы',
-      _CheckState.notChecked,
-      'Не проверялись: сетевые запросы и отправка данных не выполнялись.',
-      now,
-    ));
+    await check('Supabase — подключение к базе', () async {
+      final details = await RoadReportSyncService.checkConnection();
+      return (state: _CheckState.ok, details: details);
+    });
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
@@ -233,6 +243,26 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
       _lastRun = now;
       _checking = false;
     });
+  }
+
+  Future<void> _clearHistory() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Очистить журнал ошибок?'),
+        content: const Text('Будут удалены локальная история и неотправленная очередь старых диагностических событий. Данные Supabase не удаляются.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Очистить')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_historyKey);
+    await RoadReportSyncService.clearPendingDiagnosticEvents();
+    if (!mounted) return;
+    setState(() => _history = []);
   }
 
   Future<void> _exportReport() async {
@@ -314,6 +344,11 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
           Row(
             children: [
               const Expanded(child: Text('История ошибок', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+              IconButton(
+                tooltip: 'Очистить журнал',
+                onPressed: _history.isEmpty ? null : _clearHistory,
+                icon: const Icon(Icons.delete_outline),
+              ),
               TextButton.icon(
                 onPressed: _results.isEmpty && _history.isEmpty ? null : _exportReport,
                 icon: const Icon(Icons.ios_share),
