@@ -83,6 +83,9 @@ class RoadReportSyncService {
     return id;
   }
 
+  static String _truncateDiagnosticText(String value, int maxLength) =>
+      value.length <= maxLength ? value : value.substring(0, maxLength);
+
   static String _sanitizeDiagnosticText(String value) {
     return value
         .replaceAll(RegExp(r'https?://[^\\s]+'), '[url]')
@@ -113,10 +116,7 @@ class RoadReportSyncService {
         if (value == null || value is num || value is bool) {
           safeDetails[entry.key] = value;
         } else if (value is String) {
-          safeDetails[entry.key] = _sanitizeDiagnosticText(value).substring(
-            0,
-            _sanitizeDiagnosticText(value).length.clamp(0, 300),
-          );
+          safeDetails[entry.key] = _truncateDiagnosticText(_sanitizeDiagnosticText(value), 300);
         }
       }
 
@@ -127,15 +127,9 @@ class RoadReportSyncService {
         'app_version': '1.0.0+1',
         'platform': Platform.operatingSystem,
         'category': category,
-        'message': _sanitizeDiagnosticText(message).substring(
-          0,
-          _sanitizeDiagnosticText(message).length.clamp(0, 4000),
-        ),
+        'message': _truncateDiagnosticText(_sanitizeDiagnosticText(message), 4000),
         if (stackTrace != null && stackTrace.isNotEmpty)
-          'stack_trace': _sanitizeDiagnosticText(stackTrace).substring(
-            0,
-            _sanitizeDiagnosticText(stackTrace).length.clamp(0, 10000),
-          ),
+          'stack_trace': _truncateDiagnosticText(_sanitizeDiagnosticText(stackTrace), 10000),
         'details': safeDetails,
       };
 
