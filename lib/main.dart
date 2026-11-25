@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +32,46 @@ import 'screens/openfreemap_experiment.dart';
 import 'services/road_report_sync_service.dart';
 import 'services/valhalla_archive_validator.dart';
 
+
+bool _isExpectedVectorTileCancellation(Object error, StackTrace? stackTrace) {
+  if (error.runtimeType.toString() != 'CancellationException') return false;
+  final trace = stackTrace?.toString() ?? '';
+  return trace.contains('TileLoader._renderTile') ||
+      trace.contains('vector_map_tiles/src/raster/tile_loader.dart');
+}
+
+class _ResilientVectorTileProvider implements VectorTileProvider {
+  _ResilientVectorTileProvider(this._delegate);
+
+  final VectorTileProvider _delegate;
+
+  @override
+  int get maximumZoom => _delegate.maximumZoom;
+
+  @override
+  int get minimumZoom => _delegate.minimumZoom;
+
+  @override
+  TileProviderType get type => _delegate.type;
+
+  @override
+  Future<Uint8List> provide(TileIdentity tile) async {
+    try {
+      return await _delegate.provide(tile);
+    } on ProviderException {
+      // An unavailable network tile is an empty protobuf tile, not a reason
+      // to let one failed request interrupt map rendering or navigation.
+      return Uint8List(0);
+    }
+  }
+}
+
+TileProviders _resilientOnlineTileProviders(TileProviders providers) {
+  return TileProviders({
+    for (final entry in providers.tileProviderBySource.entries)
+      entry.key: _ResilientVectorTileProvider(entry.value),
+  });
+}
 
 // Offline label layers for the OpenMapTiles schema in shymkent.mbtiles.
 // This renderer paints text with Flutter's local/system fonts; PBF
@@ -276,6 +317,12 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   FlutterError.onError = (details) {
+    if (_isExpectedVectorTileCancellation(
+      details.exception,
+      details.stack,
+    )) {
+      return;
+    }
     FlutterError.presentError(details);
     unawaited(RoadReportSyncService.recordDiagnosticEvent(
       category: 'flutter',
@@ -284,6 +331,9 @@ void main() {
     ));
   };
   ui.PlatformDispatcher.instance.onError = (error, stackTrace) {
+    if (_isExpectedVectorTileCancellation(error, stackTrace)) {
+      return true;
+    }
     unawaited(RoadReportSyncService.recordDiagnosticEvent(
       category: 'platform',
       message: error.runtimeType.toString(),
@@ -1870,7 +1920,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       ).read();
       if (!mounted) return;
       setState(() {
-        _flutterMapOnlineStyle = style;
+        _flutterMapOnlineStyle = Style(
+          theme: style.theme,
+          sprites: style.sprites,
+          providers: _resilientOnlineTileProviders(style.providers),
+          attributions: style.attributions,
+          glyphs: style.glyphs,
+        );
         _flutterMapExperimentEnabled = true;
       });
     } catch (error) {
@@ -8825,6 +8881,7 @@ _navigationMatchedLocation = null;
                     sprites: _flutterMapOnlineStyle!.sprites,
                     tileProviders: _flutterMapOnlineStyle!.providers,
                     maximumZoom: 18,
+                    concurrency: 2,
                   )
                 else if (_isOfflineMapActive && _offlineVectorTileProvider != null)
                   VectorTileLayer(
