@@ -1070,8 +1070,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     super.initState();
     _mapOpenStopwatch.start();
     WidgetsBinding.instance.addObserver(this);
-    // Start expensive work only after the root splash has painted its first frame.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_initializeStartupServices());
     });
@@ -8728,16 +8727,27 @@ _navigationMatchedLocation = null;
       if (_vehicleDisplayLocation != null)
         Marker(
           point: _vehicleDisplayLocation!,
-          width: 20,
-          height: 20,
+          width: 34,
+          height: 34,
           child: Container(
             decoration: BoxDecoration(
-              color: const Color(0xFFE53935),
+              color: Colors.white,
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2.5),
+              border: Border.all(color: const Color(0xFF8E24AA), width: 2),
               boxShadow: const [
                 BoxShadow(color: Color(0x55000000), blurRadius: 4, offset: Offset(0, 1)),
               ],
+            ),
+            alignment: Alignment.center,
+            child: Transform.rotate(
+              angle: ((_navigationActive && _routePoints.length > 1)
+                  ? _routeBearingAt(_vehicleDisplayLocation!)
+                  : (_gpsHeadingDegrees ?? 0.0)) * math.pi / 180.0,
+              child: const Icon(
+                Icons.navigation,
+                color: Color(0xFF8E24AA),
+                size: 25,
+              ),
             ),
           ),
         ),
