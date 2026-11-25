@@ -1253,9 +1253,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       final prefs = await SharedPreferences.getInstance();
       final enabled = prefs.getBool('nominatim_test_mode') ?? false;
       final peliasEnabled = prefs.getBool('pelias_test_mode') ?? false;
-      if (!mounted || (_nominatimTestMode == enabled && _peliasTestMode == peliasEnabled)) return;
+      final nominatimEnabled = enabled && !peliasEnabled;
+      if (!mounted || (_nominatimTestMode == nominatimEnabled && _peliasTestMode == peliasEnabled)) return;
       setState(() {
-        _nominatimTestMode = enabled && !peliasEnabled;
+        _nominatimTestMode = nominatimEnabled;
         _peliasTestMode = peliasEnabled;
       });
     } catch (error) {
