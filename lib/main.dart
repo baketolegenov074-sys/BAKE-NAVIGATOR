@@ -1093,6 +1093,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _appInForeground = true;
   DateTime? _lastCameraUpdateAt;
   DateTime? _lastMapAnnotationUpdateAt;
+  DateTime? _lastCameraMarkerRefreshAt;
+  final Stopwatch _mapOpenStopwatch = Stopwatch();
+  final Stopwatch _cameraLoadStopwatch = Stopwatch();
+  final Stopwatch _valhallaInitStopwatch = Stopwatch();
+  final Stopwatch _gpsAcquisitionStopwatch = Stopwatch();
+  final Stopwatch _styleLoadStopwatch = Stopwatch();
+  int? _mapOpenMs;
+  int? _cameraLoadMs;
+  int? _valhallaInitMs;
+  int? _gpsAcquisitionMs;
+  int? _styleLoadMs;
+  int _cameraTotalCount = 0;
+  bool _valhallaStartupScheduled = false;
+  bool _gpsStartupFailed = false;
   bool _speedingVoiceActive = false;
   bool _trafficLayerEnabled = false;
   bool _roadEventsLayerEnabled = true;
@@ -1122,6 +1136,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   @override
   void initState() {
     super.initState();
+    _mapOpenStopwatch.start();
     WidgetsBinding.instance.addObserver(this);
     // Start expensive work only after the root splash has painted its first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1197,15 +1212,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
     }());
 
-    // Prepare Valhalla after the map is visible. MBTiles is now loaded
-    // only after the user explicitly enables the offline map.
-    unawaited(Future<void>.delayed(
-      const Duration(seconds: 1),
-      () async {
-        if (!mounted) return;
-        unawaited(_ensureValhallaReady());
-      },
-    ));
+    // Valhalla is scheduled from the first rendered FlutterMap frame.
+    // Its archive/native initialization must not compete with first paint.
 
     // One-time startup checks; never repeated on AppLifecycleState.resumed.
     unawaited(_locateMe());
@@ -1227,6 +1235,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   Future<void> _loadBundledRoadAlerts() async {
+    _cameraLoadStopwatch.start();
+    try {
     final bundled = <RoadAlert>[];
     // Restore the full Kazakhstan database first. The APK workflow downloads
     // this CSV before packaging, so it is available offline after installation.
@@ -1243,11 +1253,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     } catch (error) {
       debugPrint('Не удалось загрузить слой камер Шымкента: $error');
     }
+    _cameraTotalCount = bundled.length;
     if (!mounted || bundled.isEmpty) return;
     setState(() {
       _bundledRoadAlerts = bundled;
       _roadAlerts = _mergeRoadAlerts(bundled, _roadAlerts);
     });
+    } finally {
+      _cameraLoadStopwatch.stop();
+      _cameraLoadMs = _cameraLoadStopwatch.elapsedMilliseconds;
+      if (mounted) setState(() {});
+    }
   }
 
   List<RoadAlert> _mergeRoadAlerts(List<RoadAlert> bundled, List<RoadAlert> live) {
@@ -1617,9 +1633,27 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _moveMapCamera(_mapCameraCenter, (_mapCameraZoom + delta).clamp(3.0, 20.0).toDouble());
   }
 
+  void _scheduleValhallaStartupAfterMapPaint() {
+    if (_valhallaStartupScheduled) return;
+    _valhallaStartupScheduled = true;
+    unawaited(Future<void>.delayed(const Duration(seconds: 3), () async {
+      if (!mounted) return;
+      await _ensureValhallaReady();
+    }));
+  }
+
   void _onOfflineMapReady() {
     if (!mounted || !_isFlutterMapDisplayed) return;
     _offlineMapReady = true;
+    if (_mapOpenMs == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _mapOpenMs != null) return;
+        _mapOpenStopwatch.stop();
+        _mapOpenMs = _mapOpenStopwatch.elapsedMilliseconds;
+        setState(() {});
+        _scheduleValhallaStartupAfterMapPaint();
+      });
+    }
     final point = _currentLocation;
     if (point == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1769,9 +1803,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (_valhallaReady) return Future<bool>.value(true);
     final pending = _valhallaReadyFuture;
     if (pending != null) return pending;
+    final measureStartup = _valhallaInitMs == null &&
+        !_valhallaInitStopwatch.isRunning;
+    if (measureStartup) _valhallaInitStopwatch.start();
     final future = _prepareValhallaAutomatically();
     _valhallaReadyFuture = future;
     return future.whenComplete(() {
+      if (measureStartup) {
+        _valhallaInitStopwatch.stop();
+        _valhallaInitMs = _valhallaInitStopwatch.elapsedMilliseconds;
+        if (mounted) setState(() {});
+      }
       if (identical(_valhallaReadyFuture, future)) {
         _valhallaReadyFuture = null;
       }
@@ -1909,6 +1951,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _loadFlutterMapOnlineStyle() async {
     if (_flutterMapExperimentLoading || _flutterMapOnlineStyle != null) return;
+    _styleLoadStopwatch.start();
     setState(() => _flutterMapExperimentLoading = true);
     try {
       final style = await StyleReader(
@@ -1930,7 +1973,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         ));
       }
     } finally {
-      if (mounted) setState(() => _flutterMapExperimentLoading = false);
+      _styleLoadStopwatch.stop();
+      _styleLoadMs = _styleLoadStopwatch.elapsedMilliseconds;
+      if (mounted) {
+        setState(() => _flutterMapExperimentLoading = false);
+      }
     }
   }
 
@@ -2423,8 +2470,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     );
   }
 
+  void _markStartupGpsFix() {
+    if (_gpsAcquisitionMs != null || !_gpsAcquisitionStopwatch.isRunning) {
+      return;
+    }
+    _gpsAcquisitionStopwatch.stop();
+    _gpsAcquisitionMs = _gpsAcquisitionStopwatch.elapsedMilliseconds;
+    _gpsStartupFailed = false;
+    if (mounted) setState(() {});
+  }
+
   Future<void> _locateMe() async {
     if (_isLocating) return;
+    if (_gpsAcquisitionMs == null && !_gpsAcquisitionStopwatch.isRunning) {
+      _gpsAcquisitionStopwatch.start();
+    }
 
     setState(() {
       _isLocating = true;
@@ -2456,6 +2516,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         ),
       );
 
+      _markStartupGpsFix();
       final point = LatLng(position.latitude, position.longitude);
       _recordGpsDiagnostic(event: 'LOCATE_FIX', position: position, rawPoint: point, displayPoint: point);
       if (!mounted) return;
@@ -2496,6 +2557,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         await _startLiveLocationUpdates();
       }
     } catch (error) {
+      if (_gpsAcquisitionMs == null && _gpsAcquisitionStopwatch.isRunning) {
+        _gpsAcquisitionStopwatch.stop();
+        _gpsAcquisitionMs = _gpsAcquisitionStopwatch.elapsedMilliseconds;
+        _gpsStartupFailed = true;
+      }
       if (!mounted) return;
       setState(() {
         _gpsAvailable = false;
@@ -2947,6 +3013,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (!mounted) return;
         final wasWaitingForNavigationFix =
             _navigationActive && _currentLocation == null;
+        _markStartupGpsFix();
         final point = LatLng(position.latitude, position.longitude);
         final displayPoint = _navigationActive
             ? point
@@ -5180,10 +5247,19 @@ _navigationMatchedLocation = null;
         ..sort((a, b) => (a.name ?? '').compareTo(b.name ?? ''));
 
   List<RoadAlert> _roadAlertsVisibleOnMap() {
-    final visible = _showShymkentCamerasOnMap
+    // Camera icons are rendered only when the map is zoomed in and inside
+    // the current viewport. The full camera database remains available for
+    // proximity warnings and route guidance outside the visible map area.
+    if (!_offlineMapReady || _mapController.camera.zoom < 13) {
+      return const <RoadAlert>[];
+    }
+    final bounds = _mapController.camera.visibleBounds;
+    final source = _showShymkentCamerasOnMap
         ? _roadAlerts
-        : _roadAlerts.where((alert) => !_isShymkentCamera(alert)).toList();
-    return List<RoadAlert>.unmodifiable(visible);
+        : _roadAlerts.where((alert) => !_isShymkentCamera(alert));
+    return List<RoadAlert>.unmodifiable(
+      source.where((alert) => bounds.contains(alert.location)),
+    );
   }
 
   Future<void> _updateRoadAlerts(LatLng position, double? gpsHeading) async {
@@ -8863,6 +8939,13 @@ _navigationMatchedLocation = null;
                     _mapFollowEnabled = false;
                     _scheduleHeadingUpReturn();
                   }
+                  final now = DateTime.now();
+                  if (_lastCameraMarkerRefreshAt == null ||
+                      now.difference(_lastCameraMarkerRefreshAt!) >=
+                          const Duration(milliseconds: 250)) {
+                    _lastCameraMarkerRefreshAt = now;
+                    if (mounted) setState(() {});
+                  }
                 },
               ),
               children: [
@@ -8931,6 +9014,36 @@ _navigationMatchedLocation = null;
               ],
             ),
             ),
+          Positioned(
+            left: 10,
+            bottom: 150,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xCC17212B),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                  child: Text(
+                    'MAP ${_mapOpenMs == null ? '…' : '${_mapOpenMs}ms'}  '
+                    'CAM ${_cameraLoadMs == null ? '…' : '${_cameraLoadMs}ms'} '
+                    '(${visibleRoadAlerts.length}/$_cameraTotalCount)  '
+                    'VAL ${_valhallaInitMs == null ? 'ожидание' : '${_valhallaInitMs}ms'}  '
+                    'GPS ${_gpsAcquisitionMs == null ? 'ожидание' : '${_gpsStartupFailed ? 'ошибка ' : ''}${_gpsAcquisitionMs}ms'}  '
+                    'STYLE ${_styleLoadMs == null ? '…' : '${_styleLoadMs}ms'}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
           Positioned(
             // Place the route action beside, not underneath, the zoom/compass
             // column. Keep it aligned with that column as its bottom changes.
