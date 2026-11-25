@@ -84,6 +84,14 @@ class AppDiagnosticsScreen extends StatefulWidget {
     } catch (_) {}
   }
 
+  // Navigation components call this hook; it writes nothing unless a trip session is active.
+  static Future<void> recordTripEvent(String title, String details) async {
+    await _TripDiagnosticsRecorder.instance.addEvent(title, details);
+  }
+
+  static bool get isTripDiagnosticsActive =>
+      _TripDiagnosticsRecorder.instance.active;
+
   // Record unexpected runtime errors only while the user explicitly records a trip.
   static Future<void> recordTripRuntimeError(String source, Object error) async {
     try {
