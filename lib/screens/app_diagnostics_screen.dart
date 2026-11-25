@@ -814,6 +814,14 @@ class _TripDiagnosticsRecorder {
             child: SingleChildScrollView(child: SelectableText(report)),
           ),
           actions: [
+            TextButton.icon(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(exportReport(file));
+              },
+              icon: const Icon(Icons.ios_share),
+              label: const Text('Экспорт'),
+            ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Закрыть'),
@@ -826,6 +834,22 @@ class _TripDiagnosticsRecorder {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Не удалось открыть отчёт: $error')),
       );
+    }
+  }
+
+  Future<void> exportReport(File file) async {
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      final report = decoded is Map<String, dynamic>
+          ? (decoded['report']?.toString() ?? file.readAsStringSync())
+          : file.readAsStringSync();
+      final directory = await getTemporaryDirectory();
+      final name = file.path.split(Platform.pathSeparator).last.replaceAll('.json', '.txt');
+      final exportFile = File('${directory.path}/$name');
+      await exportFile.writeAsString(report, flush: true);
+      await Share.shareXFiles([XFile(exportFile.path)], text: 'Отчёт диагностики поездки BAKE Navigator');
+    } catch (_) {
+      // Export errors must not affect the stored report.
     }
   }
 
@@ -842,9 +866,25 @@ class _TripDiagnosticsRecorder {
       ),
     );
     if (confirmed != true) return;
+    final wasLatest = reportFiles.isNotEmpty && reportFiles.first.path == file.path;
     await file.delete();
     reportFiles.remove(file);
-    if (reportFiles.isEmpty) lastReport = null;
+    if (reportFiles.isEmpty) {
+      lastReport = null;
+    } else if (wasLatest) {
+      try {
+        final decoded = jsonDecode(await reportFiles.first.readAsString());
+        lastReport = decoded is Map<String, dynamic> ? decoded['report']?.toString() : null;
+      } catch (_) {
+        lastReport = null;
+      }
+    }
+    final prefs = await SharedPreferences.getInstance();
+    if (lastReport == null) {
+      await prefs.remove('bake_trip_diagnostics_last_report');
+    } else {
+      await prefs.setString('bake_trip_diagnostics_last_report', lastReport!);
+    }
     revision.value++;
   }
 
