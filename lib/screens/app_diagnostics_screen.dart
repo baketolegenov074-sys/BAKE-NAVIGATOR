@@ -342,6 +342,7 @@ class _TripDiagnosticsRecorder {
   final revision = ValueNotifier<int>(0);
   StreamSubscription<Position>? _subscription;
   bool active = false;
+  bool _loaded = false;
   DateTime? startedAt;
   Position? _previous;
   DateTime? _previousTime;
@@ -351,6 +352,8 @@ class _TripDiagnosticsRecorder {
   int _saveCounter = 0;
 
   Future<void> load() async {
+    if (_loaded) return;
+    _loaded = true;
     final prefs = await SharedPreferences.getInstance();
     lastReport = prefs.getString('bake_trip_diagnostics_last_report');
     revision.value++;
