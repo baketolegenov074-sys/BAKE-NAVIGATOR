@@ -27,6 +27,7 @@ import 'kazakh_voice_service.dart';
 import 'services/road_alert_service.dart';
 import 'services/offline_address_search.dart';
 import 'screens/road_report_center.dart';
+import 'screens/app_diagnostics_screen.dart';
 import 'screens/openfreemap_experiment.dart';
 import 'services/road_report_sync_service.dart';
 import 'services/valhalla_archive_validator.dart';
@@ -1949,6 +1950,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           onOpenRoutePreferences: _openRoutePreferences,
           onOpenProfile: _openProfileMenu,
           onOpenGpsDiagnostics: _openGpsDiagnostics,
+          onOpenAppDiagnostics: () async {
+            await Navigator.of(context).push<void>(
+              MaterialPageRoute(builder: (_) => const AppDiagnosticsScreen()),
+            );
+          },
           onVoiceChanged: (enabled) {
             setState(() => _voiceMode = enabled ? 3 : 0);
             if (!enabled) {
@@ -10117,6 +10123,7 @@ class NavigatorPreferencesScreen extends StatefulWidget {
     required this.onOpenRoutePreferences,
     required this.onOpenProfile,
     required this.onOpenGpsDiagnostics,
+    required this.onOpenAppDiagnostics,
     required this.onVoiceChanged,
   });
 
@@ -10124,6 +10131,7 @@ class NavigatorPreferencesScreen extends StatefulWidget {
   final Future<void> Function() onOpenRoutePreferences;
   final Future<void> Function() onOpenProfile;
   final Future<void> Function() onOpenGpsDiagnostics;
+  final Future<void> Function() onOpenAppDiagnostics;
   final ValueChanged<bool> onVoiceChanged;
 
   @override
@@ -10258,6 +10266,13 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
                   title: Text(AppLocale.tr('Профиль')),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: widget.onOpenProfile,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.health_and_safety_outlined),
+                  title: const Text('Диагностика приложения'),
+                  subtitle: const Text('Ручная проверка функций и журнал ошибок'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: widget.onOpenAppDiagnostics,
                 ),
                 ListTile(
                   leading: const Icon(Icons.gps_fixed),
