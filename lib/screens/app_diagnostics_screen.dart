@@ -668,7 +668,12 @@ class _TripDiagnosticsRecorder {
           '${details.exception.runtimeType}: ${details.exception}',
         ));
       }
-      _previousFlutterErrorHandler?.call(details);
+      final previous = _previousFlutterErrorHandler;
+      if (previous != null) {
+        previous(details);
+      } else {
+        FlutterError.presentError(details);
+      }
     };
     FlutterError.onError = _activeFlutterErrorHandler;
 
@@ -737,7 +742,7 @@ class _TripDiagnosticsRecorder {
           recoveredReport.writeln('Событий: ${recoveredEvents.length}');
           if (!wasFinished) recoveredReport.writeln('Причина завершения: приложение было закрыто до нажатия кнопки остановки.');
           for (final item in recoveredEvents.whereType<Map>()) {
-            recoveredReport.writeln('\\n${item['time']} | ${item['title']}');
+            recoveredReport.writeln('\n${item['time']} | ${item['title']}');
             recoveredReport.writeln(item['details']);
           }
           final archive = <String, Object?>{
@@ -763,15 +768,16 @@ class _TripDiagnosticsRecorder {
     }
     final directory = await _reportsDirectory();
     if (await directory.exists()) {
+      final files = directory
+          .listSync()
+          .whereType<File>()
+          .where((file) => file.path.split(Platform.pathSeparator).last.startsWith('trip_') &&
+              file.path.endsWith('.json'))
+          .toList();
+      files.sort((left, right) => right.path.compareTo(left.path));
       reportFiles
         ..clear()
-        ..addAll(directory
-            .listSync()
-            .whereType<File>()
-            .where((file) => file.path.split(Platform.pathSeparator).last.startsWith('trip_') &&
-                file.path.endsWith('.json'))
-            .toList()
-          ..sort((left, right) => right.path.compareTo(left.path)));
+        ..addAll(files);
       if (reportFiles.isNotEmpty) {
         try {
           final decoded = jsonDecode(await reportFiles.first.readAsString());
@@ -791,6 +797,14 @@ class _TripDiagnosticsRecorder {
     final directory = Directory('${support.path}/bake_trip_diagnostics');
     if (!await directory.exists()) await directory.create(recursive: true);
     return directory;
+  }
+
+  String reportTitle(File file) {
+    final name = file.path.split(Platform.pathSeparator).last;
+    final micros = int.tryParse(name.replaceFirst('trip_', '').replaceFirst('.json', ''));
+    if (micros == null) return name;
+    final date = DateTime.fromMicrosecondsSinceEpoch(micros).toLocal();
+    return 'Поездка · ${date.toString().split('.').first}';
   }
 
   Future<int> get storageBytes async {
@@ -1110,7 +1124,7 @@ class TripDiagnosticsPanel extends StatelessWidget {
               ...recorder.reportFiles.map((file) => ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.description_outlined),
-                title: Text(file.path.split(Platform.pathSeparator).last),
+                title: Text(recorder.reportTitle(file)),
                 subtitle: const Text('Локальный отчёт поездки'),
                 onTap: () => recorder.openReport(context, file),
                 trailing: IconButton(
