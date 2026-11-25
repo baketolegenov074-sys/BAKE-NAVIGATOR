@@ -309,8 +309,9 @@ class _MapPointPickerPageState extends State<MapPointPickerPage> {
 
 class VoiceTextField extends StatefulWidget {
   const VoiceTextField({super.key, required this.controller, required this.decoration,
-    this.autofocus = false, this.textInputAction, this.onChanged, this.onSubmitted, this.minLines = 1, this.maxLines = 1});
+    this.autofocus = false, this.focusNode, this.textInputAction, this.onChanged, this.onSubmitted, this.minLines = 1, this.maxLines = 1});
   final TextEditingController controller; final InputDecoration decoration; final bool autofocus;
+  final FocusNode? focusNode;
   final TextInputAction? textInputAction; final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted; final int minLines; final int? maxLines;
   @override State<VoiceTextField> createState() => _VoiceTextFieldState();
@@ -343,7 +344,7 @@ class _VoiceTextFieldState extends State<VoiceTextField> {
   }
   @override void dispose() { _speech.cancel(); super.dispose(); }
   @override Widget build(BuildContext context) => Row(children: [
-    Expanded(child: TextField(controller: widget.controller, autofocus: widget.autofocus,
+    Expanded(child: TextField(controller: widget.controller, focusNode: widget.focusNode, autofocus: widget.autofocus,
       textInputAction: widget.textInputAction, onChanged: widget.onChanged, onSubmitted: widget.onSubmitted,
       minLines: widget.minLines, maxLines: widget.maxLines, decoration: widget.decoration)),
     IconButton(tooltip: _listening ? 'Остановить диктовку' : 'Надиктовать по-русски',
