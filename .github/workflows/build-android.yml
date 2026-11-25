@@ -360,6 +360,29 @@ jobs:
           path.write_text(manifest)
           PY
 
+      - name: Verify offline map does not request shared-storage access
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -nE 'MANAGE_EXTERNAL_STORAGE|READ_EXTERNAL_STORAGE' android/app/src/main/AndroidManifest.xml; then
+            echo "::error::Offline MBTiles must not request broad shared-storage permissions."
+            exit 1
+          fi
+          if grep -R -nE 'manageExternalStorage|Permission\\.storage|_requestSharedMbtilesAccess|_findSharedMbtilesFile' lib; then
+            echo "::error::Shared-storage permission requests or full-storage scans remain in app code."
+            exit 1
+          fi
+          if grep -n 'permission_handler:' pubspec.yaml; then
+            echo "::error::permission_handler is no longer required for offline MBTiles."
+            exit 1
+          fi
+          loader_calls="$(grep -c '_loadSavedOfflineMap();' lib/main.dart || true)"
+          if [ "$loader_calls" -ne 1 ]; then
+            echo "::error::Saved MBTiles may only load from the explicit offline-map button; found $loader_calls call sites."
+            exit 1
+          fi
+          echo "Offline MBTiles uses the app-private directory and explicit user action only."
+
       - name: Install Valhalla offline routing and Flutter bridge
         run: |
           python3 - <<'PY'
