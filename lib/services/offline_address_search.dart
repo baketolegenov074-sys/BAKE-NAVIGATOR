@@ -78,7 +78,7 @@ String _foldOfflineAddressText(String value) {
   );
   text = text.replaceAll('малл', 'молл');
   text = text.replaceAll(RegExp(r'[^0-9а-я]+'), ' ');
-  return text.trim().replaceAll(RegExp(r'\\s+'), ' ');
+  return text.trim().replaceAll(RegExp(r'\s+'), ' ');
 }
 
 /// Searches a curated Shymkent directory first, then the bundled OSM index.
