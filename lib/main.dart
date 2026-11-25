@@ -1660,6 +1660,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _headingUpResumeTimer?.cancel();
     _navigationPredictionTimer?.cancel();
     _disposeOfflineMap();
+    _offlineAddressSearch.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _tts.stop();
