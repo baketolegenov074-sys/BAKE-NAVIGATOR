@@ -6489,8 +6489,7 @@ _navigationMatchedLocation = null;
                           onChanged: (value) {
                             photonDebounce?.cancel();
                             autocompleteClient?.close();
-                            final requestClient = http.Client();
-                            autocompleteClient = requestClient;
+                            autocompleteClient = null;
                             final requestVersion = ++photonRequestVersion;
                             photonOnlySuggestions.clear();
                             localOnlySuggestions.clear();
@@ -6502,6 +6501,8 @@ _navigationMatchedLocation = null;
                               });
                               return;
                             }
+                            final requestClient = http.Client();
+                            autocompleteClient = requestClient;
                             refreshSearch(() {
                               photonLoadingSuggestions = true;
                               localLoadingSuggestions = !_peliasTestMode;
@@ -6665,6 +6666,8 @@ _navigationMatchedLocation = null;
                                   trailing: Text(_formatSearchDistance(feature), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF303840))),
                                   onTap: () {
                                     photonDebounce?.cancel();
+                                    autocompleteClient?.close();
+                                    autocompleteClient = null;
                                     final geometry = feature['geometry'];
                                     final coordinates = geometry is Map ? geometry['coordinates'] : null;
                                     if (coordinates is! List || coordinates.length < 2) return;
@@ -6773,6 +6776,8 @@ _navigationMatchedLocation = null;
       ),
     );
     photonDebounce?.cancel();
+    autocompleteClient?.close();
+    autocompleteClient = null;
     peliasUrlController.dispose();
     peliasApiKeyController.dispose();
   }
