@@ -434,7 +434,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Text('Облачный журнал ошибок', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
-              const Text('Облако не опрашивается автоматически. Загрузка выполняется только после нажатия кнопки.'),
+              const Text('Облако не опрашивается автоматически. Загрузка выполняется только после нажатия кнопки. Сейчас таблица разрешает только отправку; чтение требует защищённого доступа администратора.'),
               Row(children: [
                 Expanded(child: Text('Загружено: ${_cloudErrors.length}')),
                 TextButton.icon(
