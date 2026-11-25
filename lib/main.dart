@@ -1105,7 +1105,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     };
 
     unawaited(_loadFlutterMapOnlineStyle());
-    unawaited(_loadGpsDiagnosticsSetting());
     unawaited(_loadBundledRoadAlerts());
     unawaited(_loadSavedRoutePoints());
     unawaited(_loadTrafficLayerPreference());
@@ -2532,6 +2531,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     LatLng? displayPoint,
     String? detail,
   }) {
+    if (!_gpsDiagnosticsEnabled) return;
     final now = DateTime.now();
     final callbackGapMs = position == null || _lastGpsDiagnosticCallbackAt == null
         ? null
@@ -2575,7 +2575,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       'display_lat': displayPoint?.latitude,
       'display_lon': displayPoint?.longitude,
     };
-    if (!_gpsDiagnosticsEnabled) return;
 
     final line = jsonEncode(record);
     _gpsDiagnosticWriteQueue = _gpsDiagnosticWriteQueue.then<void>((_) async {
