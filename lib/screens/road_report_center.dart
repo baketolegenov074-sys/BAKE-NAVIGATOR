@@ -700,10 +700,19 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
     child: Scaffold(
       appBar: AppBar(
         title: const Text('Админ-кабинет', maxLines: 1, overflow: TextOverflow.visible),
-        actions: [IconButton(
-          tooltip: 'Обновить', onPressed: _loading ? null : _loadReports,
-          icon: const Icon(Icons.refresh),
-        )],
+        actions: [
+          IconButton(
+            tooltip: 'Диагностика приложения',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AppDiagnosticsScreen()),
+            ),
+            icon: const Icon(Icons.health_and_safety_outlined),
+          ),
+          IconButton(
+            tooltip: 'Обновить', onPressed: _loading ? null : _loadReports,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
         bottom: const TabBar(
           labelPadding: EdgeInsets.symmetric(horizontal: 12),
           tabs: [
