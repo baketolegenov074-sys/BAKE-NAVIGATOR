@@ -735,7 +735,7 @@ class _TripDiagnosticsRecorder {
           final wasFinished = decoded['finished'] == true;
           final recoveredPoints = (decoded['points'] as List?) ?? const [];
           final recoveredEvents = (decoded['events'] as List?) ?? const [];
-          final recoveredReport = StringBuffer('BAKE Navigator — ${wasFinished ? 'восстановленный отчёт поездки' : 'прерванная диагностика поездки'}\\n');
+          final recoveredReport = StringBuffer('BAKE Navigator — ${wasFinished ? 'восстановленный отчёт поездки' : 'прерванная диагностика поездки'}\n');
           recoveredReport.writeln('Начало: ${started.toLocal()}');
           recoveredReport.writeln('Последняя запись: ${ended.toLocal()}');
           recoveredReport.writeln('GPS-точек: ${recoveredPoints.length}');
