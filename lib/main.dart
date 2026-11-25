@@ -3731,7 +3731,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     final savedPoints = prefs.getStringList('my_custom_place_points_v1') ?? <String>[];
     final normalizedNeedle = query.toLowerCase().replaceAll('ё', 'е')
         .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ').trim();
-    final tokens = normalizedNeedle.split(RegExp(r'\\s+'))
+    final tokens = normalizedNeedle.split(RegExp(r'\s+'))
         .where((token) => token.isNotEmpty).toList();
     if (tokens.isEmpty) return <Map<String, dynamic>>[];
     final results = <Map<String, dynamic>>[];
