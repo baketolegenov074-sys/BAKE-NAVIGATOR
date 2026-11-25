@@ -817,12 +817,26 @@ class _TripDiagnosticsRecorder {
     return total;
   }
 
+  String _formatArchive(dynamic decoded, String fallback) {
+    if (decoded is! Map) return fallback;
+    final buffer = StringBuffer(decoded['report']?.toString() ?? fallback);
+    final points = decoded['points'];
+    if (points is List && points.isNotEmpty) {
+      buffer.writeln('\\nПолный GPS-трек (время | широта | долгота | точность м | скорость м/с | курс):');
+      for (final value in points.whereType<Map>()) {
+        buffer.writeln(
+          '${value['time']} | ${value['lat']} | ${value['lon']} | ${value['accuracy_m']} | ${value['speed_mps']} | ${value['heading']}',
+        );
+      }
+    }
+    return buffer.toString();
+  }
+
   Future<void> openReport(BuildContext context, File file) async {
     try {
-      final decoded = jsonDecode(await file.readAsString());
-      final report = decoded is Map<String, dynamic>
-          ? (decoded['report']?.toString() ?? file.readAsStringSync())
-          : file.readAsStringSync();
+      final raw = await file.readAsString();
+      final decoded = jsonDecode(raw);
+      final report = _formatArchive(decoded, raw);
       if (!context.mounted) return;
       await showDialog<void>(
         context: context,
@@ -858,10 +872,9 @@ class _TripDiagnosticsRecorder {
 
   Future<void> exportReport(File file) async {
     try {
-      final decoded = jsonDecode(await file.readAsString());
-      final report = decoded is Map<String, dynamic>
-          ? (decoded['report']?.toString() ?? file.readAsStringSync())
-          : file.readAsStringSync();
+      final raw = await file.readAsString();
+      final decoded = jsonDecode(raw);
+      final report = _formatArchive(decoded, raw);
       final directory = await getTemporaryDirectory();
       final name = file.path.split(Platform.pathSeparator).last.replaceAll('.json', '.txt');
       final exportFile = File('${directory.path}/$name');
@@ -1063,6 +1076,10 @@ class _TripDiagnosticsRecorder {
   }
 
   Future<void> export() async {
+    if (reportFiles.isNotEmpty) {
+      await exportReport(reportFiles.first);
+      return;
+    }
     if (lastReport == null || lastReport!.isEmpty) return;
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/bake_trip_diagnostics.txt');
