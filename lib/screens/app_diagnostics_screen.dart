@@ -1112,7 +1112,7 @@ class TripDiagnosticsPanel extends StatelessWidget {
               if (recorder.active) const Chip(label: Text('Запись')),
             ]),
             const SizedBox(height: 6),
-            const Text('Запускается только вручную из кабинета. После выхода продолжает запись GPS и необработанных ошибок приложения; при остановке перехват ошибок и GPS-поток отключаются. Данные остаются на телефоне.'),
+            const Text('Запускается только вручную из кабинета. После выхода записывает GPS из основного потока навигации и ошибки приложения. При остановке диагностическая запись отключается; обычный GPS навигации не затрагивается. Данные остаются на телефоне.'),
             if (recorder.active) Text('GPS-точек: ${recorder.points.length} · событий: ${recorder.events.length}'),
             const SizedBox(height: 10),
             SizedBox(width: double.infinity, child: FilledButton.icon(
