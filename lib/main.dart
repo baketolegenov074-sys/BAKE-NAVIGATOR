@@ -1014,6 +1014,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _speedLimitLookupInProgress = false;  double? _routeDistanceMeters;
   double? _routeDurationSeconds;
   StreamSubscription<Position>? _positionSubscription;
+  bool? _positionSubscriptionBackgroundNavigation;
   Future<void> _gpsStreamQueue = Future<void>.value();
   bool _gpsStopPending = false;
   bool _gpsDiagnosticsEnabled = false;
@@ -2573,6 +2574,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           'fix_gap_ms': fixGapMs,
           'jump_m': rawJumpMeters,
           'accuracy_m': position?.accuracy,
+          'speed_mps': position?.speed,
+          'heading_deg': position?.heading,
+          'mocked': position?.isMocked,
+          'fix_time': position?.timestamp.toIso8601String(),
+          'fix_age_ms': position == null ? null : now.difference(position.timestamp).inMilliseconds,
+          'raw_lat': rawPoint?.latitude,
+          'raw_lon': rawPoint?.longitude,
+          'display_lat': displayPoint?.latitude,
+          'display_lon': displayPoint?.longitude,
           'stream_active': _positionSubscription != null,
           'foreground': _appInForeground,
           'navigation_active': _navigationActive,
@@ -2874,6 +2884,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         await previousOperation;
         final subscription = _positionSubscription;
         _positionSubscription = null;
+        _positionSubscriptionBackgroundNavigation = null;
         if (subscription != null) {
           _recordGpsDiagnostic(event: 'STREAM_CANCEL_REQUEST', detail: reason);
           await subscription.cancel();
@@ -2890,27 +2901,53 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     bool backgroundNavigation = false,
     bool waitForFirstFix = false,
   }) async {
+    // Every caller must preserve background GPS while navigation is active.
+    final useBackgroundNavigation = backgroundNavigation || _navigationActive;
+    final usesAndroidBackgroundService =
+        useBackgroundNavigation && defaultTargetPlatform == TargetPlatform.android;
     final previousSubscription = _positionSubscription;
+
+    // Reuse an already-running stream when its operating mode is unchanged.
+    // Replacing it on every locate/recenter/lifecycle callback caused avoidable
+    // gaps in location callbacks and could leave the marker apparently frozen.
+    if (previousSubscription != null &&
+        _positionSubscriptionBackgroundNavigation == usesAndroidBackgroundService &&
+        !waitForFirstFix) {
+      _recordGpsDiagnostic(
+        event: 'STREAM_KEEP',
+        detail: usesAndroidBackgroundService
+            ? 'Android navigation stream retained'
+            : 'Foreground location stream retained',
+      );
+      return;
+    }
+
     if (previousSubscription != null) {
-      _recordGpsDiagnostic(event: 'STREAM_CANCEL', detail: 'Subscription replaced or stopped');
+      _recordGpsDiagnostic(
+        event: 'STREAM_CANCEL',
+        detail: 'GPS mode changed; replacing active subscription',
+      );
     }
     _positionSubscription = null;
+    _positionSubscriptionBackgroundNavigation = null;
     await previousSubscription?.cancel();
     if (!mounted) return;
 
     final firstFix = Completer<void>();
     final LocationSettings locationSettings;
-    if (backgroundNavigation && defaultTargetPlatform == TargetPlatform.android) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
       locationSettings = AndroidSettings(
         accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 1,
         intervalDuration: const Duration(seconds: 1),
-        foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: 'BAKE Navigator — навигация активна',
-          notificationText: 'GPS и голосовые подсказки продолжают работать в фоне.',
-          notificationChannelName: 'Фоновая навигация',
-          setOngoing: true,
-        ),
+        foregroundNotificationConfig: usesAndroidBackgroundService
+            ? const ForegroundNotificationConfig(
+                notificationTitle: 'BAKE Navigator — навигация активна',
+                notificationText: 'GPS и голосовые подсказки продолжают работать в фоне.',
+                notificationChannelName: 'Фоновая навигация',
+                setOngoing: true,
+              )
+            : null,
       );
     } else {
       locationSettings = const LocationSettings(
@@ -2921,11 +2958,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
     _recordGpsDiagnostic(
       event: 'STREAM_START',
-      detail: backgroundNavigation && defaultTargetPlatform == TargetPlatform.android
-          ? 'AndroidSettings; interval=1000ms; distanceFilter=1m; bestForNavigation'
-          : 'LocationSettings; interval=not-explicit; distanceFilter=1m; bestForNavigation',
+      detail: defaultTargetPlatform == TargetPlatform.android
+          ? (usesAndroidBackgroundService
+              ? 'AndroidSettings; interval=1000ms; distanceFilter=1m; bestForNavigation; foreground-service'
+              : 'AndroidSettings; interval=1000ms; distanceFilter=1m; bestForNavigation; fused-provider')
+          : 'LocationSettings; interval=platform-default; distanceFilter=1m; bestForNavigation',
     );
-    _positionSubscription = Geolocator.getPositionStream(
+    late final StreamSubscription<Position> newSubscription;
+    newSubscription = Geolocator.getPositionStream(
       locationSettings: locationSettings,
     ).listen(
       (position) {
@@ -3062,8 +3102,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       },
       onDone: () {
         _recordGpsDiagnostic(event: 'STREAM_DONE', detail: 'Geolocator position stream closed');
+        if (identical(_positionSubscription, newSubscription)) {
+          _positionSubscription = null;
+          _positionSubscriptionBackgroundNavigation = null;
+        }
       },
     );
+    _positionSubscription = newSubscription;
+    _positionSubscriptionBackgroundNavigation = usesAndroidBackgroundService;
 
     if (waitForFirstFix) {
       await firstFix.future.timeout(
