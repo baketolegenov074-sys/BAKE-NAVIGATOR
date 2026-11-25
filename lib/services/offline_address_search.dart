@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -254,25 +256,108 @@ class OfflineAddressSearch {
 
   Future<void>? _loading;
   List<Map<String, dynamic>> _items = <Map<String, dynamic>>[];
+  Isolate? _searchIsolate;
+  ReceivePort? _searchResponsePort;
+  StreamSubscription<dynamic>? _searchResponseSubscription;
+  Completer<SendPort>? _searchPortCompleter;
+  Completer<void>? _searchInitCompleter;
+  SendPort? _searchSendPort;
+  int _nextSearchId = 0;
+  bool _disposed = false;
+  final Map<int, Completer<List<Map<String, dynamic>>>> _pendingSearches =
+      <int, Completer<List<Map<String, dynamic>>>>{};
 
   Future<void> initialize() => _loading ??= _load();
 
   Future<void> _load() async {
+    Uint8List bytes = Uint8List(0);
     try {
       final data = await rootBundle.load(_assetPath);
-      final bytes = data.buffer.asUint8List(
+      bytes = Uint8List.fromList(data.buffer.asUint8List(
         data.offsetInBytes,
         data.lengthInBytes,
-      );
-      // Gzip decompression, JSON decoding and search-field normalization are
-      // CPU-heavy for the full Shymkent index; keep them off the UI isolate.
-      _items = await compute(_decodeOfflineAddressSearchIndex, bytes);
+      ));
     } catch (error) {
-      _items = <Map<String, dynamic>>[];
-      // The curated directory still works if the generated OSM index is absent.
+      // The curated directory remains available when the generated OSM index
+      // is missing. The persistent worker still handles its small directory.
       // ignore: avoid_print
       print('BAKE offline address index could not be loaded: $error');
     }
+
+    try {
+      _searchResponsePort = ReceivePort();
+      _searchResponseSubscription =
+          _searchResponsePort!.listen(_handleSearchWorkerMessage);
+      _searchPortCompleter = Completer<SendPort>();
+      _searchIsolate = await Isolate.spawn<SendPort>(
+        _offlineAddressSearchWorker,
+        _searchResponsePort!.sendPort,
+        debugName: 'BAKE offline address search',
+      );
+      _searchSendPort = await _searchPortCompleter!.future
+          .timeout(const Duration(seconds: 20));
+      _searchInitCompleter = Completer<void>();
+      _searchSendPort!.send(<String, Object?>{
+        'type': 'init',
+        'bytes': bytes,
+      });
+      await _searchInitCompleter!.future.timeout(const Duration(seconds: 60));
+    } catch (error) {
+      _searchIsolate?.kill(priority: Isolate.immediate);
+      _searchIsolate = null;
+      _searchSendPort = null;
+      await _searchResponseSubscription?.cancel();
+      _searchResponseSubscription = null;
+      _searchResponsePort?.close();
+      _searchResponsePort = null;
+      if (bytes.isNotEmpty) {
+        try {
+          _items = await compute(_decodeOfflineAddressSearchIndex, bytes);
+        } catch (decodeError) {
+          // ignore: avoid_print
+          print('BAKE offline address fallback decode failed: $decodeError');
+        }
+      }
+      // ignore: avoid_print
+      print('BAKE persistent address worker unavailable; fallback enabled: $error');
+    }
+  }
+
+  void _handleSearchWorkerMessage(dynamic message) {
+    if (message is SendPort) {
+      if (!(_searchPortCompleter?.isCompleted ?? true)) {
+        _searchPortCompleter!.complete(message);
+      }
+      return;
+    }
+    if (message is! Map) return;
+    final id = (message['id'] as num?)?.toInt();
+    if (id == 0) {
+      final initialization = _searchInitCompleter;
+      if (initialization == null || initialization.isCompleted) return;
+      final error = message['error']?.toString();
+      if (error != null) {
+        initialization.completeError(StateError(error));
+      } else {
+        initialization.complete();
+      }
+      return;
+    }
+    if (id == null) return;
+    final completer = _pendingSearches.remove(id);
+    if (completer == null || completer.isCompleted) return;
+    final error = message['error']?.toString();
+    if (error != null) {
+      completer.completeError(StateError(error));
+      return;
+    }
+    final rawResults = message['results'];
+    final results = rawResults is List
+        ? rawResults.whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList(growable: false)
+        : <Map<String, dynamic>>[];
+    completer.complete(results);
   }
 
   Future<List<Map<String, dynamic>>> search(
@@ -281,18 +366,49 @@ class OfflineAddressSearch {
     int limit = 10,
   }) async {
     await initialize();
-    // The full OSM index can contain many thousands of records. Run matching,
-    // sorting and deduplication away from the UI isolate so typing stays responsive.
-    return compute<Map<String, Object?>, List<Map<String, dynamic>>>(
-      _searchOfflineAddressInIsolate,
-      <String, Object?>{
-        'items': _items,
-        'query': query,
-        'nearLatitude': near?.latitude,
-        'nearLongitude': near?.longitude,
-        'limit': limit,
-      },
-    );
+    final sendPort = _searchSendPort;
+    if (sendPort == null || _disposed) {
+      return compute<Map<String, Object?>, List<Map<String, dynamic>>>(
+        _searchOfflineAddressInIsolate,
+        <String, Object?>{
+          'items': _items,
+          'query': query,
+          'nearLatitude': near?.latitude,
+          'nearLongitude': near?.longitude,
+          'limit': limit,
+        },
+      );
+    }
+    final id = ++_nextSearchId;
+    final completer = Completer<List<Map<String, dynamic>>>();
+    _pendingSearches[id] = completer;
+    sendPort.send(<String, Object?>{
+      'type': 'search',
+      'id': id,
+      'query': query,
+      'nearLatitude': near?.latitude,
+      'nearLongitude': near?.longitude,
+      'limit': limit,
+    });
+    return completer.future;
+  }
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _searchIsolate?.kill(priority: Isolate.immediate);
+    _searchIsolate = null;
+    _searchSendPort = null;
+    _searchResponsePort?.close();
+    _searchResponsePort = null;
+    unawaited(_searchResponseSubscription?.cancel());
+    _searchResponseSubscription = null;
+    for (final completer in _pendingSearches.values) {
+      if (!completer.isCompleted) {
+        completer.completeError(StateError('Offline address search disposed'));
+      }
+    }
+    _pendingSearches.clear();
   }
 
   List<Map<String, dynamic>> _searchSync(
@@ -661,6 +777,42 @@ class OfflineAddressSearch {
   }
 }
 
+
+void _offlineAddressSearchWorker(SendPort mainSendPort) {
+  final commands = ReceivePort();
+  final service = OfflineAddressSearch();
+  mainSendPort.send(commands.sendPort);
+  commands.listen((dynamic rawMessage) {
+    if (rawMessage is! Map) return;
+    final message = Map<String, dynamic>.from(rawMessage);
+    final type = message['type']?.toString();
+    final id = (message['id'] as num?)?.toInt() ?? 0;
+    try {
+      if (type == 'init') {
+        final bytes = message['bytes'];
+        service._items = bytes is Uint8List && bytes.isNotEmpty
+            ? _decodeOfflineAddressSearchIndex(bytes)
+            : <Map<String, dynamic>>[];
+        mainSendPort.send(<String, Object?>{'id': 0, 'ok': true});
+        return;
+      }
+      if (type != 'search') return;
+      final latitude = (message['nearLatitude'] as num?)?.toDouble();
+      final longitude = (message['nearLongitude'] as num?)?.toDouble();
+      final near = latitude == null || longitude == null
+          ? null
+          : LatLng(latitude, longitude);
+      final results = service._searchSync(
+        message['query']?.toString() ?? '',
+        near: near,
+        limit: (message['limit'] as num?)?.toInt() ?? 10,
+      );
+      mainSendPort.send(<String, Object?>{'id': id, 'results': results});
+    } catch (error) {
+      mainSendPort.send(<String, Object?>{'id': id, 'error': error.toString()});
+    }
+  });
+}
 
 List<Map<String, dynamic>> _searchOfflineAddressInIsolate(
   Map<String, Object?> payload,
