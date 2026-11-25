@@ -1095,7 +1095,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
               child: SelectableText(
-                'BAKE ERROR\\n\\n${details.exceptionAsString()}',
+                'ОШИБКА ОТОБРАЖЕНИЯ BAKE NAVIGATOR\n\n${details.exceptionAsString()}',
                 style: const TextStyle(color: Color(0xFFB00020), fontSize: 14),
               ),
             ),
