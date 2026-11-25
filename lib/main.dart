@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -274,6 +275,22 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    unawaited(RoadReportSyncService.recordDiagnosticEvent(
+      category: 'flutter',
+      message: '${details.exception.runtimeType}: ${details.exception}',
+      stackTrace: details.stack?.toString(),
+    ));
+  };
+  ui.PlatformDispatcher.instance.onError = (error, stackTrace) {
+    unawaited(RoadReportSyncService.recordDiagnosticEvent(
+      category: 'platform',
+      message: '${error.runtimeType}: $error',
+      stackTrace: stackTrace.toString(),
+    ));
+    return false;
+  };
   runApp(const BakeNavigatorApp());
 }
 
@@ -2464,7 +2481,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     LatLng? displayPoint,
     String? detail,
   }) {
-    if (!_gpsDiagnosticsEnabled) return;
     final now = DateTime.now();
     final callbackGapMs = position == null || _lastGpsDiagnosticCallbackAt == null
         ? null
@@ -2508,6 +2524,30 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       'display_lat': displayPoint?.latitude,
       'display_lon': displayPoint?.longitude,
     };
+    final isGpsAnomaly = (callbackGapMs ?? 0) > 3000 ||
+        (fixGapMs ?? 0) > 3000 ||
+        (rawJumpMeters ?? 0) > 50 ||
+        (position?.accuracy ?? 0) > 30 ||
+        position?.isMocked == true;
+    final isGpsStreamFailure = event == 'STREAM_ERROR' || event == 'STREAM_DONE';
+    if (isGpsAnomaly || isGpsStreamFailure) {
+      unawaited(RoadReportSyncService.recordDiagnosticEvent(
+        category: isGpsStreamFailure ? 'gps_stream' : 'gps',
+        message: 'GPS diagnostic event: $event',
+        details: <String, dynamic>{
+          'event': event,
+          'callback_gap_ms': callbackGapMs,
+          'fix_gap_ms': fixGapMs,
+          'jump_m': rawJumpMeters,
+          'accuracy_m': position?.accuracy,
+          'stream_active': _positionSubscription != null,
+          'foreground': _appInForeground,
+          'navigation_active': _navigationActive,
+        },
+      ));
+    }
+    if (!_gpsDiagnosticsEnabled) return;
+
     final line = jsonEncode(record);
     _gpsDiagnosticWriteQueue = _gpsDiagnosticWriteQueue.then<void>((_) async {
       final file = await _gpsDiagnosticsFile();
@@ -4929,6 +4969,7 @@ _navigationMatchedLocation = null;
       if (!RoadReportSyncService.isInitialized) {
         await RoadReportSyncService.initialize();
       }
+      await RoadReportSyncService.flushPendingDiagnosticEvents();
       final prefs = await SharedPreferences.getInstance();
       final rows = prefs.getStringList('bake_road_reports_v1') ?? <String>[];
       var changed = false;
