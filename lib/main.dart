@@ -1197,13 +1197,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
     }());
 
-    // Defer disk-heavy MBTiles discovery and Valhalla graph preparation until
-    // the map has been visible for one second.
+    // Prepare Valhalla after the map is visible. MBTiles is now loaded
+    // only after the user explicitly enables the offline map.
     unawaited(Future<void>.delayed(
       const Duration(seconds: 1),
       () async {
         if (!mounted) return;
-        unawaited(_loadSavedOfflineMap());
         unawaited(_ensureValhallaReady());
       },
     ));
@@ -4974,7 +4973,6 @@ _navigationMatchedLocation = null;
     _recordGpsDiagnostic(event: 'APP_LIFECYCLE', detail: state.name);
     if (state == AppLifecycleState.resumed) {
       _appInForeground = true;
-      unawaited(_loadSavedOfflineMap());
       _lastCameraUpdateAt = null;
       _lastMapAnnotationUpdateAt = null;
       _headingUpGestureActive = false;
