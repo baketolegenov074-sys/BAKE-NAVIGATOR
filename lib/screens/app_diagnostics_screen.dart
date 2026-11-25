@@ -334,117 +334,113 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
 }
 
 
-class TripDiagnosticsPanel extends StatefulWidget {
-  const TripDiagnosticsPanel({super.key});
-  @override
-  State<TripDiagnosticsPanel> createState() => _TripDiagnosticsPanelState();
-}
-class _TripDiagnosticsPanelState extends State<TripDiagnosticsPanel> {
+
+
+class _TripDiagnosticsRecorder {
+  _TripDiagnosticsRecorder._();
+  static final instance = _TripDiagnosticsRecorder._();
+  final revision = ValueNotifier<int>(0);
   StreamSubscription<Position>? _subscription;
-  bool _active = false;
-  DateTime? _startedAt;
+  bool active = false;
+  DateTime? startedAt;
   Position? _previous;
   DateTime? _previousTime;
-  final List<Map<String, Object?>> _events = [];
-  final List<Map<String, Object?>> _points = [];
-  String? _lastReport;
+  final List<Map<String, Object?>> events = [];
+  final List<Map<String, Object?>> points = [];
+  String? lastReport;
   int _saveCounter = 0;
 
-  @override
-  void initState() { super.initState(); _loadReport(); }
-  @override
-  void dispose() { _subscription?.cancel(); super.dispose(); }
-
-  Future<void> _loadReport() async {
+  Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    if (mounted) setState(() => _lastReport = prefs.getString('bake_trip_diagnostics_last_report'));
+    lastReport = prefs.getString('bake_trip_diagnostics_last_report');
+    revision.value++;
   }
 
-  Future<void> _start() async {
-    if (_active) return;
+  Future<void> start(BuildContext context) async {
+    if (active) return;
     final enabled = await Geolocator.isLocationServiceEnabled();
     final permission = await Geolocator.checkPermission();
     if (!enabled || permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(!enabled ? 'GPS выключен.' : 'Нет разрешения на геолокацию.'),
       ));
       return;
     }
-    _startedAt = DateTime.now();
-    _previous = null; _previousTime = null; _events.clear(); _points.clear(); _saveCounter = 0;
-    setState(() => _active = true);
+    startedAt = DateTime.now();
+    _previous = null; _previousTime = null; events.clear(); points.clear(); _saveCounter = 0;
+    active = true; revision.value++;
     try {
       _subscription = Geolocator.getPositionStream(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 1),
-      ).listen(_onPosition, onError: (Object error) => _addEvent('Ошибка GPS-потока', error.toString()));
+      ).listen(_onPosition, onError: (Object error) => addEvent('Ошибка GPS-потока', error.toString()));
       await _saveSession();
     } catch (error) {
-      await _addEvent('Не удалось запустить запись', error.toString());
-      await _stop();
+      await addEvent('Не удалось запустить запись', error.toString());
+      await stop();
     }
   }
 
   Future<void> _onPosition(Position position) async {
-    if (!_active) return;
+    if (!active) return;
     final time = position.timestamp;
     final gap = _previousTime == null ? null : time.difference(_previousTime!).inMilliseconds / 1000.0;
     double? jump; double? calculatedSpeed;
     if (_previous != null && gap != null) {
       jump = Geolocator.distanceBetween(_previous!.latitude, _previous!.longitude, position.latitude, position.longitude);
       if (gap > 0) calculatedSpeed = jump / gap;
-      if (gap > 10) await _addEvent('Длинный перерыв GPS', 'Между фиксациями ${gap.toStringAsFixed(1)} с.');
+      if (gap > 10) await addEvent('Длинный перерыв GPS', 'Между фиксациями ${gap.toStringAsFixed(1)} с.');
       if (gap > 0 && gap <= 5 && jump > 100 && (calculatedSpeed ?? 0) > 45) {
-        await _addEvent('Возможный скачок GPS', 'Смещение ${jump.toStringAsFixed(1)} м за ${gap.toStringAsFixed(1)} с; расчётная скорость ${(calculatedSpeed! * 3.6).toStringAsFixed(0)} км/ч; точность ±${position.accuracy.toStringAsFixed(1)} м.');
+        await addEvent('Возможный скачок GPS', 'Смещение ${jump.toStringAsFixed(1)} м за ${gap.toStringAsFixed(1)} с; расчётная скорость ${(calculatedSpeed! * 3.6).toStringAsFixed(0)} км/ч; точность ±${position.accuracy.toStringAsFixed(1)} м.');
       }
     }
-    if (position.accuracy > 50) await _addEvent('Низкая точность GPS', 'Точность ±${position.accuracy.toStringAsFixed(1)} м.');
+    if (position.accuracy > 50) await addEvent('Низкая точность GPS', 'Точность ±${position.accuracy.toStringAsFixed(1)} м.');
     _previous = position; _previousTime = time;
-    _points.add({
+    points.add({
       'time': time.toIso8601String(), 'lat': position.latitude, 'lon': position.longitude,
       'accuracy_m': position.accuracy, 'speed_mps': position.speed, 'heading': position.heading,
       'gap_s': gap, 'jump_m': jump, 'calculated_speed_mps': calculatedSpeed, 'mocked': position.isMocked,
     });
-    if (_points.length > 5000) _points.removeAt(0);
+    if (points.length > 5000) points.removeAt(0);
     if (++_saveCounter >= 10) { _saveCounter = 0; await _saveSession(); }
-    if (mounted) setState(() {});
+    revision.value++;
   }
 
-  Future<void> _addEvent(String title, String details) async {
-    _events.add({
+  Future<void> addEvent(String title, String details) async {
+    events.add({
       'time': DateTime.now().toIso8601String(), 'title': title, 'details': details,
       if (_previous != null) 'lat': _previous!.latitude,
       if (_previous != null) 'lon': _previous!.longitude,
     });
     await _saveSession();
-    if (mounted) setState(() {});
+    revision.value++;
   }
 
   Future<void> _saveSession({bool finished = false}) async {
-    if (_startedAt == null) return;
+    if (startedAt == null) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('bake_trip_diagnostics_session', jsonEncode({
-      'startedAt': _startedAt!.toIso8601String(), 'updatedAt': DateTime.now().toIso8601String(),
-      'finished': finished, 'points': _points, 'events': _events,
+      'startedAt': startedAt!.toIso8601String(), 'updatedAt': DateTime.now().toIso8601String(),
+      'finished': finished, 'points': points, 'events': events,
     }));
   }
 
-  Future<void> _stop() async {
-    if (!_active) return;
-    setState(() => _active = false);
+  Future<void> stop() async {
+    if (!active) return;
+    active = false; revision.value++;
     await _subscription?.cancel(); _subscription = null;
     final ended = DateTime.now();
     final prefs = await SharedPreferences.getInstance();
     final errors = (prefs.getStringList('bake_app_diagnostics_history') ?? []).where((line) {
       final date = DateTime.tryParse(line.split(' | ').first);
-      return date != null && _startedAt != null && !date.isBefore(_startedAt!);
+      return date != null && startedAt != null && !date.isBefore(startedAt!);
     }).toList();
     final report = StringBuffer('BAKE Navigator — диагностика поездки\n');
-    report.writeln('Начало: ${_startedAt?.toLocal()}');
+    report.writeln('Начало: ${startedAt?.toLocal()}');
     report.writeln('Окончание: ${ended.toLocal()}');
-    report.writeln('GPS-точек: ${_points.length}');
-    report.writeln('GPS-событий: ${_events.length}');
+    report.writeln('GPS-точек: ${points.length}');
+    report.writeln('GPS-событий: ${events.length}');
     report.writeln('Ошибок приложения за поездку: ${errors.length}');
-    for (final event in _events) {
+    for (final event in events) {
       report.writeln('\n${event['time']} | ${event['title']}');
       report.writeln(event['details']);
       if (event['lat'] != null) report.writeln('Координаты: ${event['lat']}, ${event['lon']}');
@@ -454,48 +450,60 @@ class _TripDiagnosticsPanelState extends State<TripDiagnosticsPanel> {
       for (final error in errors) { report.writeln(error); }
     }
     await _saveSession(finished: true);
-    await prefs.setString('bake_trip_diagnostics_last_report', report.toString());
-    if (mounted) setState(() => _lastReport = report.toString());
+    lastReport = report.toString();
+    await prefs.setString('bake_trip_diagnostics_last_report', lastReport!);
+    revision.value++;
   }
 
-  Future<void> _export() async {
-    if (_lastReport == null || _lastReport!.isEmpty) return;
+  Future<void> export() async {
+    if (lastReport == null || lastReport!.isEmpty) return;
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/bake_trip_diagnostics.txt');
-    await file.writeAsString(_lastReport!, flush: true);
+    await file.writeAsString(lastReport!, flush: true);
     await Share.shareXFiles([XFile(file.path)], text: 'Диагностика поездки BAKE Navigator');
   }
+}
+
+class TripDiagnosticsPanel extends StatelessWidget {
+  const TripDiagnosticsPanel({super.key});
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(14),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Icon(_active ? Icons.fiber_manual_record : Icons.route_outlined,
-            color: _active ? Colors.red : Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 8),
-          Expanded(child: Text('Диагностика поездки', style: Theme.of(context).textTheme.titleMedium)),
-          if (_active) const Chip(label: Text('Запись')),
-        ]),
-        const SizedBox(height: 6),
-        const Text('Ручная запись GPS-точек, интервалов, точности, скачков координат и ошибок приложения. Данные сохраняются на телефоне.'),
-        if (_active) Text('GPS-точек: ${_points.length} · событий: ${_events.length}'),
-        const SizedBox(height: 10),
-        SizedBox(width: double.infinity, child: FilledButton.icon(
-          onPressed: _active ? _stop : _start,
-          icon: Icon(_active ? Icons.stop : Icons.play_arrow),
-          label: Text(_active ? 'Завершить диагностику поездки' : 'Начать диагностику поездки'),
-          style: _active ? FilledButton.styleFrom(backgroundColor: Colors.red.shade700) : null,
-        )),
-        if (_lastReport != null) ...[
-          const Divider(),
-          Text(_lastReport!, maxLines: 7, overflow: TextOverflow.ellipsis),
-          Align(alignment: Alignment.centerRight, child: TextButton.icon(
-            onPressed: _export, icon: const Icon(Icons.ios_share), label: const Text('Экспорт отчёта поездки'),
-          )),
-        ],
-      ]),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final recorder = _TripDiagnosticsRecorder.instance;
+    recorder.load();
+    return ValueListenableBuilder<int>(
+      valueListenable: recorder.revision,
+      builder: (context, revision, _) => Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Icon(recorder.active ? Icons.fiber_manual_record : Icons.route_outlined,
+                color: recorder.active ? Colors.red : Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Диагностика поездки', style: Theme.of(context).textTheme.titleMedium)),
+              if (recorder.active) const Chip(label: Text('Запись')),
+            ]),
+            const SizedBox(height: 6),
+            const Text('Работает независимо от открытого экрана приложения. Записывает GPS-точки, интервалы, точность, скачки координат и ошибки приложения. Данные остаются на телефоне.'),
+            if (recorder.active) Text('GPS-точек: ${recorder.points.length} · событий: ${recorder.events.length}'),
+            const SizedBox(height: 10),
+            SizedBox(width: double.infinity, child: FilledButton.icon(
+              onPressed: recorder.active ? recorder.stop : () => recorder.start(context),
+              icon: Icon(recorder.active ? Icons.stop : Icons.play_arrow),
+              label: Text(recorder.active ? 'Завершить диагностику поездки' : 'Начать диагностику поездки'),
+              style: recorder.active ? FilledButton.styleFrom(backgroundColor: Colors.red.shade700) : null,
+            )),
+            if (recorder.lastReport != null) ...[
+              const Divider(),
+              Text(recorder.lastReport!, maxLines: 7, overflow: TextOverflow.ellipsis),
+              Align(alignment: Alignment.centerRight, child: TextButton.icon(
+                onPressed: recorder.export, icon: const Icon(Icons.ios_share), label: const Text('Экспорт отчёта поездки'),
+              )),
+            ],
+          ]),
+        ),
+      ),
+    );
+  }
 }
