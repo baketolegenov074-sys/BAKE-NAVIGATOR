@@ -324,23 +324,13 @@ void main() {
       return;
     }
     FlutterError.presentError(details);
-    unawaited(AppDiagnosticsScreen.recordRuntimeError('Flutter', details.exception));
-    unawaited(RoadReportSyncService.recordDiagnosticEvent(
-      category: 'flutter',
-      message: details.exception.runtimeType.toString(),
-      stackTrace: details.stack?.toString(),
-    ));
+    unawaited(AppDiagnosticsScreen.recordTripRuntimeError('Flutter', details.exception));
   };
   ui.PlatformDispatcher.instance.onError = (error, stackTrace) {
     if (_isExpectedVectorTileCancellation(error, stackTrace)) {
       return true;
     }
-    unawaited(AppDiagnosticsScreen.recordRuntimeError('Platform', error));
-    unawaited(RoadReportSyncService.recordDiagnosticEvent(
-      category: 'platform',
-      message: error.runtimeType.toString(),
-      stackTrace: stackTrace.toString(),
-    ));
+    unawaited(AppDiagnosticsScreen.recordTripRuntimeError('Platform', error));
     return false;
   };
   runApp(const BakeNavigatorApp());
@@ -2561,37 +2551,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       'display_lat': displayPoint?.latitude,
       'display_lon': displayPoint?.longitude,
     };
-    final isGpsAnomaly = (callbackGapMs ?? 0) > 3000 ||
-        (fixGapMs ?? 0) > 3000 ||
-        (rawJumpMeters ?? 0) > 50 ||
-        (position?.accuracy ?? 0) > 30 ||
-        position?.isMocked == true;
-    final isGpsStreamFailure = event == 'STREAM_ERROR' || event == 'STREAM_DONE';
-    if (isGpsAnomaly || isGpsStreamFailure) {
-      unawaited(RoadReportSyncService.recordDiagnosticEvent(
-        category: isGpsStreamFailure ? 'gps_stream' : 'gps',
-        message: 'GPS diagnostic event: $event',
-        details: <String, dynamic>{
-          'event': event,
-          'callback_gap_ms': callbackGapMs,
-          'fix_gap_ms': fixGapMs,
-          'jump_m': rawJumpMeters,
-          'accuracy_m': position?.accuracy,
-          'speed_mps': position?.speed,
-          'heading_deg': position?.heading,
-          'mocked': position?.isMocked,
-          'fix_time': position?.timestamp.toIso8601String(),
-          'fix_age_ms': position == null ? null : now.difference(position.timestamp).inMilliseconds,
-          'raw_lat': rawPoint?.latitude,
-          'raw_lon': rawPoint?.longitude,
-          'display_lat': displayPoint?.latitude,
-          'display_lon': displayPoint?.longitude,
-          'stream_active': _positionSubscription != null,
-          'foreground': _appInForeground,
-          'navigation_active': _navigationActive,
-        },
-      ));
-    }
     if (!_gpsDiagnosticsEnabled) return;
 
     final line = jsonEncode(record);
@@ -5162,7 +5121,7 @@ _navigationMatchedLocation = null;
       if (!RoadReportSyncService.isInitialized) {
         await RoadReportSyncService.initialize();
       }
-      await RoadReportSyncService.flushPendingDiagnosticEvents();
+
       final prefs = await SharedPreferences.getInstance();
       final rows = prefs.getStringList('bake_road_reports_v1') ?? <String>[];
       var changed = false;
