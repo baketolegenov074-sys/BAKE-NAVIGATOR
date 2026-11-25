@@ -325,12 +325,14 @@ void main() {
     }
     FlutterError.presentError(details);
     unawaited(AppDiagnosticsScreen.recordTripRuntimeError('Flutter', details.exception));
+    unawaited(AppDiagnosticsScreen.recordStartupRuntimeError('Flutter', details.exception));
   };
   ui.PlatformDispatcher.instance.onError = (error, stackTrace) {
     if (_isExpectedVectorTileCancellation(error, stackTrace)) {
       return true;
     }
     unawaited(AppDiagnosticsScreen.recordTripRuntimeError('Platform', error));
+    unawaited(AppDiagnosticsScreen.recordStartupRuntimeError('Platform', error));
     return false;
   };
   runApp(const BakeNavigatorApp());
@@ -1066,6 +1068,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   void initState() {
     super.initState();
     _mapOpenStopwatch.start();
+    unawaited(() async {
+      if (!await AppDiagnosticsScreen.isStartupCheckArmed()) return;
+      await Future<void>.delayed(const Duration(seconds: 30));
+      if (mounted && !_offlineMapReady) {
+        await AppDiagnosticsScreen.recordStartupMapTimeout();
+      }
+    }());
     WidgetsBinding.instance.addObserver(this);
         WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -1077,10 +1086,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     ErrorWidget.builder = (FlutterErrorDetails details) {
       debugPrint('BAKE RELEASE WIDGET ERROR: ${details.exceptionAsString()}');
       debugPrintStack(stackTrace: details.stack);
+      unawaited(AppDiagnosticsScreen.recordStartupRuntimeError('Widget', details.exception));
       return Directionality(
         textDirection: TextDirection.ltr,
         child: ColoredBox(
-          color: const Color(0xFFFFFFFF),
+          color: const Color(0xFFF1F3F5),
           child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
@@ -1574,6 +1584,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (!mounted || _mapOpenMs != null) return;
         _mapOpenStopwatch.stop();
         _mapOpenMs = _mapOpenStopwatch.elapsedMilliseconds;
+        unawaited(AppDiagnosticsScreen.recordStartupMapReady(_mapOpenMs!));
         setState(() {});
         _scheduleValhallaStartupAfterMapPaint();
       });
