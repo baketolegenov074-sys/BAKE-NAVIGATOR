@@ -279,14 +279,14 @@ void main() {
     FlutterError.presentError(details);
     unawaited(RoadReportSyncService.recordDiagnosticEvent(
       category: 'flutter',
-      message: '${details.exception.runtimeType}: ${details.exception}',
+      message: details.exception.runtimeType.toString(),
       stackTrace: details.stack?.toString(),
     ));
   };
   ui.PlatformDispatcher.instance.onError = (error, stackTrace) {
     unawaited(RoadReportSyncService.recordDiagnosticEvent(
       category: 'platform',
-      message: '${error.runtimeType}: $error',
+      message: error.runtimeType.toString(),
       stackTrace: stackTrace.toString(),
     ));
     return false;
