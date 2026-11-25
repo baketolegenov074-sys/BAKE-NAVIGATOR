@@ -985,6 +985,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _flutterMapExperimentEnabled = true;
   bool _flutterMapExperimentLoading = false;
   Style? _flutterMapOnlineStyle;
+  TileProviders? _flutterMapOnlineTileProviders;
   bool get _isFlutterMapDisplayed => true;
 
   LatLng? _lastRouteLineSyncPoint;
@@ -1920,13 +1921,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       ).read();
       if (!mounted) return;
       setState(() {
-        _flutterMapOnlineStyle = Style(
-          theme: style.theme,
-          sprites: style.sprites,
-          providers: _resilientOnlineTileProviders(style.providers),
-          attributions: style.attributions,
-          glyphs: style.glyphs,
-        );
+        _flutterMapOnlineStyle = style;
+        _flutterMapOnlineTileProviders =
+            _resilientOnlineTileProviders(style.providers);
         _flutterMapExperimentEnabled = true;
       });
     } catch (error) {
@@ -8879,7 +8876,8 @@ _navigationMatchedLocation = null;
                   VectorTileLayer(
                     theme: _flutterMapOnlineStyle!.theme,
                     sprites: _flutterMapOnlineStyle!.sprites,
-                    tileProviders: _flutterMapOnlineStyle!.providers,
+                    tileProviders: _flutterMapOnlineTileProviders ??
+                        _flutterMapOnlineStyle!.providers,
                     maximumZoom: 18,
                     concurrency: 2,
                   )
