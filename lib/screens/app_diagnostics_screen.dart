@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -644,7 +645,7 @@ class _TripDiagnosticsRecorder {
   int _saveCounter = 0;
   FlutterExceptionHandler? _previousFlutterErrorHandler;
   bool Function(Object, StackTrace)? _previousPlatformErrorHandler;
-  FlutterErrorHandler? _activeFlutterErrorHandler;
+  FlutterExceptionHandler? _activeFlutterErrorHandler;
   bool Function(Object, StackTrace)? _activePlatformErrorHandler;
 
   void _installRuntimeErrorHooks() {
