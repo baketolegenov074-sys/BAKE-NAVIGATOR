@@ -3804,7 +3804,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
     return merged.take(150).toList();
   }
-  Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true, bool includeExpandedPhotonQueries = true, bool includePhoton = true}) async {
+  Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true, bool includeExpandedPhotonQueries = true, bool includePhoton = true, bool includeCloudReports = true}) async {
     if (_nominatimTestMode) {
       try {
         // Isolated provider test: no Photon, local index, saved places, or road reports.
@@ -3849,7 +3849,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       final id = row['id']?.toString() ?? '';
       if (matches(row) && seenReports.add(id)) reportFeatures.add(toFeature(row));
     }
-    if (RoadReportSyncService.isInitialized) {
+    if (includeCloudReports && RoadReportSyncService.isInitialized) {
       try {
         for (final row in await RoadReportSyncService.searchConfirmedReports(query)) {
           final id = row['id']?.toString() ?? '';
@@ -6334,6 +6334,7 @@ _navigationMatchedLocation = null;
         _peliasTestMode = savedPeliasTestMode;
       });
     }
+    if (!mounted) return;
     final peliasUrlController = TextEditingController(text: _peliasBaseUrl);
     final peliasApiKeyController = TextEditingController(text: _peliasApiKey);
     List<Map<String, dynamic>> photonSuggestions = <Map<String, dynamic>>[];
@@ -6344,7 +6345,6 @@ _navigationMatchedLocation = null;
     Timer? photonDebounce;
     var photonRequestVersion = 0;
     final history = prefs.getStringList('search_history') ?? <String>[];
-    if (!mounted) return;
     const categories = <Map<String, Object>>[
       {'name': 'АЗС', 'query': 'АЗС', 'icon': Icons.local_gas_station},
       {'name': 'Рестораны', 'query': 'ресторан', 'icon': Icons.restaurant},
@@ -6481,7 +6481,7 @@ _navigationMatchedLocation = null;
                               return;
                             }
                             refreshSearch(() {
-                              photonLoadingSuggestions = !_peliasTestMode;
+                              photonLoadingSuggestions = true;
                               localLoadingSuggestions = !_peliasTestMode;
                               photonSuggestions = <Map<String, dynamic>>[];
                             });
@@ -6555,6 +6555,7 @@ _navigationMatchedLocation = null;
                                     includeNominatimAddressFallback: false,
                                     includeExpandedPhotonQueries: false,
                                     includePhoton: false,
+                                    includeCloudReports: false,
                                   ).timeout(const Duration(seconds: 12));
                                   if (!searchContext.mounted || requestVersion != photonRequestVersion) return;
                                   localOnlySuggestions..clear()..addAll(found);
