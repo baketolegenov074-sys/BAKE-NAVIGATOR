@@ -55,7 +55,21 @@ class RoadReportSyncService {
     debugPrint('BAKE Supabase configuration: $configurationSummary');
     await Supabase.initialize(url: _url.trim(), anonKey: _publishableKey.trim());
     _initialized = true;
-    await flushPendingDiagnosticEvents();
+  }
+
+  /// Performs a read-only connectivity check against the same table used by the admin cabinet.
+  static Future<String> checkConnection() async {
+    final problem = configurationProblem;
+    if (problem != null) throw StateError(problem);
+    if (!_initialized) await initialize();
+    await _client.from('road_reports').select('id').limit(1);
+    return 'Подключение подтверждено: чтение таблицы road_reports успешно.';
+  }
+
+  /// Clears only the pending local diagnostic upload queue. Cloud rows are untouched.
+  static Future<void> clearPendingDiagnosticEvents() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_diagnosticQueueKey);
   }
 
   static SupabaseClient get _client {
