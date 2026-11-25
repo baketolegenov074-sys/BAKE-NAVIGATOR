@@ -1720,9 +1720,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         await prefs.remove('offline_map_auto_connected');
       }
 
-      // Re-scan at startup and after returning from Android settings for
-      // automatically discovered maps. Preserve a manually imported map.
-      if (path == null || autoConnected) {
+      // Re-scan shared storage only when no saved MBTiles path exists.
+      // Repeated full-storage scans on every launch caused long startup stalls.
+      if (path == null) {
         final hasAccess = await _requestSharedMbtilesAccess();
         if (hasAccess) {
           final foundPath = await _findSharedMbtilesFile();
