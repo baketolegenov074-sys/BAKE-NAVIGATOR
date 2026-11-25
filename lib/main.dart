@@ -2949,6 +2949,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
               : 'AndroidSettings; interval=1000ms; distanceFilter=1m; bestForNavigation; fused-provider')
           : 'LocationSettings; interval=platform-default; distanceFilter=1m; bestForNavigation',
     );
+    unawaited(AppDiagnosticsScreen.recordTripEvent(
+      'Основной GPS-поток запущен',
+      defaultTargetPlatform == TargetPlatform.android
+          ? (usesAndroidBackgroundService ? 'Android foreground service.' : 'Android fused provider.')
+          : 'Platform default location settings.',
+    ));
     late final StreamSubscription<Position> newSubscription;
     newSubscription = Geolocator.getPositionStream(
       locationSettings: locationSettings,
