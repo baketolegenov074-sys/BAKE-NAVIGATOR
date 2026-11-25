@@ -6333,7 +6333,24 @@ _navigationMatchedLocation = null;
                             refreshSearch(() {
                                 photonLoadingSuggestions = true;
                               });
-                            // Merge Photon with saved places, map history,
+                            // Keep typing responsive: one Photon batch at a time.
+                            // While it runs, retain only the newest text value.
+                            Future<void> loadLatestPhotonSuggestions(
+                              String query,
+                              int version,
+                            ) async {
+                              if (photonRequestRunning) {
+                                pendingPhotonQuery = query;
+                                pendingPhotonVersion = version;
+                                return;
+                              }
+                              photonRequestRunning = true;
+                              var activeQuery = query;
+                              var activeVersion = version;
+                              try {
+                                while (true) {
+                                  pendingPhotonQuery = null;
+                                  // Merge Photon with saved places, map history,
                                   // confirmed road reports and the offline address index.
                                   // Keep Nominatim fallback off during typing.
                                   final found = await _fetchAddressFeatures(
@@ -6366,7 +6383,7 @@ _navigationMatchedLocation = null;
                                 photonRequestRunning = false;
                               }
                             }
-
+                            photonDebounce = Timer(const Duration(milliseconds: 300), () {
                               unawaited(loadLatestPhotonSuggestions(value, requestVersion));
                             });
                           },
