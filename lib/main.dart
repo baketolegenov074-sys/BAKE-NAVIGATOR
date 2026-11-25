@@ -6485,6 +6485,7 @@ _navigationMatchedLocation = null;
                         ],
                         VoiceTextField(
                           controller: _searchController,
+                          focusNode: _searchFocusNode,
                           autofocus: true,
                           textInputAction: TextInputAction.search,
                           onChanged: (value) {
