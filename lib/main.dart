@@ -1409,8 +1409,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         await _tts.setPitch(1.0);
         await Future.delayed(const Duration(milliseconds: 250));
         if (generation != _speechGeneration) return;
+        await AppDiagnosticsScreen.recordTripEvent(
+          'Голосовая подсказка: отправлена',
+          'Язык: ${_normalizeNavigationLanguage(_navigationLanguage)}; текст: $text',
+        );
         await _tts.speak(text);
+        await AppDiagnosticsScreen.recordTripEvent(
+          'Голосовая подсказка: завершена',
+          'Озвучивание завершилось без ошибки TTS.',
+        );
       } catch (error) {
+        await AppDiagnosticsScreen.recordTripEvent(
+          'Ошибка голосовой подсказки',
+          '${error.runtimeType}: $error',
+        );
+        await AppDiagnosticsScreen.recordTripRuntimeError('Системный TTS', error);
         debugPrint('BAKE system TTS failed: $error');
       } finally {
         if (!completion.isCompleted) completion.complete();
@@ -5724,6 +5737,10 @@ _navigationMatchedLocation = null;
         : (meters <= 35 ? 3 : meters <= 150 ? 2 : meters <= 500 ? 1 : 0);
     if (stage > _announcedManeuverStage) {
       _announcedManeuverStage = stage;
+      unawaited(AppDiagnosticsScreen.recordTripEvent(
+        'Этап подсказки манёвра',
+        'Этап: $stage; манёвр: ${target.text}; расстояние: ${meters.toStringAsFixed(1)} м; тип: ${target.maneuverType}; направление: ${target.maneuverModifier}; данные полос: ${target.laneGuidance.isEmpty ? 'отсутствуют в маршруте' : target.laneGuidance.map((value) => value ? 'разрешена' : 'не рекомендована').join(', ')}.',
+      ));
       if (_voiceMode >= 2) {
         final announcement = stage == 1
             ? _localized('Через 500 метров: ${target.text}', '500 метрден кейін: ${target.text}', 'In 500 meters: ${target.text}')
@@ -5943,11 +5960,21 @@ _navigationMatchedLocation = null;
     if (_offRouteSamples >= 2) {
       _offRouteSamples = 0;
       _lastAutomaticReroute = now;
+      unawaited(AppDiagnosticsScreen.recordTripEvent(
+        'Обнаружено отклонение от маршрута',
+        'Расстояние до линии: ${distance.toStringAsFixed(1)} м; порог: ${offRouteLimit.toStringAsFixed(1)} м; точность GPS: ±${position.accuracy.toStringAsFixed(1)} м. Подтверждено двумя фиксациями.',
+      ));
       _buildRoute(automaticReroute: true);
     }
   }
 
   Future<void> _buildRoute({bool automaticReroute = false}) async {
+    unawaited(AppDiagnosticsScreen.recordTripEvent(
+      automaticReroute ? 'Начат перерасчёт маршрута' : 'Начато построение маршрута',
+      automaticReroute
+          ? 'Причина: подтверждённое отклонение от текущей линии маршрута.'
+          : 'Запрошено построение или изменение маршрута пользователем.',
+    ));
     final requestGeneration = ++_routeRequestGeneration;
     if (_destination == null) {
       setState(() => _message = AppLocale.pick('Сначала выберите конечную точку на карте.', 'Алдымен картадан соңғы нүктені таңдаңыз.', 'First select the destination point on the map.'));
@@ -6166,6 +6193,10 @@ _navigationMatchedLocation = null;
             ? AppLocale.pick('Маршрут перестроен. Продолжаем навигацию.', 'Маршрут қайта құрылды. Навигация жалғасуда.', 'Route recalculated. Continuing navigation.')
             : '');
       });
+      unawaited(AppDiagnosticsScreen.recordTripEvent(
+        automaticReroute ? 'Маршрут перестроен' : 'Маршрут построен',
+        'Точек линии: ${points.length}; манёвров: ${instructions.length}; манёвров с данными полос: ${instructions.where((item) => item.laneGuidance.isNotEmpty).length}; манёвров без данных полос: ${instructions.where((item) => item.laneGuidance.isEmpty).length}.',
+      ));
       if (points.isNotEmpty) {
         if (!automaticReroute || _mapFollowEnabled) _fitMapCamera(points);
         if (automaticReroute && resumeNavigation && _mapFollowEnabled && _currentLocation != null) {
@@ -6188,6 +6219,14 @@ _navigationMatchedLocation = null;
       }
       // Route alternatives remain visible on the map; select a line directly.
     } catch (error) {
+      unawaited(AppDiagnosticsScreen.recordTripEvent(
+        automaticReroute ? 'Ошибка перерасчёта маршрута' : 'Ошибка построения маршрута',
+        '${error.runtimeType}: $error',
+      ));
+      await AppDiagnosticsScreen.recordTripRuntimeError(
+        automaticReroute ? 'Перерасчёт маршрута' : 'Построение маршрута',
+        error,
+      );
       if (!mounted || requestGeneration != _routeRequestGeneration) return;
       final failure = error.toString().replaceFirst('Exception: ', '');
       setState(() {
