@@ -3721,51 +3721,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
     return merged.take(150).toList();
   }
-  // Lightweight local autocomplete: only saved places are scanned while typing.
-  // Supabase reports and the full offline index remain in the explicit search flow.
-  Future<List<Map<String, dynamic>>> _fetchSavedPlaceAutocompleteFeatures(
-    String query,
-  ) async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedPlaces = prefs.getStringList('my_custom_places') ?? <String>[];
-    final savedPoints = prefs.getStringList('my_custom_place_points_v1') ?? <String>[];
-    final normalizedNeedle = query.toLowerCase().replaceAll('ё', 'е')
-        .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ').trim();
-    final tokens = normalizedNeedle.split(RegExp(r'\s+'))
-        .where((token) => token.isNotEmpty).toList();
-    if (tokens.isEmpty) return <Map<String, dynamic>>[];
-    final results = <Map<String, dynamic>>[];
-    for (var index = 0; index < savedPlaces.length && index < savedPoints.length; index++) {
-      final parts = savedPlaces[index].split('|');
-      final name = parts.isEmpty ? '' : parts.first.trim();
-      final address = parts.length > 1 ? parts.sublist(1).join('|').trim() : '';
-      final searchable = '$name $address'.toLowerCase().replaceAll('ё', 'е')
-          .replaceAll(RegExp(r'[^0-9a-zа-яәғқңөұүһі]+'), ' ').trim();
-      if (name.isEmpty || !tokens.every(searchable.contains)) continue;
-      final coordinates = savedPoints[index].split(',');
-      if (coordinates.length < 2) continue;
-      final lat = double.tryParse(coordinates[0].trim());
-      final lon = double.tryParse(coordinates[1].trim());
-      if (lat == null || lon == null || !lat.isFinite || !lon.isFinite ||
-          lat < -90 || lat > 90 || lon < -180 || lon > 180) continue;
-      results.add(<String, dynamic>{
-        'type': 'Feature',
-        '_savedPlace': true,
-        'properties': <String, dynamic>{
-          'name': name,
-          'display_label': address.isEmpty ? name : '$name · $address',
-          'address': address,
-          'source': 'BAKE saved places',
-        },
-        'geometry': <String, dynamic>{
-          'type': 'Point',
-          'coordinates': <double>[lon, lat],
-        },
-      });
-    }
-    return results;
-  }
-
   Future<List<Map<String, dynamic>>> _fetchAddressFeatures(String query, {LatLng? near, bool includeNominatimCitySearch = true, bool includeNominatimAddressFallback = true, bool includeExpandedPhotonQueries = true}) async {
     if (_nominatimTestMode) {
       try {
@@ -6378,36 +6333,16 @@ _navigationMatchedLocation = null;
                             refreshSearch(() {
                                 photonLoadingSuggestions = true;
                               });
-                            // Keep live typing lightweight: Photon plus cached local bookmarks only.
-                            Future<void> loadLatestPhotonSuggestions(
-                              String query,
-                              int version,
-                            ) async {
-                              if (photonRequestRunning) {
-                                pendingPhotonQuery = query;
-                                pendingPhotonVersion = version;
-                                return;
-                              }
-                              photonRequestRunning = true;
-                              var activeQuery = query;
-                              var activeVersion = version;
-                              try {
-                                while (true) {
-                                  pendingPhotonQuery = null;
-                                  final results = await Future.wait([
-                                    _fetchPhotonFeatures(
-                                      activeQuery,
-                                      includeCitySearch: true,
-                                      includeNominatimCitySearch: false,
-                                      includeNominatimAddressFallback: false,
-                                      resultLimit: 20,
-                                    ).timeout(const Duration(seconds: 4)),
-                                    _fetchSavedPlaceAutocompleteFeatures(activeQuery),
-                                  ]);
-                                  final found = <Map<String, dynamic>>[
-                                    ...results[0],
-                                    ...results[1],
-                                  ];
+                            // Merge Photon with saved places, map history,
+                                  // confirmed road reports and the offline address index.
+                                  // Keep Nominatim fallback off during typing.
+                                  final found = await _fetchAddressFeatures(
+                                    activeQuery,
+                                    near: _currentLocation ?? _shymkent,
+                                    includeNominatimCitySearch: false,
+                                    includeNominatimAddressFallback: false,
+                                    includeExpandedPhotonQueries: true,
+                                  ).timeout(const Duration(seconds: 9));
                                   if (searchContext.mounted &&
                                       activeVersion == photonRequestVersion) {
                                     _sortSearchFeatures(found, activeQuery);
@@ -6431,7 +6366,7 @@ _navigationMatchedLocation = null;
                                 photonRequestRunning = false;
                               }
                             }
-                            photonDebounce = Timer(const Duration(milliseconds: 500), () {
+
                               unawaited(loadLatestPhotonSuggestions(value, requestVersion));
                             });
                           },
