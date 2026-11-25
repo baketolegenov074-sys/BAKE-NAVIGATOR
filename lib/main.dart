@@ -1711,11 +1711,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     try {
       final prefs = await SharedPreferences.getInstance();
       var path = prefs.getString('offline_map_path');
-      var autoConnected =
-          prefs.getBool('offline_map_auto_connected') ?? false;
       if (path != null && !await File(path).exists()) {
         path = null;
-        autoConnected = false;
         await prefs.remove('offline_map_path');
         await prefs.remove('offline_map_auto_connected');
       }
@@ -1728,7 +1725,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           final foundPath = await _findSharedMbtilesFile();
           if (foundPath != null) {
             path = foundPath;
-            autoConnected = true;
             await prefs.setString('offline_map_path', foundPath);
             await prefs.setBool('offline_map_auto_connected', true);
           }
