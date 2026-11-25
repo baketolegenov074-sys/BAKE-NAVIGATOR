@@ -923,6 +923,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   final FlutterTts _tts = FlutterTts();
   Future<void> _speechQueue = Future<void>.value();
+  int _speechGeneration = 0;
   final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
   List<RoadFeature> _roadFeatures = <RoadFeature>[];
@@ -1375,18 +1376,28 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     await _tts.setPitch(1.0);
   }
 
+  void _invalidateQueuedSpeech() {
+    _speechGeneration++;
+    _speechQueue = Future<void>.value();
+    unawaited(_tts.stop());
+    unawaited(_kazakhVoiceService.stop());
+  }
+
   Future<void> _speakText(String text) {
     if (_voiceMode == 0 || text.trim().isEmpty) return Future<void>.value();
 
-    // Navigation prompts use the standard Android TTS queue.
+    final generation = _speechGeneration;
     final completion = Completer<void>();
     _speechQueue = _speechQueue.catchError((Object _) {}).then((_) async {
       try {
+        if (generation != _speechGeneration) return;
         await _tts.awaitSpeakCompletion(true);
+        if (generation != _speechGeneration) return;
         await _tts.setLanguage('ru-RU');
         await _tts.setSpeechRate(0.5);
         await _tts.setPitch(1.0);
         await Future.delayed(const Duration(milliseconds: 250));
+        if (generation != _speechGeneration) return;
         await _tts.speak(text);
       } catch (error) {
         debugPrint('BAKE system TTS failed: $error');
@@ -4538,6 +4549,9 @@ _navigationMatchedLocation = null;
 
   Future<void> _resetRoutePreview() async {
     if (!mounted) return;
+    _navigationPredictionTimer?.cancel();
+    _navigationPredictionTimer = null;
+    _invalidateQueuedSpeech();
     setState(() {
       _routeReady = false;
       _routeActionDismissed = true;
@@ -4569,6 +4583,9 @@ _navigationMatchedLocation = null;
 
   Future<void> _finishNavigation() async {
     if (!mounted) return;
+    _navigationPredictionTimer?.cancel();
+    _navigationPredictionTimer = null;
+    _invalidateQueuedSpeech();
     setState(() {
       _navigationActive = false;
       _routeActionDismissed = true;
@@ -5651,6 +5668,9 @@ _navigationMatchedLocation = null;
         : meters <= 35;
     if (maneuverPassed) {
       if (_instructionIndex + 1 >= _instructions.length) {
+        _navigationPredictionTimer?.cancel();
+        _navigationPredictionTimer = null;
+        _invalidateQueuedSpeech();
         setState(() {
           _navigationActive = false;
           _routeAlternatives = <Map<String, dynamic>>[];
@@ -5674,9 +5694,35 @@ _navigationMatchedLocation = null;
     }
   }
 
-  // Keep full route geometry for rerouting; clip only the line rendered during navigation.
+  // Keep full route geometry for rerouting; render only the untraveled tail.
   List<LatLng> _remainingRoutePoints() {
-    if (!_navigationActive || _currentLocation == null || _routePoints.length < 2) return _routePoints;
+    if (!_navigationActive || _routePoints.length < 2) return _routePoints;
+    if (_routeCumulativeMeters.length == _routePoints.length &&
+        _routeCumulativeMeters.isNotEmpty) {
+      final progress = _navigationProgressMeters
+          .clamp(0.0, _routeCumulativeMeters.last)
+          .toDouble();
+      var index = 0;
+      while (index < _routePoints.length - 2 &&
+          _routeCumulativeMeters[index + 1] < progress) {
+        index++;
+      }
+      final segmentLength =
+          _routeCumulativeMeters[index + 1] - _routeCumulativeMeters[index];
+      final t = segmentLength <= 0
+          ? 0.0
+          : ((progress - _routeCumulativeMeters[index]) / segmentLength)
+              .clamp(0.0, 1.0)
+              .toDouble();
+      final a = _routePoints[index];
+      final b = _routePoints[index + 1];
+      final projected = LatLng(
+        a.latitude + (b.latitude - a.latitude) * t,
+        a.longitude + (b.longitude - a.longitude) * t,
+      );
+      return <LatLng>[projected, ..._routePoints.skip(index + 1)];
+    }
+    if (_currentLocation == null) return _routePoints;
     final p = _navigationMatchedLocation ?? _currentLocation!;
     const latScale = 110540.0;
     final lonScale = 111320.0 * math.cos(p.latitude * math.pi / 180);
@@ -5694,7 +5740,14 @@ _navigationMatchedLocation = null;
       final d2 = ex * ex + ey * ey;
       if (d2 < bestD2) { bestD2 = d2; bestI = i; bestT = t; }
     }
-    if (bestD2 > 10000) return _routePoints;
+    // Never restore the complete route because GPS briefly drifts away.
+    // The monotonic segment anchor is safer than drawing already-driven roads.
+    if (bestD2 > 10000) {
+      final index = _routeProgressSegmentIndex
+          .clamp(0, _routePoints.length - 2)
+          .toInt();
+      return <LatLng>[_routePoints[index], ..._routePoints.skip(index + 1)];
+    }
     if (bestI > _routeProgressSegmentIndex) _routeProgressSegmentIndex = bestI;
     final a = _routePoints[bestI], b = _routePoints[bestI + 1];
     final projected = LatLng(a.latitude + (b.latitude-a.latitude)*bestT, a.longitude + (b.longitude-a.longitude)*bestT);
@@ -7031,21 +7084,88 @@ _navigationMatchedLocation = null;
   int _alternativeHitTestCacheInstructionIndex = -1;
   bool _alternativeHitTestCacheNavigationActive = false;
   bool _alternativeHitTestCacheDecisionVisible = false;
+  int _alternativeHitTestCacheProgressBucket = -1;
+  String _alternativeHitTestCacheLocationKey = '';
   List<List<LatLng>> _alternativeHitTestCache = const [];
+
+  List<LatLng> _clipAlternativeBehindVehicle(List<LatLng> points) {
+    if (!_navigationActive || points.length < 2) return points;
+    final vehicle = _navigationMatchedLocation ?? _currentLocation;
+    if (vehicle == null) return points;
+    var bestDistance = double.infinity;
+    var bestIndex = 0;
+    var bestT = 0.0;
+    for (var i = 0; i < points.length - 1; i++) {
+      final a = points[i];
+      final b = points[i + 1];
+      final distance = Geolocator.distanceBetween(
+        vehicle.latitude, vehicle.longitude, a.latitude, a.longitude,
+      );
+      final segmentLength = Geolocator.distanceBetween(
+        a.latitude, a.longitude, b.latitude, b.longitude,
+      );
+      final bearing = Geolocator.bearingBetween(
+        a.latitude, a.longitude, b.latitude, b.longitude,
+      ) * math.pi / 180;
+      final vehicleBearing = Geolocator.bearingBetween(
+        a.latitude, a.longitude, vehicle.latitude, vehicle.longitude,
+      ) * math.pi / 180;
+      final along = (distance * math.cos(vehicleBearing - bearing))
+          .clamp(0.0, segmentLength);
+      final projected = Geolocator.distanceBetween(
+        vehicle.latitude, vehicle.longitude,
+        a.latitude + (b.latitude - a.latitude) *
+            (segmentLength <= 0 ? 0 : along / segmentLength),
+        a.longitude + (b.longitude - a.longitude) *
+            (segmentLength <= 0 ? 0 : along / segmentLength),
+      );
+      if (projected < bestDistance) {
+        bestDistance = projected;
+        bestIndex = i;
+        bestT = segmentLength <= 0 ? 0 : along / segmentLength;
+      }
+    }
+    // Before the preview starts, keep the upcoming branch visible. Once the
+    // vehicle has passed it or moved onto another street, hide stale branches.
+    if (bestDistance > 180) {
+      if (bestIndex == 0 &&
+          Geolocator.distanceBetween(
+            vehicle.latitude, vehicle.longitude,
+            points.first.latitude, points.first.longitude,
+          ) <= 900) return points;
+      return const <LatLng>[];
+    }
+    final a = points[bestIndex];
+    final b = points[bestIndex + 1];
+    final projected = LatLng(
+      a.latitude + (b.latitude - a.latitude) * bestT,
+      a.longitude + (b.longitude - a.longitude) * bestT,
+    );
+    return <LatLng>[projected, ...points.skip(bestIndex + 1)];
+  }
 
   List<List<LatLng>> _cachedAlternativeHitTestPoints() {
     final decisionVisible = _navigationActive &&
         (_distanceToNextManeuverMeters ?? double.infinity) <= 1500;
+    final progressBucket = (_navigationProgressMeters / 20).floor();
+    final vehicle = _navigationMatchedLocation ?? _currentLocation;
+    final locationKey = vehicle == null
+        ? ''
+        : '${(vehicle.latitude * 5000).round()}:${(vehicle.longitude * 5000).round()}';
     if (!identical(_alternativeHitTestCacheSource, _routeAlternatives) ||
         _alternativeHitTestCacheLength != _routeAlternatives.length ||
         _alternativeHitTestCacheInstructionIndex != _instructionIndex ||
         _alternativeHitTestCacheNavigationActive != _navigationActive ||
-        _alternativeHitTestCacheDecisionVisible != decisionVisible) {
+        _alternativeHitTestCacheDecisionVisible != decisionVisible ||
+        (_navigationActive && _alternativeHitTestCacheProgressBucket != progressBucket) ||
+        (_navigationActive && _alternativeHitTestCacheLocationKey != locationKey)) {
       _alternativeHitTestCacheSource = _routeAlternatives;
       _alternativeHitTestCacheLength = _routeAlternatives.length;
       _alternativeHitTestCacheInstructionIndex = _instructionIndex;
       _alternativeHitTestCacheNavigationActive = _navigationActive;
       _alternativeHitTestCacheDecisionVisible = decisionVisible;
+      _alternativeHitTestCacheProgressBucket = progressBucket;
+      _alternativeHitTestCacheLocationKey = locationKey;
 
       final fullRoutes = _routeAlternatives
           .map((route) => _simplifyRouteForDisplay(
@@ -7108,7 +7228,9 @@ _navigationMatchedLocation = null;
             endIndex++;
           }
           if (endIndex <= startIndex) return const <LatLng>[];
-          return routePoints.sublist(startIndex, endIndex + 1);
+          return _clipAlternativeBehindVehicle(
+            routePoints.sublist(startIndex, endIndex + 1),
+          );
         }).toList(growable: false);
       }
     }
