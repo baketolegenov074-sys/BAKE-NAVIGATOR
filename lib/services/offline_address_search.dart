@@ -1,9 +1,85 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:latlong2/latlong.dart';
+
+
+List<Map<String, dynamic>> _decodeOfflineAddressSearchIndex(Uint8List bytes) {
+  final decoded = jsonDecode(utf8.decode(gzip.decode(bytes)));
+  if (decoded is! Map || decoded['items'] is! List) {
+    throw const FormatException('Invalid offline address index');
+  }
+  return (decoded['items'] as List)
+      .whereType<Map>()
+      .map((item) {
+        final record = Map<String, dynamic>.from(item);
+        record['_searchFolded'] =
+            _foldOfflineAddressText(record['search']?.toString() ?? '');
+        record['_nameFolded'] =
+            _foldOfflineAddressText(record['name']?.toString() ?? '');
+        record['_streetFolded'] =
+            _foldOfflineAddressText(record['street']?.toString() ?? '');
+        record['_houseFolded'] =
+            _foldOfflineAddressText(record['house']?.toString() ?? '');
+        record['_districtFolded'] =
+            _foldOfflineAddressText(record['district']?.toString() ?? '');
+        return record;
+      })
+      .toList(growable: false);
+}
+
+String _foldOfflineAddressText(String value) {
+  var text = value.toLowerCase().replaceAll('ё', 'е');
+  const kazakhToRussian = <String, String>{
+    'ә': 'а',
+    'ғ': 'г',
+    'қ': 'к',
+    'ң': 'н',
+    'ө': 'о',
+    'ұ': 'у',
+    'ү': 'у',
+    'һ': 'х',
+    'і': 'и',
+  };
+  kazakhToRussian.forEach((from, to) {
+    text = text.replaceAll(from, to);
+  });
+  const digraphs = <String, String>{
+    'shch': 'щ',
+    'zh': 'ж',
+    'ch': 'ч',
+    'sh': 'ш',
+    'kh': 'х',
+    'gh': 'г',
+    'ng': 'н',
+    'yo': 'е',
+    'yu': 'ю',
+    'ya': 'я',
+    'ts': 'ц',
+  };
+  digraphs.forEach((from, to) {
+    text = text.replaceAll(from, to);
+  });
+  const latin = <String, String>{
+    'a': 'а', 'b': 'б', 'c': 'к', 'd': 'д', 'e': 'е',
+    'f': 'ф', 'g': 'г', 'h': 'х', 'i': 'и', 'j': 'ж',
+    'k': 'к', 'l': 'л', 'm': 'м', 'n': 'н', 'o': 'о',
+    'p': 'п', 'q': 'к', 'r': 'р', 's': 'с', 't': 'т',
+    'u': 'у', 'v': 'в', 'w': 'в', 'x': 'кс', 'y': 'ы',
+    'z': 'з',
+  };
+  text = text.replaceAllMapped(
+    RegExp('[a-z]'),
+    (match) => latin[match.group(0)] ?? match.group(0)!,
+  );
+  text = text.replaceAll('малл', 'молл');
+  text = text.replaceAll(RegExp(r'[^0-9а-я]+'), ' ');
+  return text.trim().replaceAll(RegExp(r'\\s+'), ' ');
+}
 
 /// Searches a curated Shymkent directory first, then the bundled OSM index.
 class OfflineAddressSearch {
@@ -188,22 +264,9 @@ class OfflineAddressSearch {
         data.offsetInBytes,
         data.lengthInBytes,
       );
-      final decoded = jsonDecode(utf8.decode(gzip.decode(bytes)));
-      if (decoded is! Map || decoded['items'] is! List) {
-        throw const FormatException('Invalid offline address index');
-      }
-      _items = (decoded['items'] as List)
-          .whereType<Map>()
-          .map((item) {
-            final record = Map<String, dynamic>.from(item);
-            record['_searchFolded'] = _fold(record['search']?.toString() ?? '');
-            record['_nameFolded'] = _fold(record['name']?.toString() ?? '');
-            record['_streetFolded'] = _fold(record['street']?.toString() ?? '');
-            record['_houseFolded'] = _fold(record['house']?.toString() ?? '');
-            record['_districtFolded'] = _fold(record['district']?.toString() ?? '');
-            return record;
-          })
-          .toList(growable: false);
+      // Gzip decompression, JSON decoding and search-field normalization are
+      // CPU-heavy for the full Shymkent index; keep them off the UI isolate.
+      _items = await compute(_decodeOfflineAddressSearchIndex, bytes);
     } catch (error) {
       _items = <Map<String, dynamic>>[];
       // The curated directory still works if the generated OSM index is absent.
