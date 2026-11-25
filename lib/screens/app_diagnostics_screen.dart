@@ -453,8 +453,8 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
               ..._cloudErrors.map((item) => Card(
                 child: ListTile(
                   dense: true,
-                  title: Text('${item['category'] ?? 'Ошибка'} · ${item['platform'] ?? ''}'),
-                  subtitle: Text('${item['message'] ?? ''}'),
+                  title: Text("${item['category'] ?? 'Ошибка'} · ${item['platform'] ?? ''}"),
+                  subtitle: Text("${item['message'] ?? ''}"),
                   trailing: IconButton(
                     tooltip: 'Убрать панель',
                     icon: const Icon(Icons.close),
