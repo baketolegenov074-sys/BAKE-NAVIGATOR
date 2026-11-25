@@ -1438,33 +1438,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return (step['name']?.toString() ?? '').trim();
   }
 
-  // One vehicle marker is used in both map renderers. During navigation
-  // prefer the road-matched/predicted position; keep raw GPS for routing,
-  // alerts and off-route detection.
-  LatLng? get _vehicleDisplayLocation {
-    if (_navigationActive) {
-      final matched = _navigationMatchedLocation;
-      final raw = _currentLocation;
-      if (matched != null && raw != null &&
-          _routePoints.length > 1 &&
-          _distanceToRouteMeters(raw) <= 100) {
-        return matched;
-      }
-      return raw;
-    }
-    return _freeDriveDisplayLocation ?? _currentLocation;
-  }
+  // The vehicle marker always represents the latest raw GPS fix.
+  // Route matching remains separate for route progress and voice guidance.
+  LatLng? get _vehicleDisplayLocation =>
+      _navigationActive ? _currentLocation : (_freeDriveDisplayLocation ?? _currentLocation);
 
-  double get _vehicleDisplayBearing {
-    if (_navigationActive && _vehicleDisplayLocation != null &&
-        _routePoints.length > 1 &&
-        _currentLocation != null &&
-        _distanceToRouteMeters(_currentLocation!) <= 100) {
-      return _routeBearingAt(_vehicleDisplayLocation!);
-    }
-    return (_gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0) *
-        math.pi / 180.0;
-  }
+  double get _vehicleDisplayBearing =>
+      (_gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0) *
+      math.pi / 180.0;
 
   // Reject stale/inaccurate fixes and impossible jumps only for free-drive display.
   // Raw coordinates remain untouched for reports, cameras, speed limits and routing.
@@ -4622,7 +4603,8 @@ _navigationMatchedLocation = null;
   }
 
   Future<void> _speakCurrentInstruction() async {
-    if (!_navigationActive || _instructionIndex >= _instructions.length) return;
+    if (!_navigationActive || _isBuildingRoute ||
+        _instructionIndex >= _instructions.length) return;
     final instruction = _instructions[_instructionIndex];
     final currentLocation = _currentLocation;
     if (currentLocation == null) {
@@ -5038,8 +5020,9 @@ _navigationMatchedLocation = null;
       return;
     }
 
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.hidden ||
+    // Keep GPS through transient inactive focus changes; stop only after
+    // the app is actually hidden or paused.
+    if (state == AppLifecycleState.hidden ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
       _appInForeground = false;
@@ -5637,7 +5620,8 @@ _navigationMatchedLocation = null;
   }
 
   void _updateNavigationProgress(LatLng position) {
-    if (!_navigationActive || _instructionIndex >= _instructions.length) return;
+    if (!_navigationActive || _isBuildingRoute ||
+        _instructionIndex >= _instructions.length) return;
 
     final target = _instructions[_instructionIndex];
     final hasRouteProgress = _instructionProgressMeters.length == _instructions.length &&
@@ -5884,8 +5868,20 @@ _navigationMatchedLocation = null;
       return;
     }
     if (_routeOrigin == null && _currentLocation == null) await _locateMe();
-    // During an automatic reroute, always start from the latest live GPS fix;
-    // a manually saved/planned origin must never pull the driver backwards.
+    // Require a recent live fix before calculating an automatic reroute.
+    if (automaticReroute &&
+        (_navigationFixTimestamp == null ||
+         DateTime.now().difference(_navigationFixTimestamp!) > const Duration(seconds: 10))) {
+      if (mounted) {
+        setState(() => _message = AppLocale.pick(
+          'Ожидаем актуальную координату GPS для перестроения маршрута.',
+          'Маршрутты қайта құру үшін жаңа GPS координаты күтілуде.',
+          'Waiting for a fresh GPS fix before rerouting.',
+        ));
+      }
+      return;
+    }
+    // A planned origin must never pull the driver backwards.
     final routeOrigin = automaticReroute
         ? _currentLocation
         : (_routeOrigin ?? _currentLocation);
@@ -5895,6 +5891,10 @@ _navigationMatchedLocation = null;
     }
 
     final resumeNavigation = automaticReroute && _navigationActive;
+    if (automaticReroute) {
+      _invalidateQueuedSpeech();
+      _announcedManeuverStage = 0;
+    }
     setState(() {
       _isBuildingRoute = true;
       if (automaticReroute) {
@@ -6104,13 +6104,18 @@ _navigationMatchedLocation = null;
     } catch (error) {
       if (!mounted || requestGeneration != _routeRequestGeneration) return;
       final failure = error.toString().replaceFirst('Exception: ', '');
-      setState(() => _message = routingNotice == null
-          ? failure
-          : AppLocale.pick(
+      setState(() {
+        if (automaticReroute && resumeNavigation) {
+          _instructionIndex = _instructions.length;
+        }
+        _message = routingNotice == null
+            ? failure
+            : AppLocale.pick(
               '$routingNotice Интернет-маршрут тоже не ответил. Проверьте подключение.',
               '$routingNotice Интернет маршруты да жауап бермеді. Байланысты тексеріңіз.',
               '$routingNotice The online router also did not respond. Check your connection.',
-            ));
+            );
+      });
     } finally {
       if (mounted && requestGeneration == _routeRequestGeneration) {
         setState(() => _isBuildingRoute = false);
@@ -8861,26 +8866,6 @@ _navigationMatchedLocation = null;
     final simplifiedAlternativeRoutePoints = _cachedAlternativeHitTestPoints();
     final visibleRoadAlerts = _roadAlertsVisibleOnMap();
     final markers = <Marker>[
-      ..._buildOfflineRouteArrowMarkers(visibleRoutePoints),
-      if (_navigationActive && _instructionIndex < _instructions.length)
-        Marker(
-          point: _instructions[_instructionIndex].location,
-          width: 54,
-          height: 54,
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF169B55),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 3),
-              boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 5, offset: Offset(0, 2))],
-            ),
-            child: Icon(
-              _maneuverIcon(_instructions[_instructionIndex]),
-              color: Colors.white,
-              size: 29,
-            ),
-          ),
-        ),
       if (_currentLocation != null &&
           _navigationActive &&
           _routePoints.length > 1 &&
@@ -8914,9 +8899,7 @@ _navigationMatchedLocation = null;
             ),
             alignment: Alignment.center,
             child: Transform.rotate(
-              angle: ((_navigationActive && _routePoints.length > 1)
-                  ? _routeBearingAt(_vehicleDisplayLocation!)
-                  : (_gpsHeadingDegrees ?? 0.0)) * math.pi / 180.0,
+              angle: _vehicleDisplayBearing,
               child: const Icon(
                 Icons.navigation,
                 color: Color(0xFF8E24AA),
