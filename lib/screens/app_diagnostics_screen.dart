@@ -822,7 +822,7 @@ class _TripDiagnosticsRecorder {
     final buffer = StringBuffer(decoded['report']?.toString() ?? fallback);
     final points = decoded['points'];
     if (points is List && points.isNotEmpty) {
-      buffer.writeln('\\nПолный GPS-трек (время | широта | долгота | точность м | скорость м/с | курс):');
+      buffer.writeln('\nПолный GPS-трек (время | широта | долгота | точность м | скорость м/с | курс):');
       for (final value in points.whereType<Map>()) {
         buffer.writeln(
           '${value['time']} | ${value['lat']} | ${value['lon']} | ${value['accuracy_m']} | ${value['speed_mps']} | ${value['heading']}',
