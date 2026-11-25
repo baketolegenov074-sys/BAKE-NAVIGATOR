@@ -43,6 +43,46 @@ class _CheckResult {
 class AppDiagnosticsScreen extends StatefulWidget {
   const AppDiagnosticsScreen({super.key});
 
+  static const _startupArmedKey = 'bake_app_diagnostics_startup_armed';
+  static const _startupResultKey = 'bake_app_diagnostics_startup_result';
+
+  static Future<void> armNextStartupCheck() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_startupArmedKey, true);
+    await prefs.remove(_startupResultKey);
+  }
+
+  static Future<bool> isStartupCheckArmed() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_startupArmedKey) ?? false;
+  }
+
+  static Future<void> recordStartupMapReady(int elapsedMs) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool(_startupArmedKey) ?? false)) return;
+    await prefs.setString(_startupResultKey, 'MAP_READY:$elapsedMs');
+    await prefs.setBool(_startupArmedKey, false);
+  }
+
+  static Future<void> recordStartupMapTimeout() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool(_startupArmedKey) ?? false)) return;
+    await prefs.setString(_startupResultKey, 'MAP_TIMEOUT: карта не отобразилась за 30 секунд');
+    await prefs.setBool(_startupArmedKey, false);
+  }
+
+  static Future<void> recordStartupRuntimeError(String source, Object error) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!(prefs.getBool(_startupArmedKey) ?? false)) return;
+      await prefs.setString(_startupResultKey, 'STARTUP_ERROR:$source: \${error.runtimeType}: $error');
+      await prefs.setBool(_startupArmedKey, false);
+      final history = prefs.getStringList('bake_app_diagnostics_history') ?? <String>[];
+      history.add('\${DateTime.now().toIso8601String()} | STARTUP_ERROR | $source | \${error.runtimeType}: $error');
+      await prefs.setStringList('bake_app_diagnostics_history', history.length > 100 ? history.sublist(history.length - 100) : history);
+    } catch (_) {}
+  }
+
   // Record unexpected runtime errors only while the user explicitly records a trip.
   static Future<void> recordTripRuntimeError(String source, Object error) async {
     try {
@@ -81,6 +121,9 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
   static const _historyKey = 'bake_app_diagnostics_history';
   final List<_CheckResult> _results = [];
   List<String> _history = [];
+  List<Map<String, dynamic>> _cloudErrors = [];
+  bool _loadingCloudErrors = false;
+  String? _startupResult;
   bool _checking = false;
   DateTime? _lastRun;
 
@@ -108,7 +151,38 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
         // Ignore an incomplete previous report.
       }
     }
-    setState(() => _history = prefs.getStringList(_historyKey) ?? []);
+    setState(() {
+      _history = prefs.getStringList(_historyKey) ?? [];
+      _startupResult = prefs.getString('bake_app_diagnostics_startup_result');
+    });
+  }
+
+  Future<void> _armStartupCheck() async {
+    await AppDiagnosticsScreen.armNextStartupCheck();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Запись включена только на следующий запуск. Перезапустите приложение; карта и ошибки будут измерены один раз.')),
+    );
+  }
+
+  Future<void> _loadCloudErrors() async {
+    if (_loadingCloudErrors) return;
+    setState(() => _loadingCloudErrors = true);
+    try {
+      final rows = await RoadReportSyncService.fetchDiagnosticReports();
+      if (!mounted) return;
+      setState(() => _cloudErrors = rows);
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось вручную загрузить облачные ошибки: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _loadingCloudErrors = false);
+    }
+  }
+
+  void _clearCloudErrorPanels() {
+    setState(() => _cloudErrors.clear());
   }
 
   Future<void> _runChecks() async {
@@ -126,6 +200,21 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
         await AppDiagnosticsScreen.recordRuntimeError('Проверка: $name', error);
       }
     }
+
+    await check('Запуск приложения и открытие карты', () async {
+      final prefs = await SharedPreferences.getInstance();
+      final result = prefs.getString('bake_app_diagnostics_startup_result');
+      if (result == null) {
+        return (state: _CheckState.warning, details: 'Нет замера. Нажмите «Записать следующий запуск» и перезапустите приложение.');
+      }
+      if (result.startsWith('MAP_READY:')) {
+        final ms = int.tryParse(result.substring('MAP_READY:'.length)) ?? 0;
+        return ms > 10000
+            ? (state: _CheckState.warning, details: 'Карта открылась за \${(ms / 1000).toStringAsFixed(1)} с — медленно.')
+            : (state: _CheckState.ok, details: 'Первый кадр карты готов за \${(ms / 1000).toStringAsFixed(1)} с.');
+      }
+      return (state: _CheckState.error, details: result.replaceFirst('STARTUP_ERROR:', '').replaceFirst('MAP_TIMEOUT:', ''));
+    });
 
     await check('GPS и разрешение геолокации', () async {
       final enabled = await Geolocator.isLocationServiceEnabled();
@@ -321,6 +410,62 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
           const SizedBox(height: 12),
           const TripDiagnosticsPanel(),
           const SizedBox(height: 12),
+          Card(child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Запуск и белый экран', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              const Text('Одноразовый замер следующего запуска: время до первого кадра карты и ошибка отображения. Сам по себе не запускается.'),
+              if (_startupResult != null) Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('Последний результат: $_startupResult'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _armStartupCheck,
+                icon: const Icon(Icons.timer_outlined),
+                label: const Text('Записать следующий запуск'),
+              ),
+            ]),
+          )),
+          const SizedBox(height: 12),
+          Card(child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Облачный журнал ошибок', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              const Text('Облако не опрашивается автоматически. Загрузка выполняется только после нажатия кнопки.'),
+              Row(children: [
+                Expanded(child: Text('Загружено: \${_cloudErrors.length}')),
+                TextButton.icon(
+                  onPressed: _cloudErrors.isEmpty ? null : _clearCloudErrorPanels,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Очистить панели'),
+                ),
+              ]),
+              OutlinedButton.icon(
+                onPressed: _loadingCloudErrors ? null : _loadCloudErrors,
+                icon: _loadingCloudErrors
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.cloud_download_outlined),
+                label: Text(_loadingCloudErrors ? 'Загружаем…' : 'Подключить и загрузить ошибки'),
+              ),
+              ..._cloudErrors.map((item) => Card(
+                child: ListTile(
+                  dense: true,
+                  title: Text('\${item['category'] ?? 'Ошибка'} · \${item['platform'] ?? ''}'),
+                  subtitle: Text('\${item['message'] ?? ''}'),
+                  trailing: IconButton(
+                    tooltip: 'Убрать панель',
+                    icon: const Icon(Icons.close),
+                    onPressed: () => setState(() => _cloudErrors.remove(item)),
+                  ),
+                ),
+              )),
+              if (_cloudErrors.isNotEmpty)
+                const Text('«Очистить панели» скрывает записи только на этом экране. Облачные записи не удаляются.'),
+            ]),
+          )),
           FilledButton.icon(
             onPressed: _checking ? null : _runChecks,
             icon: _checking
