@@ -649,6 +649,7 @@ class _TripDiagnosticsRecorder {
   DateTime? _previousTime;
   final List<Map<String, Object?>> events = [];
   final List<Map<String, Object?>> points = [];
+  final List<File> reportFiles = <File>[];
   String? lastReport;
   int _saveCounter = 0;
   FlutterExceptionHandler? _previousFlutterErrorHandler;
@@ -698,6 +699,119 @@ class _TripDiagnosticsRecorder {
     _loaded = true;
     final prefs = await SharedPreferences.getInstance();
     lastReport = prefs.getString('bake_trip_diagnostics_last_report');
+    final directory = await _reportsDirectory();
+    if (await directory.exists()) {
+      reportFiles
+        ..clear()
+        ..addAll(directory
+            .listSync()
+            .whereType<File>()
+            .where((file) => file.path.split(Platform.pathSeparator).last.startsWith('trip_') &&
+                file.path.endsWith('.json'))
+            .toList()
+          ..sort((left, right) => right.path.compareTo(left.path)));
+      if (reportFiles.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(await reportFiles.first.readAsString());
+          if (decoded is Map<String, dynamic> && decoded['report'] is String) {
+            lastReport = decoded['report'] as String;
+          }
+        } catch (_) {
+          // Keep the previous plain-text report if the newest archive is damaged.
+        }
+      }
+    }
+    revision.value++;
+  }
+
+  Future<Directory> _reportsDirectory() async {
+    final support = await getApplicationSupportDirectory();
+    final directory = Directory('${support.path}/bake_trip_diagnostics');
+    if (!await directory.exists()) await directory.create(recursive: true);
+    return directory;
+  }
+
+  Future<int> get storageBytes async {
+    var total = 0;
+    for (final file in reportFiles) {
+      try {
+        total += await file.length();
+      } catch (_) {}
+    }
+    return total;
+  }
+
+  Future<void> openReport(BuildContext context, File file) async {
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      final report = decoded is Map<String, dynamic>
+          ? (decoded['report']?.toString() ?? file.readAsStringSync())
+          : file.readAsStringSync();
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Отчёт поездки'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(child: SelectableText(report)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Закрыть'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось открыть отчёт: $error')),
+      );
+    }
+  }
+
+  Future<void> deleteReport(BuildContext context, File file) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить отчёт поездки?'),
+        content: const Text('Будет удалён только выбранный локальный отчёт.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Удалить')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await file.delete();
+    reportFiles.remove(file);
+    if (reportFiles.isEmpty) lastReport = null;
+    revision.value++;
+  }
+
+  Future<void> clearReports(BuildContext context) async {
+    if (reportFiles.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Удалить все отчёты поездок?'),
+        content: const Text('Будут удалены все сохранённые локальные отчёты поездок.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Удалить все')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    for (final file in List<File>.from(reportFiles)) {
+      if (await file.exists()) await file.delete();
+    }
+    reportFiles.clear();
+    lastReport = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('bake_trip_diagnostics_last_report');
     revision.value++;
   }
 
@@ -801,6 +915,20 @@ class _TripDiagnosticsRecorder {
     }
     await _saveSession(finished: true);
     lastReport = report.toString();
+    final archive = <String, Object?>{
+      'startedAt': startedAt?.toIso8601String(),
+      'endedAt': ended.toIso8601String(),
+      'durationSeconds': startedAt == null ? 0 : ended.difference(startedAt!).inSeconds,
+      'pointCount': points.length,
+      'eventCount': events.length,
+      'report': lastReport,
+      'points': points,
+      'events': events,
+    };
+    final directory = await _reportsDirectory();
+    final file = File('${directory.path}/trip_${startedAt?.microsecondsSinceEpoch ?? ended.microsecondsSinceEpoch}.json');
+    await file.writeAsString(jsonEncode(archive), flush: true);
+    reportFiles.insert(0, file);
     await prefs.setString('bake_trip_diagnostics_last_report', lastReport!);
     revision.value++;
   }
@@ -844,11 +972,43 @@ class TripDiagnosticsPanel extends StatelessWidget {
               label: Text(recorder.active ? 'Завершить диагностику поездки' : 'Начать диагностику поездки'),
               style: recorder.active ? FilledButton.styleFrom(backgroundColor: Colors.red.shade700) : null,
             )),
+            const Divider(),
+            Row(
+              children: [
+                Expanded(
+                  child: FutureBuilder<int>(
+                    future: recorder.storageBytes,
+                    builder: (context, snapshot) => Text(
+                      'Отчётов: ${recorder.reportFiles.length} · Занято: ${snapshot.hasData ? (snapshot.data! / 1024).toStringAsFixed(1) : '…'} КБ',
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: recorder.reportFiles.isEmpty ? null : () => recorder.clearReports(context),
+                  child: const Text('Удалить все'),
+                ),
+              ],
+            ),
+            if (recorder.reportFiles.isEmpty)
+              const Text('Сохранённых поездок пока нет.')
+            else
+              ...recorder.reportFiles.map((file) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.description_outlined),
+                title: Text(file.path.split(Platform.pathSeparator).last),
+                subtitle: const Text('Локальный отчёт поездки'),
+                onTap: () => recorder.openReport(context, file),
+                trailing: IconButton(
+                  tooltip: 'Удалить отчёт',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () => recorder.deleteReport(context, file),
+                ),
+              )),
             if (recorder.lastReport != null) ...[
               const Divider(),
               Text(recorder.lastReport!, maxLines: 7, overflow: TextOverflow.ellipsis),
               Align(alignment: Alignment.centerRight, child: TextButton.icon(
-                onPressed: recorder.export, icon: const Icon(Icons.ios_share), label: const Text('Экспорт отчёта поездки'),
+                onPressed: recorder.export, icon: const Icon(Icons.ios_share), label: const Text('Экспорт последнего отчёта'),
               )),
             ],
           ]),
