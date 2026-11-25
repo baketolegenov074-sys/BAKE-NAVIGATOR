@@ -5757,6 +5757,10 @@ _navigationMatchedLocation = null;
         _navigationPredictionTimer?.cancel();
         _navigationPredictionTimer = null;
         _invalidateQueuedSpeech();
+        unawaited(AppDiagnosticsScreen.recordTripEvent(
+          'Прибытие в пункт назначения',
+          'Навигация завершена по последнему манёвру маршрута.',
+        ));
         setState(() {
           _navigationActive = false;
           _routeAlternatives = <Map<String, dynamic>>[];
@@ -5972,7 +5976,9 @@ _navigationMatchedLocation = null;
       automaticReroute ? 'Начат перерасчёт маршрута' : 'Начато построение маршрута',
       automaticReroute
           ? 'Причина: подтверждённое отклонение от текущей линии маршрута.'
-          : 'Запрошено построение или изменение маршрута пользователем.',
+          : 'Запрошено построение или изменение маршрута пользователем. ' +
+              'A: ${(_routeOrigin ?? _currentLocation)?.latitude}, ${(_routeOrigin ?? _currentLocation)?.longitude}; ' +
+              'B: ${_destination?.latitude}, ${_destination?.longitude}.',
     ));
     final requestGeneration = ++_routeRequestGeneration;
     if (_destination == null) {
