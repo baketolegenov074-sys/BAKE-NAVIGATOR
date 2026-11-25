@@ -6350,22 +6350,19 @@ _navigationMatchedLocation = null;
                               try {
                                 while (true) {
                                   pendingPhotonQuery = null;
-                                  final found = await _fetchPhotonFeatures(
+                                  // Merge Photon with saved places, map history,
+                                  // confirmed road reports and the offline address index.
+                                  // Keep Nominatim fallback off during typing.
+                                  final found = await _fetchAddressFeatures(
                                     activeQuery,
-                                    includeCitySearch: true,
+                                    near: _currentLocation ?? _shymkent,
                                     includeNominatimCitySearch: false,
                                     includeNominatimAddressFallback: false,
-                                    resultLimit: 20,
-                                  ).timeout(const Duration(seconds: 4));
+                                    includeExpandedPhotonQueries: true,
+                                  ).timeout(const Duration(seconds: 9));
                                   if (searchContext.mounted &&
                                       activeVersion == photonRequestVersion) {
-                                    if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
-                                      _sortSearchFeatures(found, activeQuery);
-                                    } else {
-                                      found.sort((left, right) =>
-                                          (_photonFeatureDistanceMeters(left) ?? double.infinity)
-                                              .compareTo(_photonFeatureDistanceMeters(right) ?? double.infinity));
-                                    }
+                                    _sortSearchFeatures(found, activeQuery);
                                     refreshSearch(() {
                                       photonSuggestions = found;
                                       photonLoadingSuggestions = false;
@@ -6386,7 +6383,7 @@ _navigationMatchedLocation = null;
                                 photonRequestRunning = false;
                               }
                             }
-                            photonDebounce = Timer(const Duration(milliseconds: 500), () {
+                            photonDebounce = Timer(const Duration(milliseconds: 300), () {
                               unawaited(loadLatestPhotonSuggestions(value, requestVersion));
                             });
                           },
@@ -6419,7 +6416,7 @@ _navigationMatchedLocation = null;
                           ),
                         if (photonSuggestions.isNotEmpty)
                           Container(
-                            constraints: const BoxConstraints(maxHeight: 320),
+                            constraints: const BoxConstraints(maxHeight: 380),
                             margin: const EdgeInsets.only(top: 6),
                             decoration: BoxDecoration(
                               color: Colors.white,
