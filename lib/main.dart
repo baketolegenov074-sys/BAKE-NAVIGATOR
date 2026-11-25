@@ -8866,23 +8866,6 @@ _navigationMatchedLocation = null;
     final simplifiedAlternativeRoutePoints = _cachedAlternativeHitTestPoints();
     final visibleRoadAlerts = _roadAlertsVisibleOnMap();
     final markers = <Marker>[
-      if (_currentLocation != null &&
-          _navigationActive &&
-          _routePoints.length > 1 &&
-          _distanceToNextManeuverMeters != null &&
-          _distanceToNextManeuverMeters! <= 150)
-        Marker(
-          point: _offsetAlongRoute(
-            _currentLocation!, _routeBearingAt(_currentLocation!), 35,
-          ),
-          width: 96,
-          height: 38,
-          alignment: Alignment.centerLeft,
-          child: Transform.translate(
-            offset: const Offset(12, -26),
-            child: _buildManeuverDistanceCue(),
-          ),
-        ),
       if (_vehicleDisplayLocation != null)
         Marker(
           point: _vehicleDisplayLocation!,
