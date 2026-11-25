@@ -2,9 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+
+List<List<String>> _parseCsvInBackground(String input) => RoadAlertService._parseCsv(input);
+dynamic _decodeJsonInBackground(String input) => jsonDecode(input);
 
 /// Loads fixed speed cameras plus the separately typed Shymkent camera layer.
 enum RoadAlertKind { speedCamera, trafficSignalCamera, surveillanceCamera, sergekCamera, unknownCamera }
@@ -71,7 +75,7 @@ class RoadAlertService {
   /// No GPS, internet access, or active route is required.
   Future<List<RoadAlert>> loadBundledCameras() async {
     final csv = await rootBundle.loadString('assets/data/kazakhstan_speed_cameras.csv');
-    final rows = _parseCsv(csv);
+    final rows = await compute(_parseCsvInBackground, csv);
     if (rows.length < 2) throw const FormatException('Offline camera database is empty.');
     final headers = rows.first.map((v) => v.trim().toLowerCase()).toList();
     final idCol = headers.indexOf('id');
@@ -116,7 +120,7 @@ class RoadAlertService {
   /// Ordinary surveillance objects are also map-only unless tagged as speed cameras.
   Future<List<RoadAlert>> loadShymkentOsmCameras() async {
     final raw = await rootBundle.loadString('assets/data/shymkent_cameras.json');
-    final decoded = jsonDecode(raw);
+    final decoded = await compute(_decodeJsonInBackground, raw);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('Некорректный JSON камер Шымкента.');
     }
@@ -177,7 +181,7 @@ class RoadAlertService {
   /// Address-only records are for the directory and must not be mapped as GPS points.
   Future<List<Map<String, String>>> loadShymkentCameraDirectory() async {
     final csv = await rootBundle.loadString('assets/data/shymkent_camera_candidates.csv');
-    final rows = _parseCsv(csv);
+    final rows = await compute(_parseCsvInBackground, csv);
     if (rows.length < 2) {
       throw const FormatException('Shymkent camera candidate database is empty.');
     }
@@ -198,7 +202,7 @@ class RoadAlertService {
   /// Approximate landmark coordinates are visibly marked and never trigger alerts.
   Future<List<RoadAlert>> loadBundledShymkentCameraCandidates() async {
     final csv = await rootBundle.loadString('assets/data/shymkent_camera_candidates.csv');
-    final rows = _parseCsv(csv);
+    final rows = await compute(_parseCsvInBackground, csv);
     if (rows.length < 2) {
       throw const FormatException('Shymkent camera candidate database is empty.');
     }
