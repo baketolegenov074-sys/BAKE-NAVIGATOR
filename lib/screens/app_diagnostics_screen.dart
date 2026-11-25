@@ -250,7 +250,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Очистить журнал ошибок?'),
-        content: const Text('Будут удалены локальная история и неотправленная очередь старых диагностических событий. Данные Supabase не удаляются.'),
+        content: const Text('Будут удалены локальная история ошибок, результаты последней проверки и очередь старых диагностических событий на телефоне. Записи в облачной базе не удаляются.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Отмена')),
           FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Очистить')),
@@ -260,9 +260,14 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
     if (confirmed != true) return;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_historyKey);
+    await prefs.remove('bake_app_diagnostics_last_results');
     await RoadReportSyncService.clearPendingDiagnosticEvents();
     if (!mounted) return;
-    setState(() => _history = []);
+    setState(() {
+      _history = [];
+      _results.clear();
+      _lastRun = null;
+    });
   }
 
   Future<void> _exportReport() async {
@@ -344,10 +349,10 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
           Row(
             children: [
               const Expanded(child: Text('История ошибок', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-              IconButton(
-                tooltip: 'Очистить журнал',
-                onPressed: _history.isEmpty ? null : _clearHistory,
+              TextButton.icon(
+                onPressed: _clearHistory,
                 icon: const Icon(Icons.delete_outline),
+                label: const Text('Очистить'),
               ),
               TextButton.icon(
                 onPressed: _results.isEmpty && _history.isEmpty ? null : _exportReport,
