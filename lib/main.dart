@@ -1409,15 +1409,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         await _tts.setPitch(1.0);
         await Future.delayed(const Duration(milliseconds: 250));
         if (generation != _speechGeneration) return;
-        await AppDiagnosticsScreen.recordTripEvent(
+        unawaited(AppDiagnosticsScreen.recordTripEvent(
           'Голосовая подсказка: отправлена',
           'Язык: ${_normalizeNavigationLanguage(_navigationLanguage)}; текст: $text',
-        );
+        ));
         await _tts.speak(text);
-        await AppDiagnosticsScreen.recordTripEvent(
+        unawaited(AppDiagnosticsScreen.recordTripEvent(
           'Голосовая подсказка: завершена',
           'Озвучивание завершилось без ошибки TTS.',
-        );
+        ));
       } catch (error) {
         await AppDiagnosticsScreen.recordTripEvent(
           'Ошибка голосовой подсказки',
