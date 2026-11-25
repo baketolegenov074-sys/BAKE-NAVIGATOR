@@ -123,6 +123,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
   List<String> _history = [];
   List<Map<String, dynamic>> _cloudErrors = [];
   bool _loadingCloudErrors = false;
+  String? _cloudErrorMessage;
   String? _startupResult;
   bool _checking = false;
   DateTime? _lastRun;
@@ -167,15 +168,21 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
 
   Future<void> _loadCloudErrors() async {
     if (_loadingCloudErrors) return;
-    setState(() => _loadingCloudErrors = true);
+    setState(() {
+      _loadingCloudErrors = true;
+      _cloudErrorMessage = null;
+    });
     try {
       final rows = await RoadReportSyncService.fetchDiagnosticReports();
       if (!mounted) return;
       setState(() => _cloudErrors = rows);
     } catch (error) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось вручную загрузить облачные ошибки: $error')),
-      );
+      if (mounted) {
+        setState(() => _cloudErrorMessage = error.toString());
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Облачный журнал недоступен: $error')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loadingCloudErrors = false);
     }
@@ -306,11 +313,6 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
       return (state: _CheckState.ok, details: 'Внутренняя папка приложения доступна для чтения и записи.');
     });
 
-    await check('Supabase — подключение к базе', () async {
-      final details = await RoadReportSyncService.checkConnection();
-      return (state: _CheckState.ok, details: details);
-    });
-
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       'bake_app_diagnostics_last_results',
@@ -332,6 +334,16 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
       _lastRun = now;
       _checking = false;
     });
+  }
+
+  Future<void> _deleteHistoryEntry(int displayIndex) async {
+    final originalIndex = _history.length - 1 - displayIndex;
+    if (originalIndex < 0 || originalIndex >= _history.length) return;
+    final updated = List<String>.from(_history)..removeAt(originalIndex);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_historyKey, updated);
+    if (!mounted) return;
+    setState(() => _history = updated);
   }
 
   Future<void> _clearHistory() async {
@@ -399,126 +411,218 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 4,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Кабинет диагностики'),
+          bottom: const TabBar(
+            isScrollable: true,
+            tabs: [
+              Tab(icon: Icon(Icons.health_and_safety_outlined), text: 'Проверка'),
+              Tab(icon: Icon(Icons.gps_fixed), text: 'GPS'),
+              Tab(icon: Icon(Icons.error_outline), text: 'Ошибки'),
+              Tab(icon: Icon(Icons.cloud_outlined), text: 'Облако'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _buildChecksTab(),
+            _buildGpsTab(),
+            _buildErrorsTab(),
+            _buildCloudTab(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChecksTab() {
     final errors = _results.where((result) => result.state == _CheckState.error).length;
     final warnings = _results.where((result) => result.state == _CheckState.warning).length;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Диагностика приложения')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text('Проверка запускается только вручную. Автоматических проверок при открытии приложения нет.'),
-          const SizedBox(height: 12),
-          const TripDiagnosticsPanel(),
-          const SizedBox(height: 12),
-          Card(child: Padding(
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text('Проверки запускаются только вручную. При открытии кабинета проверки и сетевые запросы не выполняются.'),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
             padding: const EdgeInsets.all(12),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Запуск и белый экран', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              const Text('Одноразовый замер следующего запуска: время до первого кадра карты и ошибка отображения. Сам по себе не запускается.'),
-              if (_startupResult != null) Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text('Последний результат: $_startupResult'),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton.icon(
-                onPressed: _armStartupCheck,
-                icon: const Icon(Icons.timer_outlined),
-                label: const Text('Записать следующий запуск'),
-              ),
-            ]),
-          )),
-          const SizedBox(height: 12),
-          Card(child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Облачный журнал ошибок', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              const Text('Облако не опрашивается автоматически. Загрузка выполняется только после нажатия кнопки. Сейчас таблица разрешает только отправку; чтение требует защищённого доступа администратора.'),
-              Row(children: [
-                Expanded(child: Text('Загружено: ${_cloudErrors.length}')),
-                TextButton.icon(
-                  onPressed: _cloudErrors.isEmpty ? null : _clearCloudErrorPanels,
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('Очистить панели'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Запуск и белый экран', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                const Text('Одноразовый замер следующего запуска: время до появления карты и ошибка отображения.'),
+                if (_startupResult != null) ...[
+                  const SizedBox(height: 8),
+                  SelectableText('Последний результат: $_startupResult'),
+                ],
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _armStartupCheck,
+                  icon: const Icon(Icons.timer_outlined),
+                  label: const Text('Записать следующий запуск'),
                 ),
-              ]),
-              OutlinedButton.icon(
-                onPressed: _loadingCloudErrors ? null : _loadCloudErrors,
-                icon: _loadingCloudErrors
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.cloud_download_outlined),
-                label: Text(_loadingCloudErrors ? 'Загружаем…' : 'Подключить и загрузить ошибки'),
-              ),
-              ..._cloudErrors.map((item) => Card(
-                child: ListTile(
-                  dense: true,
-                  title: Text("${item['category'] ?? 'Ошибка'} · ${item['platform'] ?? ''}"),
-                  subtitle: Text("${item['message'] ?? ''}"),
-                  trailing: IconButton(
-                    tooltip: 'Убрать панель',
-                    icon: const Icon(Icons.close),
-                    onPressed: () => setState(() => _cloudErrors.remove(item)),
-                  ),
-                ),
-              )),
-              if (_cloudErrors.isNotEmpty)
-                const Text('«Очистить панели» скрывает записи только на этом экране. Облачные записи не удаляются.'),
-            ]),
-          )),
-          FilledButton.icon(
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
             onPressed: _checking ? null : _runChecks,
             icon: _checking
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.play_arrow),
             label: Text(_checking ? 'Проверяем…' : 'Проверить всё'),
           ),
-          if (_lastRun != null) ...[
-            const SizedBox(height: 8),
-            Text('Последняя проверка: ${_lastRun!.toLocal()}'),
-            Text('Ошибок: $errors · Предупреждений: $warnings'),
-          ],
-          const SizedBox(height: 12),
-          if (_results.isEmpty)
-            const Card(child: Padding(padding: EdgeInsets.all(16), child: Text('Проверка ещё не запускалась.')))
-          else
-            ..._results.map((result) => Card(
-              child: ListTile(
-                leading: Icon(_stateIcon(result.state), color: _stateColor(result.state)),
-                title: Text(result.name),
-                subtitle: Text('${_stateLabel(result.state)} · ${result.details}'),
-                isThreeLine: true,
-              ),
-            )),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              const Expanded(child: Text('История ошибок', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-              TextButton.icon(
-                onPressed: _clearHistory,
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Очистить'),
-              ),
-              TextButton.icon(
-                onPressed: _results.isEmpty && _history.isEmpty ? null : _exportReport,
-                icon: const Icon(Icons.ios_share),
-                label: const Text('Экспорт'),
-              ),
-            ],
-          ),
-          if (_history.isEmpty)
-            const Text('Записей пока нет.')
-          else
-            ..._history.reversed.take(30).map((item) => ListTile(
-              dense: true,
-              leading: const Icon(Icons.history, size: 18),
-              title: Text(item, style: const TextStyle(fontSize: 12)),
-            )),
+        ),
+        if (_lastRun != null) ...[
+          const SizedBox(height: 8),
+          Text('Последняя проверка: ${_lastRun!.toLocal()}'),
+          Text('Ошибок: $errors · Предупреждений: $warnings'),
         ],
-      ),
+        const SizedBox(height: 12),
+        if (_results.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Проверка ещё не запускалась.'),
+            ),
+          )
+        else
+          ..._results.map((result) => Card(
+            child: ListTile(
+              leading: Icon(_stateIcon(result.state), color: _stateColor(result.state)),
+              title: Text(result.name),
+              subtitle: Text('${_stateLabel(result.state)} · ${result.details}'),
+              isThreeLine: true,
+            ),
+          )),
+      ],
     );
   }
-}
+
+  Widget _buildGpsTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: const [
+        Text('Запись GPS начинается только после нажатия кнопки. Кабинет не запускает GPS-поток при открытии.'),
+        SizedBox(height: 12),
+        TripDiagnosticsPanel(),
+      ],
+    );
+  }
+
+  Widget _buildErrorsTab() {
+    final visibleHistory = _history.reversed.take(100).toList();
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text('Локальные записи ошибок', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+            IconButton(
+              tooltip: 'Очистить всю историю',
+              onPressed: _history.isEmpty && _results.isEmpty ? null : _clearHistory,
+              icon: const Icon(Icons.delete_sweep_outlined),
+            ),
+            IconButton(
+              tooltip: 'Экспорт отчёта',
+              onPressed: _results.isEmpty && _history.isEmpty ? null : _exportReport,
+              icon: const Icon(Icons.ios_share),
+            ),
+          ],
+        ),
+        const Text('Записи хранятся только на этом телефоне. Удаление не затрагивает облачные данные и дорожные отметки.'),
+        const SizedBox(height: 8),
+        if (visibleHistory.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Локальных записей пока нет.'),
+            ),
+          )
+        else
+          ...visibleHistory.asMap().entries.map((entry) => Card(
+            child: ListTile(
+              dense: true,
+              leading: const Icon(Icons.history, size: 20),
+              title: SelectableText(entry.value, style: const TextStyle(fontSize: 12)),
+              trailing: IconButton(
+                tooltip: 'Удалить эту запись',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => _deleteHistoryEntry(entry.key),
+              ),
+            ),
+          )),
+      ],
+    );
+  }
+
+  Widget _buildCloudTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text('Облачный журнал не подключается при запуске приложения и не проверяется кнопкой «Проверить всё». Подключение и загрузка — только вручную.'),
+        const SizedBox(height: 8),
+        const Text('Публичный ключ приложения не должен получать административное чтение. Если доступ закрыт политиками базы, экран покажет отказ; публичные права базы не расширяются.'),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: Text('Загружено записей: ${_cloudErrors.length}')),
+            TextButton.icon(
+              onPressed: _cloudErrors.isEmpty ? null : _clearCloudErrorPanels,
+              icon: const Icon(Icons.clear_all),
+              label: const Text('Очистить экран'),
+            ),
+          ],
+        ),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _loadingCloudErrors ? null : _loadCloudErrors,
+            icon: _loadingCloudErrors
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.cloud_download_outlined),
+            label: Text(_loadingCloudErrors ? 'Подключаем…' : 'Подключить и загрузить ошибки'),
+          ),
+        ),
+        if (_cloudErrorMessage != null) ...[
+          const SizedBox(height: 8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: SelectableText('Ошибка доступа к облачному журналу:\n$_cloudErrorMessage'),
+            ),
+          ),
+        ],
+        if (_cloudErrors.isEmpty && _cloudErrorMessage == null)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Text('Облачные записи ещё не загружались.'),
+          ),
+        ..._cloudErrors.map((item) => Card(
+          child: ListTile(
+            title: Text('${item['category'] ?? 'Ошибка'} · ${item['platform'] ?? ''}'),
+            subtitle: SelectableText('${item['message'] ?? ''}'),
+            trailing: IconButton(
+              tooltip: 'Скрыть на этом экране',
+              icon: const Icon(Icons.close),
+              onPressed: () => setState(() => _cloudErrors.remove(item)),
+            ),
+          ),
+        )),
+        if (_cloudErrors.isNotEmpty)
+          const Text('Очистка скрывает записи только на этом экране. Строки в облачной базе не удаляются.'),
+      ],
+    );
+  }
 
 
 
