@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../services/road_report_sync_service.dart';
+import 'app_diagnostics_screen.dart';
 
 /// Road reports are stored locally first and synchronized with the shared Supabase table.
 class RoadReportCenter extends StatelessWidget {
@@ -768,6 +769,17 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
                     label: const Text('Локальные'),
                   ),
                 ]),
+                const Divider(height: 18),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.health_and_safety_outlined),
+                  title: const Text('Диагностика приложения'),
+                  subtitle: const Text('Ручные проверки функций и отдельные отчёты'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AppDiagnosticsScreen()),
+                  ),
+                ),
               ]),
             ),
           ),
