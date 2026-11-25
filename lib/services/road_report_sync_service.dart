@@ -155,9 +155,7 @@ class RoadReportSyncService {
       }
       await prefs.setStringList(_diagnosticQueueKey, queue);
 
-      if (_initialized && category != 'gps') {
-        await flushPendingDiagnosticEvents();
-      }
+      // Diagnostic events are never uploaded automatically. Any future upload must be explicit.
     } catch (error) {
       debugPrint('BAKE diagnostic event could not be queued: ${error.runtimeType}');
     }
