@@ -6541,6 +6541,10 @@ _navigationMatchedLocation = null;
                                     photonOnlySuggestions..clear()..addAll(found);
                                     publishSuggestions();
                                   } finally {
+                                    if (identical(autocompleteClient, requestClient)) {
+                                      requestClient.close();
+                                      autocompleteClient = null;
+                                    }
                                     if (searchContext.mounted && requestVersion == photonRequestVersion) {
                                       refreshSearch(() => photonLoadingSuggestions = false);
                                     }
@@ -6564,6 +6568,10 @@ _navigationMatchedLocation = null;
                                 } catch (error) {
                                   debugPrint('BAKE Photon autocomplete failed: $error');
                                 } finally {
+                                  if (identical(autocompleteClient, requestClient)) {
+                                    requestClient.close();
+                                    autocompleteClient = null;
+                                  }
                                   if (searchContext.mounted && requestVersion == photonRequestVersion) {
                                     refreshSearch(() => photonLoadingSuggestions = false);
                                   }
