@@ -52,6 +52,7 @@ class AppDiagnosticsScreen extends StatefulWidget {
         'bake_app_diagnostics_history',
         history.length > 100 ? history.sublist(history.length - 100) : history,
       );
+      await _TripDiagnosticsRecorder.instance.addEvent('Ошибка приложения: $source', '${error.runtimeType}: $error');
     } catch (_) {
       // Diagnostics must never interrupt the app's normal error handling.
     }
@@ -409,6 +410,7 @@ class _TripDiagnosticsRecorder {
   }
 
   Future<void> addEvent(String title, String details) async {
+    if (!active) return;
     events.add({
       'time': DateTime.now().toIso8601String(), 'title': title, 'details': details,
       if (_previous != null) 'lat': _previous!.latitude,
