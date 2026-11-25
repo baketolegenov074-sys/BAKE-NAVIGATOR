@@ -2955,6 +2955,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     ).listen(
       (position) {
         if (!mounted) return;
+        unawaited(AppDiagnosticsScreen.recordTripPosition(position));
         final wasWaitingForNavigationFix =
             _navigationActive && _currentLocation == null;
         _markStartupGpsFix();
@@ -3074,6 +3075,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _checkForOffRoute(position);
       },
       onError: (Object error) {
+        unawaited(AppDiagnosticsScreen.recordTripEvent(
+          'Ошибка основного GPS-потока',
+          '${error.runtimeType}: $error',
+        ));
+        unawaited(AppDiagnosticsScreen.recordTripRuntimeError('Основной GPS-поток', error));
         _recordGpsDiagnostic(event: 'STREAM_ERROR', detail: error.toString());
         if (waitForFirstFix && !firstFix.isCompleted) {
           firstFix.completeError(error, StackTrace.current);
@@ -3085,6 +3091,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         });
       },
       onDone: () {
+        unawaited(AppDiagnosticsScreen.recordTripEvent(
+          'Основной GPS-поток остановлен',
+          'Geolocator position stream closed.',
+        ));
         _recordGpsDiagnostic(event: 'STREAM_DONE', detail: 'Geolocator position stream closed');
         if (identical(_positionSubscription, newSubscription)) {
           _positionSubscription = null;
