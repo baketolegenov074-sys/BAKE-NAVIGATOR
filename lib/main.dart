@@ -1678,7 +1678,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       if (path == null || path.isEmpty || !mounted) return;
 
       // Only load a map explicitly imported through the system file picker.
-      // Shared-storage scans and MANAGE_EXTERNAL_STORAGE are intentionally disabled.
+      // Shared-storage scans are intentionally disabled.
       if (!await File(path).exists()) {
         await prefs.remove('offline_map_path');
         await prefs.remove('offline_map_auto_connected');
