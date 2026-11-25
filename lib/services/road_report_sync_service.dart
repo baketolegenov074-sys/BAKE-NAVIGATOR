@@ -141,7 +141,7 @@ class RoadReportSyncService {
       }
       await prefs.setStringList(_diagnosticQueueKey, queue);
 
-      if (_initialized) {
+      if (_initialized && category != 'gps') {
         await flushPendingDiagnosticEvents();
       }
     } catch (error) {
