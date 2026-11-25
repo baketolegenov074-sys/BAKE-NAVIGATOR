@@ -149,6 +149,20 @@ class RoadReportSyncService {
     }
   }
 
+  static Future<void> _publishDiagnosticToGitHub(String id) async {
+    final response = await _client.functions.invoke(
+      'github-issue-from-diagnostic',
+      body: <String, dynamic>{'id': id},
+    );
+    if (response.status < 200 || response.status >= 300) {
+      throw StateError('GitHub diagnostics bridge returned HTTP ${response.status}.');
+    }
+    final data = response.data;
+    if (data is Map && data['error'] != null) {
+      throw StateError('GitHub diagnostics bridge: ${data['error']}');
+    }
+  }
+
   /// Uploads queued diagnostics in the background. Failed records stay on-device.
   static Future<void> flushPendingDiagnosticEvents() async {
     if (!_initialized || _diagnosticFlushInProgress) return;
@@ -163,11 +177,13 @@ class RoadReportSyncService {
         try {
           final record = Map<String, dynamic>.from(jsonDecode(raw) as Map);
           await _client.from('app_error_reports').insert(record);
+          await _publishDiagnosticToGitHub(record['id'].toString());
           sentIds.add(record['id'].toString());
         } on PostgrestException catch (error) {
           if (error.code == '23505') {
             try {
               final record = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+              await _publishDiagnosticToGitHub(record['id'].toString());
               sentIds.add(record['id'].toString());
             } catch (_) {}
             continue;
