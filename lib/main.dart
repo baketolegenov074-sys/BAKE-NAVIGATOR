@@ -3085,7 +3085,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
         if (!firstFix.isCompleted) firstFix.complete();
         _updateNavigationProgress(navigationPoint);
-        _clearNavigationAlternativesAfterProgress();
         _checkForOffRoute(position);
       },
       onError: (Object error) {
@@ -5620,26 +5619,6 @@ _navigationMatchedLocation = null;
     return matched;
   }
 
-  // Alternatives are useful only near the route's current decision point.
-  // Keep the chosen route, but discard the stale branches after 45 m of travel.
-  void _clearNavigationAlternativesAfterProgress() {
-    // Progress is measured along the selected primary route from its start.
-    // Remove side branches once the vehicle has travelled 45 m on that route.
-    if (!_navigationActive ||
-        _navigationAlternativesCleared ||
-        _navigationProgressMeters < 45.0) return;
-    _navigationAlternativesCleared = true;
-    if (_routeAlternatives.length <= 1) return;
-    final selectedIndex = _selectedRouteIndex
-        .clamp(0, _routeAlternatives.length - 1).toInt();
-    final selectedRoute = _routeAlternatives[selectedIndex];
-    if (!mounted) return;
-    setState(() {
-      _routeAlternatives = <Map<String, dynamic>>[selectedRoute];
-      _selectedRouteIndex = 0;
-    });
-  }
-
   void _updateNavigationProgress(LatLng position) {
     if (!_navigationActive || _instructionIndex >= _instructions.length) return;
 
@@ -7049,16 +7028,89 @@ _navigationMatchedLocation = null;
 
   List<Map<String, dynamic>>? _alternativeHitTestCacheSource;
   int _alternativeHitTestCacheLength = -1;
+  int _alternativeHitTestCacheInstructionIndex = -1;
+  bool _alternativeHitTestCacheNavigationActive = false;
+  bool _alternativeHitTestCacheDecisionVisible = false;
   List<List<LatLng>> _alternativeHitTestCache = const [];
 
   List<List<LatLng>> _cachedAlternativeHitTestPoints() {
+    final decisionVisible = _navigationActive &&
+        (_distanceToNextManeuverMeters ?? double.infinity) <= 1500;
     if (!identical(_alternativeHitTestCacheSource, _routeAlternatives) ||
-        _alternativeHitTestCacheLength != _routeAlternatives.length) {
+        _alternativeHitTestCacheLength != _routeAlternatives.length ||
+        _alternativeHitTestCacheInstructionIndex != _instructionIndex ||
+        _alternativeHitTestCacheNavigationActive != _navigationActive ||
+        _alternativeHitTestCacheDecisionVisible != decisionVisible) {
       _alternativeHitTestCacheSource = _routeAlternatives;
       _alternativeHitTestCacheLength = _routeAlternatives.length;
-      _alternativeHitTestCache = _routeAlternatives
-          .map((route) => _simplifyRouteForDisplay(_routePointsFromDecodedRoute(route)))
+      _alternativeHitTestCacheInstructionIndex = _instructionIndex;
+      _alternativeHitTestCacheNavigationActive = _navigationActive;
+      _alternativeHitTestCacheDecisionVisible = decisionVisible;
+
+      final fullRoutes = _routeAlternatives
+          .map((route) => _simplifyRouteForDisplay(
+                _routePointsFromDecodedRoute(route),
+              ))
           .toList(growable: false);
+      if (!_navigationActive) {
+        _alternativeHitTestCache = fullRoutes;
+      } else if (!decisionVisible ||
+          _instructionIndex >= _instructions.length) {
+        _alternativeHitTestCache = List<List<LatLng>>.generate(
+          fullRoutes.length,
+          (_) => const <LatLng>[],
+          growable: false,
+        );
+      } else {
+        // During guidance show only the next junction area, not the complete
+        // alternative route. The preview advances when the next instruction
+        // changes, so branches already passed disappear automatically.
+        final decisionPoint = _instructions[_instructionIndex].location;
+        _alternativeHitTestCache = fullRoutes.map((routePoints) {
+          if (routePoints.length < 2) return const <LatLng>[];
+          var nearestIndex = 0;
+          var nearestDistance = double.infinity;
+          for (var i = 0; i < routePoints.length; i++) {
+            final point = routePoints[i];
+            final distance = Geolocator.distanceBetween(
+              point.latitude,
+              point.longitude,
+              decisionPoint.latitude,
+              decisionPoint.longitude,
+            );
+            if (distance < nearestDistance) {
+              nearestDistance = distance;
+              nearestIndex = i;
+            }
+          }
+          if (nearestDistance > 1200) return const <LatLng>[];
+
+          var startIndex = nearestIndex;
+          var metersBefore = 0.0;
+          while (startIndex > 0 && metersBefore < 850) {
+            startIndex--;
+            final a = routePoints[startIndex];
+            final b = routePoints[startIndex + 1];
+            metersBefore += Geolocator.distanceBetween(
+              a.latitude, a.longitude, b.latitude, b.longitude,
+            );
+          }
+
+          var endIndex = nearestIndex;
+          var metersAfter = 0.0;
+          while (endIndex < routePoints.length - 1 &&
+              metersAfter < 650) {
+            final a = routePoints[endIndex];
+            final b = routePoints[endIndex + 1];
+            metersAfter += Geolocator.distanceBetween(
+              a.latitude, a.longitude, b.latitude, b.longitude,
+            );
+            endIndex++;
+          }
+          if (endIndex <= startIndex) return const <LatLng>[];
+          return routePoints.sublist(startIndex, endIndex + 1);
+        }).toList(growable: false);
+      }
     }
     return _alternativeHitTestCache;
   }
@@ -8902,11 +8954,9 @@ _navigationMatchedLocation = null;
                 initialCenter: _shymkent,
                 initialZoom: 13,
                 onTap: (_, point) {
-                  // A tap selects a place only; route calculation requires
-                  // an explicit press on the preview card's "Поехать" button.
-                  if (!_trySelectAlternativeAt(point)) {
-                    unawaited(_selectMapDestination(point));
-                  }
+                  // A short tap may select only an alternative route line.
+                  // New map destinations require the deliberate one-second hold.
+                  _trySelectAlternativeAt(point);
                 },
                 onLongPress: (_, point) => _captureMapLongPressPoint(point),
                 onPositionChanged: (camera, hasGesture) {
