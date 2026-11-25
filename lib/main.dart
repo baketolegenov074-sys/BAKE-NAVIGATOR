@@ -324,6 +324,7 @@ void main() {
       return;
     }
     FlutterError.presentError(details);
+    unawaited(AppDiagnosticsScreen.recordRuntimeError('Flutter', details.exception));
     unawaited(RoadReportSyncService.recordDiagnosticEvent(
       category: 'flutter',
       message: details.exception.runtimeType.toString(),
@@ -334,6 +335,7 @@ void main() {
     if (_isExpectedVectorTileCancellation(error, stackTrace)) {
       return true;
     }
+    unawaited(AppDiagnosticsScreen.recordRuntimeError('Platform', error));
     unawaited(RoadReportSyncService.recordDiagnosticEvent(
       category: 'platform',
       message: error.runtimeType.toString(),
