@@ -21,6 +21,7 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:share_plus/share_plus.dart';
 import 'kazakh_voice_service.dart';
 import 'services/road_alert_service.dart';
 import 'services/offline_address_search.dart';
@@ -2516,6 +2517,159 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     });
   }
 
+
+  Future<void> _shareGpsDiagnosticSummary() async {
+    try {
+      await _gpsDiagnosticWriteQueue;
+      final source = await _gpsDiagnosticsFile();
+      if (!await source.exists()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('GPS-журнал пока пуст.')),
+          );
+        }
+        return;
+      }
+
+      final records = <Map<String, dynamic>>[];
+      for (final line in await source.readAsLines()) {
+        if (line.trim().isEmpty) continue;
+        try {
+          final decoded = jsonDecode(line);
+          if (decoded is Map) {
+            records.add(Map<String, dynamic>.from(decoded));
+          }
+        } catch (_) {
+          // Ignore incomplete/corrupted lines; keep valid diagnostic records.
+        }
+      }
+      if (records.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('В журнале нет корректных GPS-записей.')),
+          );
+        }
+        return;
+      }
+
+      double? numberOf(Map<String, dynamic> record, String key) {
+        final value = record[key];
+        return value is num ? value.toDouble() : null;
+      }
+
+      final eventCounts = <String, int>{};
+      var fixes = 0;
+      var callbackGaps = 0;
+      var fixGaps = 0;
+      var largeJumps = 0;
+      var poorAccuracy = 0;
+      var mockedFixes = 0;
+      double maxCallbackGap = 0;
+      double maxFixGap = 0;
+      double maxJump = 0;
+      double maxAccuracy = 0;
+      final anomalies = <String>[];
+
+      for (final record in records) {
+        final event = (record['event'] ?? 'UNKNOWN').toString();
+        eventCounts[event] = (eventCounts[event] ?? 0) + 1;
+        final accuracy = numberOf(record, 'accuracy_m');
+        final callbackGap = numberOf(record, 'callback_gap_ms');
+        final fixGap = numberOf(record, 'fix_gap_ms');
+        final jump = numberOf(record, 'raw_jump_m');
+        if (accuracy != null) {
+          fixes++;
+          if (accuracy > maxAccuracy) maxAccuracy = accuracy;
+          if (accuracy > 30) poorAccuracy++;
+        }
+        if (callbackGap != null) {
+          if (callbackGap > maxCallbackGap) maxCallbackGap = callbackGap;
+          if (callbackGap > 3000) callbackGaps++;
+        }
+        if (fixGap != null) {
+          if (fixGap > maxFixGap) maxFixGap = fixGap;
+          if (fixGap > 3000) fixGaps++;
+        }
+        if (jump != null) {
+          if (jump > maxJump) maxJump = jump;
+          if (jump > 50) largeJumps++;
+        }
+        if (record['mocked'] == true) mockedFixes++;
+
+        final isImportantEvent = event.contains('STREAM') ||
+            event.contains('RESUME') ||
+            event.contains('PAUSE') ||
+            event.contains('ERROR') ||
+            event.contains('STOP');
+        final isAnomaly = (callbackGap ?? 0) > 3000 ||
+            (fixGap ?? 0) > 3000 ||
+            (jump ?? 0) > 50 ||
+            (accuracy ?? 0) > 30 ||
+            record['mocked'] == true;
+        if ((isImportantEvent || isAnomaly) && anomalies.length < 40) {
+          final parts = <String>[
+            record['app_time']?.toString() ?? 'время неизвестно',
+            event,
+          ];
+          if (callbackGap != null) parts.add('callback=${callbackGap.round()}ms');
+          if (fixGap != null) parts.add('fix=${fixGap.round()}ms');
+          if (jump != null) parts.add('скачок=${jump.toStringAsFixed(1)}m');
+          if (accuracy != null) parts.add('точность=${accuracy.toStringAsFixed(1)}m');
+          if (record['detail'] != null) parts.add(record['detail'].toString());
+          final lat = record['raw_lat'];
+          final lon = record['raw_lon'];
+          if (lat is num && lon is num) {
+            parts.add('raw=${lat.toStringAsFixed(6)},${lon.toStringAsFixed(6)}');
+          }
+          anomalies.add(parts.join(' | '));
+        }
+      }
+
+      final report = StringBuffer()
+        ..writeln('BAKE NAVIGATOR — КРАТКИЙ ОТЧЁТ GPS')
+        ..writeln('Записей: ${records.length}; GPS-фиксов: $fixes')
+        ..writeln('Период: ${records.first['app_time'] ?? '?'} — ${records.last['app_time'] ?? '?'}')
+        ..writeln()
+        ..writeln('СОБЫТИЯ:');
+      for (final entry in eventCounts.entries) {
+        report.writeln('${entry.key}: ${entry.value}');
+      }
+      report
+        ..writeln()
+        ..writeln('ПОКАЗАТЕЛИ:')
+        ..writeln('Задержки callback > 3 сек: $callbackGaps; максимум: ${maxCallbackGap.round()} ms')
+        ..writeln('Задержки GPS fix > 3 сек: $fixGaps; максимум: ${maxFixGap.round()} ms')
+        ..writeln('Скачки координат > 50 м: $largeJumps; максимум: ${maxJump.toStringAsFixed(1)} м')
+        ..writeln('Точность хуже 30 м: $poorAccuracy; худшая: ${maxAccuracy.toStringAsFixed(1)} м')
+        ..writeln('Mocked fixes: $mockedFixes')
+        ..writeln()
+        ..writeln('ВАЖНЫЕ СОБЫТИЯ И АНОМАЛИИ:');
+      if (anomalies.isEmpty) {
+        report.writeln('Пороговые аномалии не обнаружены.');
+      } else {
+        for (final item in anomalies) {
+          report.writeln(item);
+        }
+      }
+      report.writeln('\nПолный исходный журнал остаётся на телефоне.');
+
+      final directory = await getTemporaryDirectory();
+      final reportFile = File('${directory.path}/bake_gps_summary.txt');
+      await reportFile.writeAsString(report.toString(), flush: true);
+      await Share.shareXFiles(
+        [XFile(reportFile.path)],
+        text: 'Краткий отчёт диагностики GPS BAKE Navigator',
+        subject: 'BAKE Navigator — GPS',
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось подготовить GPS-отчёт: $error')),
+        );
+      }
+    }
+  }
+
   Future<void> _openGpsDiagnostics() async {
     final prefs = await SharedPreferences.getInstance();
     var enabled = prefs.getBool('gps_diagnostics_enabled') ?? false;
@@ -2549,6 +2703,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                         style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
                       ),
                     ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _shareGpsDiagnosticSummary,
+                    icon: const Icon(Icons.ios_share),
+                    label: const Text('Поделиться кратким отчётом'),
                   ),
                 ),
               ],
