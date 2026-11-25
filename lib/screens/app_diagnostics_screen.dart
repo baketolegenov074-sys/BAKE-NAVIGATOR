@@ -715,6 +715,47 @@ class _TripDiagnosticsRecorder {
     _loaded = true;
     final prefs = await SharedPreferences.getInstance();
     lastReport = prefs.getString('bake_trip_diagnostics_last_report');
+    final unfinishedSession = prefs.getString('bake_trip_diagnostics_session');
+    if (unfinishedSession != null) {
+      try {
+        final decoded = jsonDecode(unfinishedSession);
+        if (decoded is Map<String, dynamic>) {
+          final started = DateTime.tryParse(decoded['startedAt']?.toString() ?? '') ?? DateTime.now();
+          final ended = DateTime.now();
+          final wasFinished = decoded['finished'] == true;
+          final recoveredPoints = (decoded['points'] as List?) ?? const [];
+          final recoveredEvents = (decoded['events'] as List?) ?? const [];
+          final recoveredReport = StringBuffer('BAKE Navigator — ${wasFinished ? 'восстановленный отчёт поездки' : 'прерванная диагностика поездки'}\\n');
+          recoveredReport.writeln('Начало: ${started.toLocal()}');
+          recoveredReport.writeln('Последняя запись: ${ended.toLocal()}');
+          recoveredReport.writeln('GPS-точек: ${recoveredPoints.length}');
+          recoveredReport.writeln('Событий: ${recoveredEvents.length}');
+          if (!wasFinished) recoveredReport.writeln('Причина завершения: приложение было закрыто до нажатия кнопки остановки.');
+          for (final item in recoveredEvents.whereType<Map>()) {
+            recoveredReport.writeln('\\n${item['time']} | ${item['title']}');
+            recoveredReport.writeln(item['details']);
+          }
+          final archive = <String, Object?>{
+            'startedAt': started.toIso8601String(),
+            'endedAt': ended.toIso8601String(),
+            'interrupted': !wasFinished,
+            'pointCount': recoveredPoints.length,
+            'eventCount': recoveredEvents.length,
+            'report': recoveredReport.toString(),
+            'points': recoveredPoints,
+            'events': recoveredEvents,
+          };
+          final recoveryDirectory = await _reportsDirectory();
+          final recoveredFile = File('${recoveryDirectory.path}/trip_${started.microsecondsSinceEpoch}.json');
+          await recoveredFile.writeAsString(jsonEncode(archive), flush: true);
+          lastReport = recoveredReport.toString();
+          await prefs.setString('bake_trip_diagnostics_last_report', lastReport!);
+          await prefs.remove('bake_trip_diagnostics_session');
+        }
+      } catch (_) {
+        // Keep a damaged session for manual inspection rather than deleting it.
+      }
+    }
     final directory = await _reportsDirectory();
     if (await directory.exists()) {
       reportFiles
@@ -955,7 +996,9 @@ class _TripDiagnosticsRecorder {
     final directory = await _reportsDirectory();
     final file = File('${directory.path}/trip_${startedAt?.microsecondsSinceEpoch ?? ended.microsecondsSinceEpoch}.json');
     await file.writeAsString(jsonEncode(archive), flush: true);
+    reportFiles.removeWhere((existing) => existing.path == file.path);
     reportFiles.insert(0, file);
+    await prefs.remove('bake_trip_diagnostics_session');
     await prefs.setString('bake_trip_diagnostics_last_report', lastReport!);
     revision.value++;
   }
