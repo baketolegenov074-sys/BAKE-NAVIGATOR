@@ -93,6 +93,11 @@ class AppDiagnosticsScreen extends StatefulWidget {
   static bool get isTripDiagnosticsActive =>
       _TripDiagnosticsRecorder.instance.active;
 
+  static Future<void> recordTripPosition(Position position) async {
+    if (!_TripDiagnosticsRecorder.instance.active) return;
+    await _TripDiagnosticsRecorder.instance.recordPosition(position);
+  }
+
   // Record unexpected runtime errors only while the user explicitly records a trip.
   static Future<void> recordTripRuntimeError(String source, Object error) async {
     try {
@@ -642,7 +647,6 @@ class _TripDiagnosticsRecorder {
   _TripDiagnosticsRecorder._();
   static final instance = _TripDiagnosticsRecorder._();
   final revision = ValueNotifier<int>(0);
-  StreamSubscription<Position>? _subscription;
   bool active = false;
   bool _loaded = false;
   DateTime? startedAt;
@@ -971,15 +975,15 @@ class _TripDiagnosticsRecorder {
     _installRuntimeErrorHooks();
     revision.value++;
     try {
-      _subscription = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 1),
-      ).listen(_onPosition, onError: (Object error) => addEvent('Ошибка GPS-потока', error.toString()));
       await _saveSession();
+      await addEvent('Диагностика поездки включена', 'Запись подключена к основному GPS-потоку BAKE Navigator; отдельный GPS-поток не создаётся.');
     } catch (error) {
-      await addEvent('Не удалось запустить запись', error.toString());
+      await addEvent('Не удалось запустить диагностику', error.toString());
       await stop();
     }
   }
+
+  Future<void> recordPosition(Position position) => _onPosition(position);
 
   Future<void> _onPosition(Position position) async {
     if (!active) return;
@@ -1031,7 +1035,6 @@ class _TripDiagnosticsRecorder {
     active = false;
     _removeRuntimeErrorHooks();
     revision.value++;
-    await _subscription?.cancel(); _subscription = null;
     final ended = DateTime.now();
     final prefs = await SharedPreferences.getInstance();
     final errors = (prefs.getStringList('bake_app_diagnostics_history') ?? []).where((line) {
