@@ -88,12 +88,12 @@ class RoadReportSyncService {
 
   static String _sanitizeDiagnosticText(String value) {
     return value
-        .replaceAll(RegExp(r'https?://[^\\s]+'), '[url]')
+        .replaceAll(RegExp(r'https?://[^\s]+'), '[url]')
         .replaceAll(
-          RegExp(r'-?\\d{1,2}\\.\\d{4,}\\s*[,;]\\s*-?\\d{1,3}\\.\\d{4,}'),
+          RegExp(r'-?\d{1,2}\.\d{4,}\s*[,;]\s*-?\d{1,3}\.\d{4,}'),
           '[coordinates]',
         )
-        .replaceAll(RegExp(r'\\n{3,}'), '\\n\\n')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
         .trim();
   }
 
