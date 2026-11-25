@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show FrameTiming, SchedulerBinding;
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
@@ -679,9 +680,24 @@ class _TripDiagnosticsRecorder {
       return _previousPlatformErrorHandler?.call(error, stack) ?? false;
     };
     PlatformDispatcher.instance.onError = _activePlatformErrorHandler;
+    SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
+  }
+
+  void _onFrameTimings(List<FrameTiming> timings) {
+    if (!active) return;
+    for (final timing in timings) {
+      final totalMs = (timing.buildDuration + timing.rasterDuration).inMilliseconds;
+      if (totalMs >= 250) {
+        unawaited(addEvent(
+          'Медленный кадр интерфейса',
+          'Построение: ${timing.buildDuration.inMilliseconds} мс; отрисовка: ${timing.rasterDuration.inMilliseconds} мс; всего: $totalMs мс.',
+        ));
+      }
+    }
   }
 
   void _removeRuntimeErrorHooks() {
+    SchedulerBinding.instance.removeTimingsCallback(_onFrameTimings);
     if (identical(FlutterError.onError, _activeFlutterErrorHandler)) {
       FlutterError.onError = _previousFlutterErrorHandler;
     }
@@ -818,10 +834,21 @@ class _TripDiagnosticsRecorder {
   Future<void> start(BuildContext context) async {
     if (active) return;
     final enabled = await Geolocator.isLocationServiceEnabled();
-    final permission = await Geolocator.checkPermission();
-    if (!enabled || permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+    var permission = await Geolocator.checkPermission();
+    if (!enabled) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Включите геолокацию Android, затем повторите запуск диагностики.')),
+      );
+      return;
+    }
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(!enabled ? 'GPS выключен.' : 'Нет разрешения на геолокацию.'),
+        content: Text(permission == LocationPermission.deniedForever
+            ? 'Доступ к геолокации запрещён. Разрешите его в настройках Android.'
+            : 'Разрешение на геолокацию не выдано.'),
       ));
       return;
     }
