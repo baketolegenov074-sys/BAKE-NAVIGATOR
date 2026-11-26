@@ -133,7 +133,7 @@ class AppDiagnosticsScreen extends StatefulWidget {
   State<AppDiagnosticsScreen> createState() => _AppDiagnosticsScreenState();
 }
 
-class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
+class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with WidgetsBindingObserver {
   static const _historyKey = 'bake_app_diagnostics_history';
   final List<_CheckResult> _results = [];
   List<String> _history = [];
@@ -153,9 +153,24 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadSavedData(); // Loads history only; never runs checks on app/screen startup.
     _refreshScreenRecordingState();
     _loadScreenRecordings();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshScreenRecordingState();
+      _loadScreenRecordings();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _loadSavedData() async {
