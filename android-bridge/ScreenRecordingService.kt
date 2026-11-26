@@ -15,6 +15,8 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Environment
 import android.os.IBinder
+import android.os.Handler
+import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import java.io.File
@@ -98,7 +100,7 @@ class ScreenRecordingService : Service() {
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-        }.setSmallIcon(android.R.drawable.presence_video_online)
+        }.setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentTitle("BAKE Navigator")
             .setContentText("Идёт запись экрана для диагностики")
             .setOngoing(true)
@@ -116,6 +118,11 @@ class ScreenRecordingService : Service() {
         val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         projection = manager.getMediaProjection(resultCode, data)
             ?: error("Android не предоставил MediaProjection")
+        projection!!.registerCallback(object : MediaProjection.Callback() {
+            override fun onStop() {
+                stopRecording()
+            }
+        }, Handler(Looper.getMainLooper()))
 
         val metrics = DisplayMetrics()
         @Suppress("DEPRECATION")
