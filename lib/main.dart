@@ -45,10 +45,12 @@ bool _isExpectedVectorTileCancellation(Object error, StackTrace? stackTrace) {
 class _ResilientVectorTileProvider implements VectorTileProvider {
   _ResilientVectorTileProvider(
     this._delegate, {
+    required this.sourceId,
     this.onFirstTileLoaded,
   });
 
   final VectorTileProvider _delegate;
+  final String sourceId;
   final VoidCallback? onFirstTileLoaded;
 
   @override
@@ -63,24 +65,42 @@ class _ResilientVectorTileProvider implements VectorTileProvider {
   @override
   Future<Uint8List> provide(TileIdentity tile) async {
     final stopwatch = Stopwatch()..start();
+    final providerType = _delegate.type.name;
+    MapStartupDiagnostics.instance.recordTileRequestStarted(
+      sourceId,
+      providerType,
+      tile.toString(),
+    );
     try {
       final bytes = await _delegate.provide(tile);
       stopwatch.stop();
-      MapStartupDiagnostics.instance.recordVectorTileLoaded(
+      MapStartupDiagnostics.instance.recordTileLoaded(
+        sourceId,
+        providerType,
         tile.toString(),
         stopwatch.elapsedMilliseconds,
         bytes.length,
       );
-      onFirstTileLoaded?.call();
+      if (_delegate.type == TileProviderType.vector) {
+        onFirstTileLoaded?.call();
+      }
       return bytes;
-    } on ProviderException catch (error) {
+    } on ProviderException catch (error, stackTrace) {
       MapStartupDiagnostics.instance.recordError(
-        'Загрузка векторного тайла $tile',
+        'Загрузка тайла $sourceId ($providerType) $tile',
         error,
+        stackTrace,
       );
-      // An unavailable network tile is an empty protobuf tile, not a reason
+      // An unavailable network tile is an empty tile, not a reason
       // to let one failed request interrupt map rendering or navigation.
       return Uint8List(0);
+    } catch (error, stackTrace) {
+      MapStartupDiagnostics.instance.recordError(
+        'Сбой запроса тайла $sourceId ($providerType) $tile',
+        error,
+        stackTrace,
+      );
+      rethrow;
     }
   }
 }
@@ -89,16 +109,19 @@ TileProviders _resilientOnlineTileProviders(
   TileProviders providers, {
   VoidCallback? onFirstTileLoaded,
 }) {
-  var firstTileReported = false;
+  var firstVectorTileReported = false;
   return TileProviders({
     for (final entry in providers.tileProviderBySource.entries)
       entry.key: _ResilientVectorTileProvider(
         entry.value,
-        onFirstTileLoaded: () {
-          if (firstTileReported) return;
-          firstTileReported = true;
-          onFirstTileLoaded?.call();
-        },
+        sourceId: entry.key,
+        onFirstTileLoaded: entry.value.type == TileProviderType.vector
+            ? () {
+                if (firstVectorTileReported) return;
+                firstVectorTileReported = true;
+                onFirstTileLoaded?.call();
+              }
+            : null,
       ),
   });
 }
@@ -1758,6 +1781,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     MapStartupDiagnostics.instance.recordStage(
       'КОНФИГУРАЦИЯ КАРТЫ',
       'Режим: ${_isOfflineMapActive ? "офлайн" : "онлайн"}; векторный провайдер: ${_isOfflineMapActive ? _offlineVectorTileProvider != null : _flutterMapOnlineStyle != null}; Liberty style готов: ${_flutterMapOnlineStyle != null}.',
+    );
+    MapStartupDiagnostics.instance.recordStage(
+      'КАМЕРА КАРТЫ ПРИ ГОТОВНОСТИ',
+      'Центр: ${_mapController.camera.center}; масштаб: ${_mapController.camera.zoom}.',
     );
     if (_mapOpenMs == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -9640,7 +9667,13 @@ _navigationMatchedLocation = null;
                   }
                   final now = DateTime.now();
                   final zoomChanged = (_mapZoom - camera.zoom).abs() >= 0.01;
-                  if (zoomChanged) _mapZoom = camera.zoom;
+                  if (zoomChanged) {
+                    _mapZoom = camera.zoom;
+                    MapStartupDiagnostics.instance.recordStage(
+                      'ИЗМЕНЕНИЕ МАСШТАБА КАРТЫ',
+                      'Масштаб: ${camera.zoom}.',
+                    );
+                  }
                   if (_lastCameraMarkerRefreshAt == null ||
                       now.difference(_lastCameraMarkerRefreshAt!) >=
                           const Duration(milliseconds: 250)) {
