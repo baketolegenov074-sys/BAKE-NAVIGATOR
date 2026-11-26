@@ -1045,21 +1045,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       debugPrint('BAKE RELEASE WIDGET ERROR: ${details.exceptionAsString()}');
       debugPrintStack(stackTrace: details.stack);
       unawaited(AppDiagnosticsScreen.recordStartupRuntimeError('Widget', details.exception));
-      return Directionality(
-        textDirection: TextDirection.ltr,
-        child: ColoredBox(
-          color: const Color(0xFFF1F3F5),
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: SelectableText(
-                'ОШИБКА ОТОБРАЖЕНИЯ BAKE NAVIGATOR\n\n${details.exceptionAsString()}',
-                style: const TextStyle(color: Color(0xFFB00020), fontSize: 14),
-              ),
-            ),
-          ),
-        ),
-      );
+      // Keep the failing subtree invisible; diagnostics remain recorded above.
+      return const SizedBox.shrink();
     };
 
     unawaited(_loadFlutterMapOnlineStyle());
