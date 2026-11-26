@@ -694,111 +694,192 @@ class _RoadAdminPageState extends State<RoadAdminPage> {
     );
   }
 
+  Widget _buildOverview(BuildContext context) {
+    final pending = _records.where((r) => r['status']?.toString() == 'На проверке').length;
+    final approved = _records.where((r) => r['status']?.toString() == 'Подтверждено').length;
+    final rejected = _records.where((r) => r['status']?.toString() == 'Отклонено').length;
+    final statusColor = _loading ? Colors.blueGrey : _error == null ? Colors.green : Colors.red;
+    final statusText = _loading ? 'Проверяем подключение…' : _error == null ? 'Supabase подключён' : 'Нет связи с Supabase';
+
+    Widget metric(String label, int value, IconData icon, Color color) => Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(children: [
+          Icon(icon, color: color, size: 25),
+          const SizedBox(width: 9),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('$value', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall),
+          ])),
+        ]),
+      ),
+    );
+
+    Widget actionCard({
+      required IconData icon,
+      required String title,
+      required String subtitle,
+      required VoidCallback onTap,
+      Color? color,
+    }) => Card(
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+        leading: CircleAvatar(
+          backgroundColor: (color ?? Theme.of(context).colorScheme.primary).withValues(alpha: 0.12),
+          child: Icon(icon, color: color ?? Theme.of(context).colorScheme.primary),
+        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text(subtitle),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: onTap,
+      ),
+    );
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      children: [
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Icon(_loading ? Icons.sync : _error == null ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+                  color: statusColor),
+                const SizedBox(width: 9),
+                Expanded(child: Text(statusText, style: const TextStyle(fontWeight: FontWeight.w800))),
+                IconButton(
+                  tooltip: 'Обновить данные',
+                  onPressed: _loading ? null : _loadReports,
+                  icon: const Icon(Icons.refresh),
+                ),
+              ]),
+              Text(RoadReportSyncService.configurationSummary,
+                style: Theme.of(context).textTheme.bodySmall),
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                Align(alignment: Alignment.centerRight, child: TextButton.icon(
+                  onPressed: _loadReports, icon: const Icon(Icons.refresh), label: const Text('Повторить'),
+                )),
+              ],
+              const Divider(height: 22),
+              Row(children: [
+                const Icon(Icons.phone_android_outlined, size: 19),
+                const SizedBox(width: 8),
+                Expanded(child: Text('На телефоне ожидают отправки: $_localPendingCount')),
+                TextButton(
+                  onPressed: () async {
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const MyRoadMarksPage()),
+                    );
+                    _loadLocalPendingCount();
+                  },
+                  child: const Text('Открыть'),
+                ),
+              ]),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 14),
+        const Padding(
+          padding: EdgeInsets.only(left: 2, bottom: 8),
+          child: Text('Сводка дорожных объектов',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+        ),
+        GridView.count(
+          crossAxisCount: 2,
+          crossAxisSpacing: 9,
+          mainAxisSpacing: 9,
+          childAspectRatio: 1.9,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          children: [
+            metric('Новые', pending, Icons.fiber_new_outlined, Colors.orange),
+            metric('Одобрено', approved, Icons.check_circle_outline, Colors.green),
+            metric('Отклонено', rejected, Icons.cancel_outlined, Colors.red),
+            metric('Всего в базе', _records.length, Icons.storage_outlined, Colors.blueGrey),
+          ],
+        ),
+        const SizedBox(height: 16),
+        const Padding(
+          padding: EdgeInsets.only(left: 2, bottom: 8),
+          child: Text('Управление', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+        ),
+        actionCard(
+          icon: Icons.fact_check_outlined,
+          title: 'Модерация дорожных объектов',
+          subtitle: 'Проверка, редактирование и подтверждение отметок',
+          onTap: () => DefaultTabController.of(context).animateTo(1),
+        ),
+        const SizedBox(height: 8),
+        actionCard(
+          icon: Icons.health_and_safety_outlined,
+          title: 'Диагностика приложения',
+          subtitle: 'Ручные проверки и отчёты об ошибках',
+          color: Colors.teal,
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AppDiagnosticsScreen()),
+          ),
+        ),
+        const SizedBox(height: 8),
+        actionCard(
+          icon: Icons.bookmarks_outlined,
+          title: 'Локальные отметки',
+          subtitle: 'Записи, сохранённые на этом телефоне',
+          color: Colors.blueGrey,
+          onTap: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const MyRoadMarksPage()),
+            );
+            _loadLocalPendingCount();
+          },
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Облачные записи загружаются только при открытии кабинета или ручном обновлении. '
+          'Диагностика запускается отдельно, по нажатию.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) => DefaultTabController(
-    length: 3,
+    length: 4,
     child: Scaffold(
       appBar: AppBar(
-        title: const Text('Админ-кабинет', maxLines: 1, overflow: TextOverflow.visible),
+        title: const Text('Кабинет администратора', maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
-            tooltip: 'Диагностика приложения',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AppDiagnosticsScreen()),
-            ),
-            icon: const Icon(Icons.health_and_safety_outlined),
-          ),
-          IconButton(
-            tooltip: 'Обновить', onPressed: _loading ? null : _loadReports,
+            tooltip: 'Обновить данные',
+            onPressed: _loading ? null : _loadReports,
             icon: const Icon(Icons.refresh),
           ),
         ],
         bottom: const TabBar(
-          labelPadding: EdgeInsets.symmetric(horizontal: 12),
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           tabs: [
-            Tab(text: 'Новые'),
-            Tab(text: 'Одобрено'),
-            Tab(text: 'Все'),
+            Tab(icon: Icon(Icons.dashboard_outlined), text: 'Обзор'),
+            Tab(icon: Icon(Icons.fiber_new_outlined), text: 'Новые'),
+            Tab(icon: Icon(Icons.check_circle_outline), text: 'Одобрено'),
+            Tab(icon: Icon(Icons.list_alt_outlined), text: 'Все'),
           ],
         ),
       ),
       body: SafeArea(
         top: false,
-        child: Column(children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-          child: Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Icon(
-                    _loading ? Icons.sync : _error == null ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
-                    color: _loading ? Colors.blueGrey : _error == null ? Colors.green : Colors.red,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(
-                    _loading ? 'Проверяем связь с Supabase…' : _error == null ? 'Supabase подключён' : 'Нет связи с Supabase',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  )),
-                  OutlinedButton.icon(
-                    onPressed: _loading ? null : _loadReports,
-                    icon: const Icon(Icons.wifi_tethering, size: 18),
-                    label: const Text('Проверить'),
-                  ),
-                ]),
-                const SizedBox(height: 5),
-                Text(
-                  RoadReportSyncService.configurationSummary,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 5),
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                ],
-                const SizedBox(height: 4),
-                Text('Всего в общей базе: ${_records.length}'),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Expanded(
-                    child: Text(
-                      'На этом телефоне не отправлено: $_localPendingCount',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: () async {
-                      await Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const MyRoadMarksPage()),
-                      );
-                      _loadLocalPendingCount();
-                    },
-                    icon: const Icon(Icons.phone_android, size: 18),
-                    label: const Text('Локальные'),
-                  ),
-                ]),
-                const Divider(height: 18),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.health_and_safety_outlined),
-                  title: const Text('Диагностика приложения'),
-                  subtitle: const Text('Ручные проверки функций и отдельные отчёты'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AppDiagnosticsScreen()),
-                  ),
-                ),
-              ]),
-            ),
-          ),
-        ),
-        Expanded(child: TabBarView(children: [
+        child: TabBarView(children: [
+          _buildOverview(context),
           _buildReportList('На проверке'),
           _buildReportList('Подтверждено'),
           _buildReportList(null),
-        ])),
-      ]),
+        ]),
       ),
     ),
   );
