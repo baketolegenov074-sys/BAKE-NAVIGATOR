@@ -43,9 +43,13 @@ bool _isExpectedVectorTileCancellation(Object error, StackTrace? stackTrace) {
 }
 
 class _ResilientVectorTileProvider implements VectorTileProvider {
-  _ResilientVectorTileProvider(this._delegate);
+  _ResilientVectorTileProvider(
+    this._delegate, {
+    this.onFirstTileLoaded,
+  });
 
   final VectorTileProvider _delegate;
+  final VoidCallback? onFirstTileLoaded;
 
   @override
   int get maximumZoom => _delegate.maximumZoom;
@@ -67,6 +71,7 @@ class _ResilientVectorTileProvider implements VectorTileProvider {
         stopwatch.elapsedMilliseconds,
         bytes.length,
       );
+      onFirstTileLoaded?.call();
       return bytes;
     } on ProviderException catch (error) {
       MapStartupDiagnostics.instance.recordError(
@@ -80,10 +85,21 @@ class _ResilientVectorTileProvider implements VectorTileProvider {
   }
 }
 
-TileProviders _resilientOnlineTileProviders(TileProviders providers) {
+TileProviders _resilientOnlineTileProviders(
+  TileProviders providers, {
+  VoidCallback? onFirstTileLoaded,
+}) {
+  var firstTileReported = false;
   return TileProviders({
     for (final entry in providers.tileProviderBySource.entries)
-      entry.key: _ResilientVectorTileProvider(entry.value),
+      entry.key: _ResilientVectorTileProvider(
+        entry.value,
+        onFirstTileLoaded: () {
+          if (firstTileReported) return;
+          firstTileReported = true;
+          onFirstTileLoaded?.call();
+        },
+      ),
   });
 }
 
@@ -883,6 +899,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _offlineMapReady = false;
   bool _flutterMapExperimentEnabled = true;
   bool _flutterMapExperimentLoading = false;
+  bool _firstOnlineVectorTileLoaded = false;
   double _mapZoom = 13;
   Style? _flutterMapOnlineStyle;
   TileProviders? _flutterMapOnlineTileProviders;
@@ -1684,12 +1701,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       final difference = previous == null ? 360.0 : ((heading - previous + 540) % 360) - 180;
       if (difference.abs() < 1.2) return;
       _compassHeadingDegrees = heading;
-      if (!_northUpLocked && _appInForeground && _offlineMapReady &&
+      final mapCanFollowCompass =
+          _isOfflineMapActive || _firstOnlineVectorTileLoaded;
+      if (!_northUpLocked &&
+          _appInForeground &&
+          _offlineMapReady &&
+          mapCanFollowCompass &&
           (!_navigationActive || _currentSpeedKmh < 5.4)) {
         _lastCameraHeadingDegrees = heading;
         _mapController.rotate(-heading);
       }
-      setState(() {});
+      // Compass events must not rebuild FlutterMap while its first online
+      // vector tiles are loading; those rebuilds cancel pending raster jobs.
+      if (mapCanFollowCompass) setState(() {});
     }, onError: (Object error) {
       debugPrint('BAKE compass stream error: $error');
     });
@@ -2046,7 +2070,26 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       setState(() {
         _flutterMapOnlineStyle = style;
         _flutterMapOnlineTileProviders =
-            _resilientOnlineTileProviders(style.providers);
+            _resilientOnlineTileProviders(
+          style.providers,
+          onFirstTileLoaded: () {
+            if (_firstOnlineVectorTileLoaded) return;
+            // Let the first tile finish rasterization before compass-driven
+            // camera rotations can invalidate the initial tile render jobs.
+            unawaited(Future<void>.delayed(
+              const Duration(seconds: 2),
+              () {
+                if (!mounted || _firstOnlineVectorTileLoaded) return;
+                _firstOnlineVectorTileLoaded = true;
+                MapStartupDiagnostics.instance.recordStage(
+                  'ПЕРВЫЙ ТАЙЛ КАРТЫ ЗАГРУЖЕН',
+                  'Компасное вращение онлайн-карты разрешено после первичной отрисовки.',
+                );
+                setState(() {});
+              },
+            ));
+          },
+        );
         _flutterMapExperimentEnabled = true;
       });
     } catch (error) {
