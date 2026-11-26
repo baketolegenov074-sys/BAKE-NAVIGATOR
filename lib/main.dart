@@ -9026,6 +9026,7 @@ _navigationMatchedLocation = null;
                 title: Text(AppLocale.tr('Дата')),
                 subtitle: Text('${selected.day.toString().padLeft(2, '0')}.${selected.month.toString().padLeft(2, '0')}.${selected.year}'),
                 onTap: () async {
+                  final now = DateTime.now();
                   final date = await showDatePicker(
                     context: sheetContext,
                     initialDate: selected.isBefore(DateTime(now.year, now.month, now.day)) ? now : selected,
