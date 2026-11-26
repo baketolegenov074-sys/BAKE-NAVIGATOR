@@ -1424,8 +1424,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       return _roadMatchedDisplayLocation;
     }
     return _navigationActive
-        ? (_lastReliableGpsDisplayLocation ?? _currentLocation)
-        : (_freeDriveDisplayLocation ?? _lastReliableGpsDisplayLocation ?? _currentLocation);
+        ? _lastReliableGpsDisplayLocation
+        : (_freeDriveDisplayLocation ?? _lastReliableGpsDisplayLocation);
   }
 
   double get _vehicleDisplayBearing =>
@@ -3031,9 +3031,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (fixIsUsable) _lastReliableGpsDisplayLocation = point;
         _queueValhallaRoadMatch(position, point);
         final fallbackDisplayPoint = _navigationActive
-            ? (_lastReliableGpsDisplayLocation ?? point)
-            : _updateFreeDriveDisplayPosition(position, point);
-        final displayPoint = _freshRoadMatchedPosition() ?? fallbackDisplayPoint;
+            ? _lastReliableGpsDisplayLocation
+            : (fixIsUsable
+                ? _updateFreeDriveDisplayPosition(position, point)
+                : (_freeDriveDisplayLocation ?? _lastReliableGpsDisplayLocation));
+        final displayPoint = _freshRoadMatchedPosition() ??
+            (fixIsUsable ? (fallbackDisplayPoint ?? point) : fallbackDisplayPoint);
         _recordGpsDiagnostic(
           event: 'GPS_FIX',
           position: position,
@@ -3115,7 +3118,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (_appInForeground && cameraUpdateDue && _mapFollowEnabled && !_headingUpGestureActive) {
           _lastCameraUpdateAt = cameraNow;
           final cameraCenter = _mapCameraCenter;
-          final cameraTarget = displayPoint;
+          final cameraTarget = displayPoint ?? cameraCenter;
           final shouldRecenter = Geolocator.distanceBetween(
                 cameraCenter.latitude, cameraCenter.longitude,
                 cameraTarget.latitude, cameraTarget.longitude,
