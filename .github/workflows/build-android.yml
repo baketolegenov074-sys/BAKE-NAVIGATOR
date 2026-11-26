@@ -465,6 +465,12 @@ jobs:
                       channel.setMethodCallHandler { call, result ->
                           when (call.method) {
                               "openMap" -> try {
+                                  val latitude = call.argument<Double>("latitude")
+                                  val longitude = call.argument<Double>("longitude")
+                                  val heading = call.argument<Double>("heading") ?: 0.0
+                                  if (latitude != null && longitude != null) {
+                                      MapLibreExperimentActivity.updateLocation(latitude, longitude, heading)
+                                  }
                                   startActivity(Intent(this, MapLibreExperimentActivity::class.java))
                                   result.success(true)
                               } catch (error: Exception) {
@@ -514,6 +520,7 @@ jobs:
           import android.view.Gravity
           import android.view.View
           import android.view.ViewGroup
+          import android.widget.FrameLayout
           import android.widget.ImageView
           import android.widget.LinearLayout
           import android.widget.TextView
@@ -537,10 +544,13 @@ jobs:
           class MapLibreExperimentActivity : Activity() {
               companion object {
                   @Volatile private var activeInstance: MapLibreExperimentActivity? = null
+                  @Volatile private var pendingGps: Triple<Double, Double, Double>? = null
 
                   fun updateLocation(latitude: Double, longitude: Double, heading: Double) {
+                      val fix = Triple(latitude, longitude, heading)
+                      pendingGps = fix
                       activeInstance?.runOnUiThread {
-                          activeInstance?.showGpsLocation(latitude, longitude, heading)
+                          activeInstance?.showGpsLocation(fix.first, fix.second, fix.third)
                       }
                   }
 
@@ -553,15 +563,30 @@ jobs:
               private var nativeMap: MapLibreMap? = null
               private var gpsSource: GeoJsonSource? = null
               private var latestGps: Triple<Double, Double, Double>? = null
+              private var firstGpsCameraMove = true
+              private var recenterButton: TextView? = null
 
               private fun showGpsLocation(latitude: Double, longitude: Double, heading: Double) {
+                  if (!latitude.isFinite() || !longitude.isFinite() ||
+                      latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return
                   latestGps = Triple(latitude, longitude, heading)
                   val feature = Feature.fromGeometry(Point.fromLngLat(longitude, latitude))
                   val source = gpsSource ?: return
                   source.setGeoJson(feature)
+                  if (firstGpsCameraMove) {
+                      firstGpsCameraMove = false
+                      nativeMap?.animateCamera(
+                          CameraUpdateFactory.newLatLngZoom(LatLng(latitude, longitude), 16.5),
+                          500
+                      )
+                  }
+              }
+
+              private fun recenterOnGps() {
+                  val fix = latestGps ?: return
                   nativeMap?.animateCamera(
-                      CameraUpdateFactory.newLatLngZoom(LatLng(latitude, longitude), 17.0),
-                      650
+                      CameraUpdateFactory.newLatLngZoom(LatLng(fix.first, fix.second), 16.5),
+                      350
                   )
               }
 
@@ -573,7 +598,10 @@ jobs:
                   activeInstance = this
                   MapLibre.getInstance(applicationContext)
 
-                  val root = LinearLayout(this).apply {
+                  val root = FrameLayout(this).apply {
+                      setBackgroundColor(0xFFFFFFFF.toInt())
+                  }
+                  val content = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
                       setBackgroundColor(0xFFFFFFFF.toInt())
                   }
@@ -590,20 +618,20 @@ jobs:
                       setOnClickListener { finish() }
                   }
                   val title = TextView(this).apply {
-                      text = "MapLibre Native — тест"
+                      text = "MapLibre"
                       textSize = 17f
                       setTextColor(0xFF202124.toInt())
                       setTypeface(null, android.graphics.Typeface.BOLD)
                   }
                   header.addView(back)
                   header.addView(title)
-                  root.addView(header, LinearLayout.LayoutParams(
+                  content.addView(header, LinearLayout.LayoutParams(
                       ViewGroup.LayoutParams.MATCH_PARENT, dp(52)
                   ))
 
                   mapView = MapView(this)
                   mapView.onCreate(savedInstanceState)
-                  root.addView(mapView, LinearLayout.LayoutParams(
+                  content.addView(mapView, LinearLayout.LayoutParams(
                       ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
                   ))
 
@@ -645,7 +673,46 @@ jobs:
                   footer.addView(copyright, LinearLayout.LayoutParams(
                       0, dp(30), 1f
                   ))
-                  root.addView(footer)
+                  content.addView(footer)
+                  root.addView(content, FrameLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT,
+                      ViewGroup.LayoutParams.MATCH_PARENT
+                  ))
+
+                  val mapControls = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      gravity = Gravity.CENTER
+                      setPadding(dp(5), dp(5), dp(5), dp(5))
+                      background = android.graphics.drawable.GradientDrawable().apply {
+                          setColor(0xFFFFFFFF.toInt())
+                          cornerRadius = dp(12).toFloat()
+                      }
+                      elevation = dp(5).toFloat()
+                  }
+                  fun control(label: String, action: () -> Unit): TextView =
+                      TextView(this).apply {
+                          text = label
+                          textSize = 23f
+                          gravity = Gravity.CENTER
+                          setTextColor(0xFF202124.toInt())
+                          setBackgroundResource(android.R.drawable.list_selector_background)
+                          setOnClickListener { action() }
+                          layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+                      }
+                  mapControls.addView(control("+") {
+                      nativeMap?.animateCamera(CameraUpdateFactory.zoomIn())
+                  })
+                  mapControls.addView(control("−") {
+                      nativeMap?.animateCamera(CameraUpdateFactory.zoomOut())
+                  })
+                  recenterButton = control("◎") { recenterOnGps() }
+                  mapControls.addView(recenterButton)
+                  val controlsParams = FrameLayout.LayoutParams(
+                      ViewGroup.LayoutParams.WRAP_CONTENT,
+                      ViewGroup.LayoutParams.WRAP_CONTENT,
+                      Gravity.END or Gravity.CENTER_VERTICAL
+                  ).apply { setMargins(0, 0, dp(14), 0) }
+                  root.addView(mapControls, controlsParams)
                   setContentView(root)
 
                   Thread {
@@ -681,7 +748,10 @@ jobs:
                               circleStrokeWidth(3f)
                           )
                           style.addLayer(gpsLayer)
-                          latestGps?.let { fix -> showGpsLocation(fix.first, fix.second, fix.third) }
+                          (pendingGps ?: latestGps)?.let { fix ->
+                              latestGps = fix
+                              showGpsLocation(fix.first, fix.second, fix.third)
+                          }
                       }
                   }
               }
