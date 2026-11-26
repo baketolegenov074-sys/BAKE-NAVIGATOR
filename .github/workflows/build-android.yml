@@ -364,7 +364,7 @@ jobs:
           )
           if 'android:name=".ScreenRecordingService"' not in manifest:
               manifest = manifest.replace("    </application>", service + "    </application>", 1)
-          map_activity = '        <activity android:name=".MapLibreExperimentActivity" android:exported="false" />\\n'
+          map_activity = '        <activity android:name=".MapLibreExperimentActivity" android:exported="false" />\n'
           if 'android:name=".MapLibreExperimentActivity"' not in manifest:
               manifest = manifest.replace("    </application>", map_activity + "    </application>", 1)
           path.write_text(manifest)
@@ -503,6 +503,7 @@ jobs:
           import android.net.Uri
           import android.os.Bundle
           import android.view.Gravity
+          import android.view.View
           import android.view.ViewGroup
           import android.widget.ImageView
           import android.widget.LinearLayout
@@ -527,8 +528,8 @@ jobs:
                   (value * resources.displayMetrics.density).toInt()
 
               override fun onCreate(savedInstanceState: Bundle?) {
-                  MapLibre.getInstance(applicationContext)
                   super.onCreate(savedInstanceState)
+                  MapLibre.getInstance(applicationContext)
 
                   val root = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
@@ -569,11 +570,21 @@ jobs:
                       gravity = Gravity.CENTER_VERTICAL
                       setPadding(dp(10), dp(4), dp(10), dp(4))
                   }
+                  val logoFallback = TextView(this).apply {
+                      text = "Maptoolkit"
+                      textSize = 16f
+                      setTextColor(0xFF202124.toInt())
+                      setTypeface(null, android.graphics.Typeface.BOLD)
+                      setOnClickListener {
+                          startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.maptoolkit.org/")))
+                      }
+                  }
                   val logo = ImageView(this).apply {
                       adjustViewBounds = true
                       scaleType = ImageView.ScaleType.FIT_CENTER
                       minimumWidth = dp(90)
                       minimumHeight = dp(24)
+                      visibility = View.GONE
                       setOnClickListener {
                           startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.maptoolkit.org/")))
                       }
@@ -587,6 +598,7 @@ jobs:
                           startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.openstreetmap.org/copyright")))
                       }
                   }
+                  footer.addView(logoFallback, LinearLayout.LayoutParams(dp(100), dp(30)))
                   footer.addView(logo, LinearLayout.LayoutParams(dp(100), dp(30)))
                   footer.addView(copyright, LinearLayout.LayoutParams(
                       0, dp(30), 1f
@@ -601,10 +613,8 @@ jobs:
                       runOnUiThread {
                           if (bitmap != null) {
                               logo.setImageBitmap(bitmap)
-                          } else {
-                              logo.setImageDrawable(null)
-                              logo.background = null
-                              logo.contentDescription = "Maptoolkit"
+                              logo.visibility = View.VISIBLE
+                              logoFallback.visibility = View.GONE
                           }
                       }
                   }.start()
