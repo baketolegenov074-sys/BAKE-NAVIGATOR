@@ -1039,7 +1039,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _appInForeground = true;
   DateTime? _lastCameraUpdateAt;
   DateTime? _lastMapAnnotationUpdateAt;
-  DateTime? _lastCameraMarkerRefreshAt;
   final Stopwatch _mapOpenStopwatch = Stopwatch();
   final Stopwatch _cameraLoadStopwatch = Stopwatch();
   final Stopwatch _valhallaInitStopwatch = Stopwatch();
@@ -9670,12 +9669,10 @@ _navigationMatchedLocation = null;
                       'Масштаб: ${camera.zoom}.',
                     );
                   }
-                  if (_lastCameraMarkerRefreshAt == null ||
-                      now.difference(_lastCameraMarkerRefreshAt!) >=
-                          const Duration(milliseconds: 250)) {
-                    _lastCameraMarkerRefreshAt = now;
-                    if (mounted && (zoomChanged || hasGesture)) setState(() {});
-                  }
+                  // Camera gestures are handled internally by FlutterMap.
+                  // Rebuilding the entire navigation screen here repeatedly
+                  // interrupts vector tile render jobs and causes cancellations.
+                  // Marker positions follow the map camera without a parent rebuild.
                 },
               ),
               children: [
