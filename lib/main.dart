@@ -867,6 +867,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _offlineMapReady = false;
   bool _flutterMapExperimentEnabled = true;
   bool _flutterMapExperimentLoading = false;
+  double _mapZoom = 13;
   Style? _flutterMapOnlineStyle;
   TileProviders? _flutterMapOnlineTileProviders;
   bool get _isFlutterMapDisplayed => true;
@@ -9237,6 +9238,8 @@ _navigationMatchedLocation = null;
                 onMapReady: _onOfflineMapReady,
                 initialCenter: _shymkent,
                 initialZoom: 13,
+                minZoom: 0,
+                maxZoom: 20,
                 onTap: (_, point) {
                   // A short tap may select only an alternative route line.
                   // New map destinations require the deliberate one-second hold.
@@ -9249,25 +9252,18 @@ _navigationMatchedLocation = null;
                     _scheduleHeadingUpReturn();
                   }
                   final now = DateTime.now();
+                  final zoomChanged = (_mapZoom - camera.zoom).abs() >= 0.01;
+                  if (zoomChanged) _mapZoom = camera.zoom;
                   if (_lastCameraMarkerRefreshAt == null ||
                       now.difference(_lastCameraMarkerRefreshAt!) >=
                           const Duration(milliseconds: 250)) {
                     _lastCameraMarkerRefreshAt = now;
-                    if (mounted) setState(() {});
+                    if (mounted && (zoomChanged || hasGesture)) setState(() {});
                   }
                 },
               ),
               children: [
-                if (!_isOfflineMapActive && _flutterMapOnlineStyle != null)
-                  VectorTileLayer(
-                    theme: _flutterMapOnlineStyle!.theme,
-                    sprites: _flutterMapOnlineStyle!.sprites,
-                    tileProviders: _flutterMapOnlineTileProviders ??
-                        _flutterMapOnlineStyle!.providers,
-                    maximumZoom: 18,
-                    concurrency: 2,
-                  )
-                else if (_isOfflineMapActive && _offlineVectorTileProvider != null)
+                if (_isOfflineMapActive && _offlineVectorTileProvider != null)
                   VectorTileLayer(
                     theme: _offlineVectorTheme,
                     tileProviders: TileProviders({
@@ -9277,14 +9273,26 @@ _navigationMatchedLocation = null;
                   )
                 else if (_isOfflineMapActive)
                   TileLayer(tileProvider: _offlineTileProvider!)
+                else if (_flutterMapOnlineStyle != null &&
+                    _mapZoom >= 5 && _mapZoom <= 16)
+                  VectorTileLayer(
+                    theme: _flutterMapOnlineStyle!.theme,
+                    sprites: _flutterMapOnlineStyle!.sprites,
+                    tileProviders: _flutterMapOnlineTileProviders ??
+                        _flutterMapOnlineStyle!.providers,
+                    maximumZoom: 18,
+                    concurrency: 2,
+                  )
                 else
                   TileLayer(
-                    // Keep a real map visible while the remote vector style loads.
+                    // Global raster coverage prevents blank/gray edges when
+                    // Liberty has sparse detail at overview or extreme zoom.
                     urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     userAgentPackageName: 'kz.bake.bake_navigator',
+                    minNativeZoom: 0,
                     maxNativeZoom: 19,
                     maxZoom: 20,
-                    keepBuffer: 2,
+                    keepBuffer: 3,
                   ),
                 if (!_isOfflineMapActive &&
                     _trafficLayerEnabled &&
