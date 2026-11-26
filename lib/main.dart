@@ -4808,6 +4808,9 @@ _navigationMatchedLocation = null;
     final distanceText = meters >= 1000
         ? _localized('${(meters / 1000).toStringAsFixed(1)} километра', '${(meters / 1000).toStringAsFixed(1)} километр', '${(meters / 1000).toStringAsFixed(1)} kilometers')
         : _localized('${meters.round()} метров', '${meters.round()} метр', '${meters.round()} meters');
+    // The 500 m / 150 m / turn-now stages below own all prompts within 500 m.
+    // Avoid a late exact-distance prompt competing with the staged announcement.
+    if (meters <= 500) return;
     if (_voiceMode >= 2) {
       await _speakText(_localized('${instruction.text} через ${distanceText}.', '${instruction.text} ${distanceText} кейін.', '${instruction.text} in ${distanceText}.'));
     }
@@ -5821,7 +5824,11 @@ _navigationMatchedLocation = null;
     // within 150 m, then announce arrival when the destination is reached.
     final stage = isArrivalInstruction
         ? (meters <= 150 ? 1 : 0)
-        : (meters <= 35 ? 3 : meters <= 150 ? 2 : meters <= 500 ? 1 : 0);
+        : (meters <= 35
+            ? 3
+            : meters <= 150
+                ? 2
+                : (meters >= 350 && meters <= 500 ? 1 : 0));
     if (stage > _announcedManeuverStage) {
       _announcedManeuverStage = stage;
       unawaited(AppDiagnosticsScreen.recordTripEvent(
@@ -5871,6 +5878,7 @@ _navigationMatchedLocation = null;
         unawaited(_startLiveLocationUpdates());
         return;
       }
+      _invalidateQueuedSpeech();
       setState(() {
         _instructionIndex++;
         _announcedManeuverStage = 0;
