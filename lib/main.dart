@@ -9824,41 +9824,53 @@ _navigationMatchedLocation = null;
               ],
             ),
             ),
-          if (!_navigationActive)
-            Positioned(
-              top: 14,
-              left: 14,
-              child: SafeArea(
-                bottom: false,
-                child: Material(
-                  color: Colors.white,
-                  elevation: 5,
-                  shape: const CircleBorder(),
-                  child: IconButton(
-                    tooltip: 'Открыть экспериментальную карту MapLibre',
-                    onPressed: () async {
-                      _nativeMapLibreTestOpen = true;
-                      try {
-                        await const MethodChannel('bake.navigator/maplibre_experiment')
-                            .invokeMethod<void>('openMap');
-                      } catch (error) {
-                        _nativeMapLibreTestOpen = false;
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Не удалось открыть MapLibre: $error')),
-                          );
-                        }
+          Positioned(
+            top: 14,
+            left: 14,
+            child: SafeArea(
+              bottom: false,
+              child: Material(
+                color: Colors.white,
+                elevation: 5,
+                borderRadius: BorderRadius.circular(24),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(24),
+                  onTap: () async {
+                    _nativeMapLibreTestOpen = true;
+                    try {
+                      await const MethodChannel('bake.navigator/maplibre_experiment')
+                          .invokeMethod<void>('openMap');
+                    } catch (error) {
+                      _nativeMapLibreTestOpen = false;
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Не удалось открыть MapLibre: $error')),
+                        );
                       }
-                    },
-                    icon: const Icon(
-                      Icons.navigation_outlined,
-                      color: Color(0xFF1769AA),
-                      size: 24,
+                    }
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.swap_horiz, color: Color(0xFF1769AA), size: 23),
+                        SizedBox(width: 7),
+                        Text(
+                          'Переключить карту',
+                          style: TextStyle(
+                            color: Color(0xFF202124),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
+          ),
           Positioned(
             left: 10,
             bottom: 150,
