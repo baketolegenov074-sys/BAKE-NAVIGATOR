@@ -865,6 +865,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   final MapController _mapController = MapController();
   // flutter_map controllers are unusable until MapOptions.onMapReady fires.
   bool _offlineMapReady = false;
+  bool _flutterMapExperimentEnabled = true;
+  bool _flutterMapExperimentLoading = false;
+  Style? _flutterMapOnlineStyle;
+  TileProviders? _flutterMapOnlineTileProviders;
   bool get _isFlutterMapDisplayed => true;
 
   LatLng? _lastRouteLineSyncPoint;
@@ -1044,6 +1048,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       return const SizedBox.shrink();
     };
 
+    unawaited(_loadFlutterMapOnlineStyle());
     unawaited(_loadBundledRoadAlerts());
     unawaited(_loadSavedRoutePoints());
     unawaited(_loadTrafficLayerPreference());
@@ -1825,6 +1830,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
+
+  Future<void> _loadFlutterMapOnlineStyle() async {
+    if (_flutterMapExperimentLoading || _flutterMapOnlineStyle != null) return;
+    _styleLoadStopwatch.start();
+    if (mounted) setState(() => _flutterMapExperimentLoading = true);
+    try {
+      final style = await StyleReader(
+        uri: 'https://tiles.openfreemap.org/styles/liberty',
+      ).read();
+      if (!mounted) return;
+      setState(() {
+        _flutterMapOnlineStyle = style;
+        _flutterMapOnlineTileProviders =
+            _resilientOnlineTileProviders(style.providers);
+        _flutterMapExperimentEnabled = true;
+      });
+    } catch (error) {
+      debugPrint('BAKE FlutterMap Liberty style failed to load: $error');
+    } finally {
+      _styleLoadStopwatch.stop();
+      _styleLoadMs = _styleLoadStopwatch.elapsedMilliseconds;
+      if (mounted) {
+        setState(() => _flutterMapExperimentLoading = false);
+      }
+    }
+  }
 
   Future<void> _toggleOfflineMapFromMap() async {
     if (_isOfflineMapActive) {
@@ -9227,7 +9258,16 @@ _navigationMatchedLocation = null;
                 },
               ),
               children: [
-                if (_isOfflineMapActive && _offlineVectorTileProvider != null)
+                if (!_isOfflineMapActive && _flutterMapOnlineStyle != null)
+                  VectorTileLayer(
+                    theme: _flutterMapOnlineStyle!.theme,
+                    sprites: _flutterMapOnlineStyle!.sprites,
+                    tileProviders: _flutterMapOnlineTileProviders ??
+                        _flutterMapOnlineStyle!.providers,
+                    maximumZoom: 18,
+                    concurrency: 2,
+                  )
+                else if (_isOfflineMapActive && _offlineVectorTileProvider != null)
                   VectorTileLayer(
                     theme: _offlineVectorTheme,
                     tileProviders: TileProviders({
