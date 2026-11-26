@@ -932,6 +932,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _valhallaRoadMatchInProgress = false;
   LatLng? _roadMatchedDisplayLocation;
   DateTime? _roadMatchedDisplayAt;
+  LatLng? _lastReliableGpsDisplayLocation;
   LatLng? _destination;
   LatLng? _mapPreviewPoint;
   String _mapPreviewAddress = 'Адрес определяется…';
@@ -1423,8 +1424,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       return _roadMatchedDisplayLocation;
     }
     return _navigationActive
-        ? _currentLocation
-        : (_freeDriveDisplayLocation ?? _currentLocation);
+        ? (_lastReliableGpsDisplayLocation ?? _currentLocation)
+        : (_freeDriveDisplayLocation ?? _lastReliableGpsDisplayLocation ?? _currentLocation);
   }
 
   double get _vehicleDisplayBearing =>
@@ -3021,9 +3022,16 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             _navigationActive && _currentLocation == null;
         _markStartupGpsFix();
         final point = LatLng(position.latitude, position.longitude);
+        final fixAge = DateTime.now().difference(position.timestamp);
+        final fixIsUsable = !fixAge.isNegative &&
+            fixAge <= const Duration(seconds: 5) &&
+            position.accuracy.isFinite &&
+            position.accuracy > 0 &&
+            position.accuracy <= 25;
+        if (fixIsUsable) _lastReliableGpsDisplayLocation = point;
         _queueValhallaRoadMatch(position, point);
         final fallbackDisplayPoint = _navigationActive
-            ? point
+            ? (_lastReliableGpsDisplayLocation ?? point)
             : _updateFreeDriveDisplayPosition(position, point);
         final displayPoint = _freshRoadMatchedPosition() ?? fallbackDisplayPoint;
         _recordGpsDiagnostic(
@@ -5710,7 +5718,7 @@ _navigationMatchedLocation = null;
   // this road-matched position.
   LatLng _matchNavigationPosition(Position fix, LatLng rawPoint) {
     if (!_navigationActive || _routePoints.length < 2) return rawPoint;
-    if (!fix.accuracy.isFinite || fix.accuracy > 60) {
+    if (!fix.accuracy.isFinite || fix.accuracy <= 0 || fix.accuracy > 25) {
       return _navigationMatchedLocation ?? rawPoint;
     }
     if (DateTime.now().difference(fix.timestamp).inSeconds > 8) {
@@ -5992,10 +6000,13 @@ _navigationMatchedLocation = null;
     final py = position.latitude * latScale;
     // Only compare against the route still ahead of the vehicle. Including
     // already-driven segments can hide a missed turn on a nearby parallel road.
-    final firstSegment = math.max(
+    // Include the immediately preceding segment: route-progress projection can
+    // advance at a bend before the next GPS fix settles, otherwise a valid fix
+    // on the just-traversed segment looks 60–80 m off-route.
+    final firstSegment = (math.max(
       _routeProgressSegmentIndex,
       _navigationFixSegmentIndex,
-    ).clamp(0, _routePoints.length - 2).toInt();
+    ) - 1).clamp(0, _routePoints.length - 2).toInt();
     var best = double.infinity;
     for (var i = firstSegment; i < _routePoints.length - 1; i++) {
       final a = _routePoints[i];
@@ -6029,7 +6040,7 @@ _navigationMatchedLocation = null;
     if (fixAge.isNegative || fixAge > const Duration(seconds: 5) ||
         !position.accuracy.isFinite ||
         position.accuracy <= 0 ||
-        position.accuracy > 60 ||
+        position.accuracy > 25 ||
         _routePoints.length < 2) return;
     final now = DateTime.now();
     if (_lastAutomaticReroute != null &&
