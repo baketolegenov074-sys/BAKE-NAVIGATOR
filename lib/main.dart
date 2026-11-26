@@ -921,6 +921,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _firstOnlineVectorTileLoaded = false;
   double _mapZoom = 13;
   Style? _flutterMapOnlineStyle;
+  vtr.Theme? _flutterMapOnlineTheme;
   TileProviders? _flutterMapOnlineTileProviders;
   bool get _isFlutterMapDisplayed => true;
 
@@ -2089,11 +2090,27 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         uri: 'https://tiles.openfreemap.org/styles/liberty',
       ).read();
       if (!mounted) return;
+      // Liberty includes a separate Natural Earth raster relief source.
+      // Remove only that layer/source; keep OpenMapTiles vector styling intact.
+      final vectorOnlyTheme = vtr.Theme(
+        id: style.theme.id,
+        version: style.theme.version,
+        layers: style.theme.layers
+            .where((layer) =>
+                layer.id != 'natural_earth' &&
+                layer.tileSource != 'ne2_shaded')
+            .toList(growable: false),
+      );
+      final vectorOnlyProviders = TileProviders({
+        for (final entry in style.providers.tileProviderBySource.entries)
+          if (entry.key != 'ne2_shaded') entry.key: entry.value,
+      });
       setState(() {
         _flutterMapOnlineStyle = style;
+        _flutterMapOnlineTheme = vectorOnlyTheme;
         _flutterMapOnlineTileProviders =
             _resilientOnlineTileProviders(
-          style.providers,
+          vectorOnlyProviders,
           onFirstTileLoaded: () {
             if (_firstOnlineVectorTileLoaded) return;
             // Let the first tile finish rasterization before compass-driven
@@ -9687,7 +9704,7 @@ _navigationMatchedLocation = null;
                   TileLayer(tileProvider: _offlineTileProvider!)
                 else if (_flutterMapOnlineStyle != null)
                   VectorTileLayer(
-                    theme: _flutterMapOnlineStyle!.theme,
+                    theme: _flutterMapOnlineTheme ?? _flutterMapOnlineStyle!.theme,
                     sprites: _flutterMapOnlineStyle!.sprites,
                     tileProviders: _flutterMapOnlineTileProviders ??
                         _flutterMapOnlineStyle!.providers,
