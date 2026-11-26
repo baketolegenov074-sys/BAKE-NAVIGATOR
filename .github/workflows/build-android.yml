@@ -470,6 +470,15 @@ jobs:
                               } catch (error: Exception) {
                                   result.error("MAPLIBRE_OPEN_FAILED", error.message, null)
                               }
+                              "updateLocation" -> {
+                                  val latitude = call.argument<Double>("latitude")
+                                  val longitude = call.argument<Double>("longitude")
+                                  val heading = call.argument<Double>("heading") ?: 0.0
+                                  if (latitude != null && longitude != null) {
+                                      MapLibreExperimentActivity.updateLocation(latitude, longitude, heading)
+                                  }
+                                  result.success(null)
+                              }
                               else -> result.notImplemented()
                           }
                       }
@@ -512,23 +521,56 @@ jobs:
           import org.maplibre.android.camera.CameraPosition
           import org.maplibre.android.geometry.LatLng
           import org.maplibre.android.maps.MapView
+          import org.maplibre.android.maps.MapLibreMap
           import org.maplibre.android.maps.Style
+          import org.maplibre.android.camera.CameraUpdateFactory
+          import org.maplibre.android.style.layers.CircleLayer
+          import org.maplibre.android.style.layers.PropertyFactory.circleColor
+          import org.maplibre.android.style.layers.PropertyFactory.circleRadius
+          import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
+          import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
+          import org.maplibre.android.style.sources.GeoJsonSource
+          import org.maplibre.geojson.Feature
+          import org.maplibre.geojson.Point
           import java.net.URL
 
           class MapLibreExperimentActivity : Activity() {
               companion object {
+                  @Volatile private var activeInstance: MapLibreExperimentActivity? = null
+
+                  fun updateLocation(latitude: Double, longitude: Double, heading: Double) {
+                      activeInstance?.runOnUiThread {
+                          activeInstance?.showGpsLocation(latitude, longitude, heading)
+                      }
+                  }
+
                   private const val STYLE_URL = "https://styles.maptoolkit.org/street.json"
                   private const val LOGO_URL = "https://www.maptoolkit.org/assets/maptoolkit-attribution.png"
                   private val SHYMKENT = LatLng(42.3417, 69.5901)
               }
 
               private lateinit var mapView: MapView
+              private var nativeMap: MapLibreMap? = null
+              private var gpsSource: GeoJsonSource? = null
+              private var latestGps: Triple<Double, Double, Double>? = null
+
+              private fun showGpsLocation(latitude: Double, longitude: Double, heading: Double) {
+                  latestGps = Triple(latitude, longitude, heading)
+                  val feature = Feature.fromGeometry(Point.fromLngLat(longitude, latitude))
+                  val source = gpsSource ?: return
+                  source.setGeoJson(feature)
+                  nativeMap?.animateCamera(
+                      CameraUpdateFactory.newLatLngZoom(LatLng(latitude, longitude), 17.0),
+                      650
+                  )
+              }
 
               private fun dp(value: Int): Int =
                   (value * resources.displayMetrics.density).toInt()
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
+                  activeInstance = this
                   MapLibre.getInstance(applicationContext)
 
                   val root = LinearLayout(this).apply {
@@ -620,11 +662,27 @@ jobs:
                   }.start()
 
                   mapView.getMapAsync { map ->
+                      nativeMap = map
                       map.cameraPosition = CameraPosition.Builder()
                           .target(SHYMKENT)
                           .zoom(12.0)
                           .build()
-                      map.setStyle(Style.Builder().fromUri(STYLE_URL))
+                      map.setStyle(Style.Builder().fromUri(STYLE_URL)) { style ->
+                          val source = GeoJsonSource(
+                              "bake-gps-source",
+                              Feature.fromGeometry(Point.fromLngLat(SHYMKENT.longitude, SHYMKENT.latitude))
+                          )
+                          style.addSource(source)
+                          gpsSource = source
+                          val gpsLayer = CircleLayer("bake-gps-layer", "bake-gps-source").withProperties(
+                              circleColor(0xFF1677FF.toInt()),
+                              circleRadius(8f),
+                              circleStrokeColor(0xFFFFFFFF.toInt()),
+                              circleStrokeWidth(3f)
+                          )
+                          style.addLayer(gpsLayer)
+                          latestGps?.let { fix -> showGpsLocation(fix.first, fix.second, fix.third) }
+                      }
                   }
               }
 
@@ -659,6 +717,9 @@ jobs:
               }
 
               override fun onDestroy() {
+                  if (activeInstance === this) activeInstance = null
+                  gpsSource = null
+                  nativeMap = null
                   mapView.onDestroy()
                   super.onDestroy()
               }
@@ -684,8 +745,11 @@ jobs:
                       subtitle: const Text('Отдельный экран Kotlin, без GPS и маршрутов'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () {
+                        _nativeMapLibreTestOpen = true;
                         const MethodChannel('bake.navigator/maplibre_experiment')
-                            .invokeMethod<void>('openMap');
+                            .invokeMethod<void>('openMap').catchError((Object error) {
+                          _nativeMapLibreTestOpen = false;
+                        });
                       },
                     ),
                   ),
