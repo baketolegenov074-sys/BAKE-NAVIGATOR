@@ -9627,7 +9627,9 @@ _navigationMatchedLocation = null;
                     // Vector providers overzoom their last available tile.
                     maximumZoom: 20,
                     concurrency: 2,
-                    layerMode: VectorTileLayerMode.vector,
+                    // Keep vector PBF sources, but cache their rendered tiles as images.
+                    // This avoids repainting vector geometry on every fractional zoom step.
+                    layerMode: VectorTileLayerMode.raster,
                   ),
                 if (!_isOfflineMapActive &&
                     _trafficLayerEnabled &&
