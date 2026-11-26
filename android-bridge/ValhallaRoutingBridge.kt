@@ -124,6 +124,43 @@ class ValhallaRoutingBridge(
                 }
             }
 
+            "traceRoute" -> {
+                val requestJson = call.argument<String>("requestJson")
+                if (requestJson.isNullOrBlank()) {
+                    result.error("INVALID_ARGUMENT", "requestJson is required", null)
+                    return
+                }
+                try {
+                    val request = JSONObject(requestJson)
+                    val shape = request.optJSONArray("shape")
+                    require(shape != null && shape.length() >= 2) {
+                        "At least two GPS trace points are required"
+                    }
+                } catch (error: Exception) {
+                    result.error("INVALID_ARGUMENT", error.message ?: "Invalid trace request", null)
+                    return
+                }
+                worker.execute {
+                    try {
+                        val activeEngine = engine
+                            ?: error("Valhalla is not initialized. Call initialize first.")
+                        val response = JSONObject(activeEngine.traceRouteRaw(requestJson))
+                        val trip = response.optJSONObject("trip")
+                            ?: error("Valhalla map matching returned no trip")
+                        val legs = trip.optJSONArray("legs")
+                            ?: error("Valhalla map matching returned no legs")
+                        require(legs.length() > 0) { "Valhalla map matching returned an empty path" }
+                        val lastLeg = legs.getJSONObject(legs.length() - 1)
+                        val encodedShape = lastLeg.optString("shape")
+                        val point = decodePolyline6LastPoint(encodedShape)
+                            ?: error("Valhalla map matching returned an invalid road shape")
+                        postSuccess(result, point)
+                    } catch (error: Exception) {
+                        postError(result, "VALHALLA_TRACE_FAILED", error.message ?: error.javaClass.simpleName)
+                    }
+                }
+            }
+
             "dispose" -> {
                 worker.execute {
                     try {
@@ -143,6 +180,40 @@ class ValhallaRoutingBridge(
 
     fun close() {
         channel.setMethodCallHandler(null)
+    }
+
+    private fun decodePolyline6LastPoint(encoded: String): Map<String, Double>? {
+        if (encoded.isEmpty()) return null
+        var index = 0
+        var latitude = 0L
+        var longitude = 0L
+        var lastLatitude: Long? = null
+        var lastLongitude: Long? = null
+
+        fun readDelta(): Long {
+            var result = 0L
+            var shift = 0
+            var chunk: Int
+            do {
+                require(index < encoded.length) { "Truncated Valhalla polyline" }
+                chunk = encoded[index++].code - 63
+                require(chunk in 0..63) { "Invalid Valhalla polyline character" }
+                result = result or ((chunk and 0x1f).toLong() shl shift)
+                shift += 5
+                require(shift <= 60) { "Valhalla polyline delta overflow" }
+            } while (chunk >= 0x20)
+            return if ((result and 1L) != 0L) (result shr 1).inv() else result shr 1
+        }
+
+        while (index < encoded.length) {
+            latitude += readDelta()
+            longitude += readDelta()
+            lastLatitude = latitude
+            lastLongitude = longitude
+        }
+        val lat = lastLatitude ?: return null
+        val lon = lastLongitude ?: return null
+        return mapOf("lat" to lat / 1_000_000.0, "lon" to lon / 1_000_000.0)
     }
 
     private fun postSuccess(result: MethodChannel.Result, value: Any) {
