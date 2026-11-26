@@ -926,6 +926,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   DateTime? _freeDriveFixTimestamp;
   LatLng? _freeDriveJumpCandidate;
   int _freeDriveJumpCandidateCount = 0;
+  final List<({LatLng point, DateTime timestamp})> _gpsRoadMatchTrace =
+      <({LatLng point, DateTime timestamp})>[];
+  DateTime? _lastValhallaRoadMatchAt;
+  bool _valhallaRoadMatchInProgress = false;
+  LatLng? _roadMatchedDisplayLocation;
+  DateTime? _roadMatchedDisplayAt;
   LatLng? _destination;
   LatLng? _mapPreviewPoint;
   String _mapPreviewAddress = 'Адрес определяется…';
@@ -1407,10 +1413,19 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     return (step['name']?.toString() ?? '').trim();
   }
 
-  // The vehicle marker always represents the latest raw GPS fix.
-  // Route matching remains separate for route progress and voice guidance.
-  LatLng? get _vehicleDisplayLocation =>
-      _navigationActive ? _currentLocation : (_freeDriveDisplayLocation ?? _currentLocation);
+  // One purple vehicle marker uses Valhalla's road-matched position when valid.
+  // Raw GPS remains in _currentLocation for routing, alerts and diagnostics.
+  LatLng? get _vehicleDisplayLocation {
+    final matchedAt = _roadMatchedDisplayAt;
+    if (_roadMatchedDisplayLocation != null &&
+        matchedAt != null &&
+        DateTime.now().difference(matchedAt) <= const Duration(seconds: 4)) {
+      return _roadMatchedDisplayLocation;
+    }
+    return _navigationActive
+        ? _currentLocation
+        : (_freeDriveDisplayLocation ?? _currentLocation);
+  }
 
   double get _vehicleDisplayBearing =>
       (_gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0) *
@@ -1419,71 +1434,169 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   // Reject stale/inaccurate fixes and impossible jumps only for free-drive display.
   // Raw coordinates remain untouched for reports, cameras, speed limits and routing.
   LatLng _updateFreeDriveDisplayPosition(Position fix, LatLng rawPoint) {
-    final now = DateTime.now();
-    final fixAge = now.difference(fix.timestamp);
-    if (fixAge.isNegative || fixAge > const Duration(seconds: 10) ||
-        !fix.accuracy.isFinite || fix.accuracy > 60) {
+    final age = DateTime.now().difference(fix.timestamp);
+    if (age.isNegative || age > const Duration(seconds: 5) ||
+        !fix.accuracy.isFinite || fix.accuracy <= 0 || fix.accuracy > 25) {
       return _freeDriveDisplayLocation ?? rawPoint;
     }
-
-    final previous = _freeDriveDisplayLocation;
-    if (previous == null) {
-      _freeDriveDisplayLocation = rawPoint;
-      _freeDriveFixTimestamp = fix.timestamp;
-      _freeDriveJumpCandidate = null;
-      _freeDriveJumpCandidateCount = 0;
-      return rawPoint;
-    }
-
-    final previousTimestamp = _freeDriveFixTimestamp;
-    final elapsed = previousTimestamp == null
-        ? 1.0
-        : (fix.timestamp.difference(previousTimestamp).inMilliseconds / 1000)
-            .clamp(0.25, 5.0).toDouble();
-    final distance = Geolocator.distanceBetween(
-      previous.latitude, previous.longitude,
-      rawPoint.latitude, rawPoint.longitude,
-    );
-    final reportedSpeed = fix.speed.isFinite && fix.speed > 0
-        ? fix.speed.clamp(0.0, 45.0).toDouble()
-        : 0.0;
-    final plausibleTravel = reportedSpeed * elapsed;
-    final jumpLimit = math.max(25.0, plausibleTravel * 2.0 +
-        math.min(fix.accuracy, 35.0) * 0.8);
-    if (distance > jumpLimit) {
-      final candidate = _freeDriveJumpCandidate;
-      final candidateDistance = candidate == null ? double.infinity :
-          Geolocator.distanceBetween(candidate.latitude, candidate.longitude,
-              rawPoint.latitude, rawPoint.longitude);
-      if (candidateDistance <= math.max(20.0, fix.accuracy)) {
-        _freeDriveJumpCandidateCount++;
-      } else {
-        _freeDriveJumpCandidate = rawPoint;
-        _freeDriveJumpCandidateCount = 1;
-      }
-      // Reacquire after three consecutive fixes agree on the new position;
-      // a single GPS teleport cannot move the displayed vehicle.
-      if (_freeDriveJumpCandidateCount >= 3) {
-        _freeDriveDisplayLocation = rawPoint;
-        _freeDriveFixTimestamp = fix.timestamp;
-        _freeDriveJumpCandidate = null;
-        _freeDriveJumpCandidateCount = 0;
-        return rawPoint;
-      }
-      return previous;
-    }
+    // Do not trail behind the car with a low-pass filter. The single visible
+    // marker is moved to Valhalla's matched road point when a reliable match arrives.
+    _freeDriveDisplayLocation = rawPoint;
+    _freeDriveFixTimestamp = fix.timestamp;
     _freeDriveJumpCandidate = null;
     _freeDriveJumpCandidateCount = 0;
+    return rawPoint;
+  }
 
-    // Follow accepted fixes promptly while softening small coordinate jitter.
-    final factor = distance < 5 ? 0.75 : 0.60;
-    final smoothed = LatLng(
-      previous.latitude + (rawPoint.latitude - previous.latitude) * factor,
-      previous.longitude + (rawPoint.longitude - previous.longitude) * factor,
-    );
-    _freeDriveDisplayLocation = smoothed;
-    _freeDriveFixTimestamp = fix.timestamp;
-    return smoothed;
+  LatLng? _freshRoadMatchedPosition() {
+    final matchedAt = _roadMatchedDisplayAt;
+    if (_roadMatchedDisplayLocation == null || matchedAt == null ||
+        DateTime.now().difference(matchedAt) > const Duration(seconds: 4)) {
+      return null;
+    }
+    return _roadMatchedDisplayLocation;
+  }
+
+  void _queueValhallaRoadMatch(Position fix, LatLng rawPoint) {
+    if (!_valhallaReady || !mounted || !fix.accuracy.isFinite ||
+        fix.accuracy <= 0 || fix.accuracy > 25) return;
+    final age = DateTime.now().difference(fix.timestamp);
+    if (age.isNegative || age > const Duration(seconds: 5)) return;
+
+    final trace = _gpsRoadMatchTrace;
+    if (trace.isNotEmpty) {
+      final previous = trace.last;
+      final elapsed = fix.timestamp.difference(previous.timestamp).inMilliseconds / 1000.0;
+      final gap = Geolocator.distanceBetween(
+        previous.point.latitude, previous.point.longitude,
+        rawPoint.latitude, rawPoint.longitude,
+      );
+      if (elapsed <= 0 || elapsed > 5 ||
+          gap > math.max(45.0, fix.speed.clamp(0.0, 40.0) * math.max(elapsed, 1.0) * 2.5 + fix.accuracy * 2)) {
+        trace.clear();
+      }
+    }
+    if (trace.isEmpty ||
+        Geolocator.distanceBetween(
+          trace.last.point.latitude, trace.last.point.longitude,
+          rawPoint.latitude, rawPoint.longitude,
+        ) >= 0.5 ||
+        fix.timestamp.difference(trace.last.timestamp) >= const Duration(seconds: 2)) {
+      trace.add((point: rawPoint, timestamp: fix.timestamp));
+    }
+    while (trace.length > 6) {
+      trace.removeAt(0);
+    }
+    if (trace.length < 2 || _valhallaRoadMatchInProgress) return;
+
+    final now = DateTime.now();
+    if (_lastValhallaRoadMatchAt != null &&
+        now.difference(_lastValhallaRoadMatchAt!) < const Duration(milliseconds: 1800)) {
+      return;
+    }
+    _lastValhallaRoadMatchAt = now;
+    _valhallaRoadMatchInProgress = true;
+    unawaited(_matchGpsTraceToValhalla(
+      List<({LatLng point, DateTime timestamp})>.of(trace),
+      rawPoint,
+      fix,
+    ));
+  }
+
+  Future<void> _matchGpsTraceToValhalla(
+    List<({LatLng point, DateTime timestamp})> trace,
+    LatLng requestedRawPoint,
+    Position fix,
+  ) async {
+    try {
+      final shape = <Map<String, dynamic>>[];
+      for (var i = 0; i < trace.length; i++) {
+        final sample = trace[i];
+        shape.add(<String, dynamic>{
+          'lat': sample.point.latitude,
+          'lon': sample.point.longitude,
+          'time': sample.timestamp.millisecondsSinceEpoch ~/ 1000,
+          'type': i == 0 || i == trace.length - 1 ? 'break' : 'via',
+        });
+      }
+      final requestJson = jsonEncode(<String, dynamic>{
+        'shape': shape,
+        'costing': 'auto',
+        'shape_match': 'map_snap',
+        'trace_options': <String, dynamic>{
+          'gps_accuracy': fix.accuracy,
+          'search_radius': 20,
+          'breakage_distance': 35,
+          'interpolation_distance': 2,
+        },
+      });
+      final result = await _valhallaChannel.invokeMapMethod<String, dynamic>(
+        'traceRoute',
+        <String, dynamic>{'requestJson': requestJson},
+      ).timeout(const Duration(seconds: 3));
+      final lat = result?['lat'];
+      final lon = result?['lon'];
+      if (lat is! num || lon is! num || !lat.isFinite || !lon.isFinite) return;
+      final matched = LatLng(lat.toDouble(), lon.toDouble());
+      final matchDistance = Geolocator.distanceBetween(
+        requestedRawPoint.latitude, requestedRawPoint.longitude,
+        matched.latitude, matched.longitude,
+      );
+      final latestFixAge = DateTime.now().difference(fix.timestamp);
+      final latestRaw = _currentLocation;
+      if (!mounted || latestFixAge.isNegative ||
+          latestFixAge > const Duration(seconds: 4) ||
+          matchDistance > 20 ||
+          latestRaw == null ||
+          Geolocator.distanceBetween(
+            latestRaw.latitude, latestRaw.longitude,
+            requestedRawPoint.latitude, requestedRawPoint.longitude,
+          ) > 20) {
+        return;
+      }
+
+      final previous = _roadMatchedDisplayLocation;
+      LatLng display = matched;
+      if (previous != null) {
+        final previousDistance = Geolocator.distanceBetween(
+          previous.latitude, previous.longitude,
+          matched.latitude, matched.longitude,
+        );
+        if (previousDistance <= 30) {
+          // Short interpolation only; never blend a matched point across roads.
+          display = LatLng(
+            previous.latitude + (matched.latitude - previous.latitude) * 0.8,
+            previous.longitude + (matched.longitude - previous.longitude) * 0.8,
+          );
+        }
+      }
+      _roadMatchedDisplayLocation = display;
+      _roadMatchedDisplayAt = DateTime.now();
+      if (mounted) {
+        setState(() {});
+        if (_appInForeground && _mapFollowEnabled && !_headingUpGestureActive) {
+          final heading = fix.speed >= 1.2 && fix.heading.isFinite
+              ? fix.heading
+              : (_lastCameraHeadingDegrees ?? _gpsHeadingDegrees ?? 0.0);
+          _updateNavigationCamera(
+            display,
+            math.max(_mapCameraZoom, _navigationActive ? 17.0 : 16.0).toDouble(),
+            heading,
+          );
+        }
+      }
+      _recordGpsDiagnostic(
+        event: 'VALHALLA_ROAD_MATCH',
+        detail: 'Сопоставлено с дорогой; смещение от сырого GPS: ${matchDistance.toStringAsFixed(1)} м; точность GPS: ±${fix.accuracy.toStringAsFixed(1)} м.',
+        position: fix,
+        rawPoint: requestedRawPoint,
+        displayPoint: display,
+      );
+    } catch (error) {
+      debugPrint('BAKE Valhalla GPS map matching failed: $error');
+    } finally {
+      _valhallaRoadMatchInProgress = false;
+    }
   }
 
   LatLng get _mapCameraCenter {
@@ -2908,9 +3021,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
             _navigationActive && _currentLocation == null;
         _markStartupGpsFix();
         final point = LatLng(position.latitude, position.longitude);
-        final displayPoint = _navigationActive
+        _queueValhallaRoadMatch(position, point);
+        final fallbackDisplayPoint = _navigationActive
             ? point
             : _updateFreeDriveDisplayPosition(position, point);
+        final displayPoint = _freshRoadMatchedPosition() ?? fallbackDisplayPoint;
         _recordGpsDiagnostic(
           event: 'GPS_FIX',
           position: position,
@@ -2926,7 +3041,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           _gpsAvailable = true;
           _currentSpeedKmh = math.max(0, position.speed * 3.6).toDouble();
           // Ignore unstable compass headings while stopped or moving very slowly.
-          if (position.speed >= 0.8 && position.heading.isFinite) {
+          if (position.speed >= 1.2 && position.heading.isFinite) {
             _gpsHeadingDegrees = position.heading;
           }
         });
@@ -2992,7 +3107,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         if (_appInForeground && cameraUpdateDue && _mapFollowEnabled && !_headingUpGestureActive) {
           _lastCameraUpdateAt = cameraNow;
           final cameraCenter = _mapCameraCenter;
-          final cameraTarget = _navigationActive ? navigationPoint : displayPoint;
+          final cameraTarget = displayPoint;
           final shouldRecenter = Geolocator.distanceBetween(
                 cameraCenter.latitude, cameraCenter.longitude,
                 cameraTarget.latitude, cameraTarget.longitude,
