@@ -865,11 +865,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   final MapController _mapController = MapController();
   // flutter_map controllers are unusable until MapOptions.onMapReady fires.
   bool _offlineMapReady = false;
-  // FlutterMap is the default online 2D renderer; offline MBTiles stays separate.
-  bool _flutterMapExperimentEnabled = true;
-  bool _flutterMapExperimentLoading = false;
-  Style? _flutterMapOnlineStyle;
-  TileProviders? _flutterMapOnlineTileProviders;
   bool get _isFlutterMapDisplayed => true;
 
   LatLng? _lastRouteLineSyncPoint;
@@ -1049,7 +1044,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       return const SizedBox.shrink();
     };
 
-    unawaited(_loadFlutterMapOnlineStyle());
     unawaited(_loadBundledRoadAlerts());
     unawaited(_loadSavedRoutePoints());
     unawaited(_loadTrafficLayerPreference());
@@ -1831,15 +1825,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
   }
 
-  Future<void> _loadFlutterMapOnlineStyle() async {
-    // Keep one stable online renderer. The previous implementation first
-    // displayed OSM raster tiles and then replaced that layer with the
-    // asynchronously loaded Liberty vector style. That renderer swap cleared
-    // the visible tile surface and produced the brief grey map flash.
-    // Keep the existing OSM raster TileLayer as the online map; offline
-    // MBTiles rendering remains unchanged.
-    return;
-  }
 
   Future<void> _toggleOfflineMapFromMap() async {
     if (_isOfflineMapActive) {
@@ -3979,7 +3964,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       final anchor = selectAsOrigin
           ? (_currentLocation ?? _routeOrigin ?? _shymkent)
           : (_routeOrigin ?? _currentLocation ?? _shymkent);      final results = await _fetchAddressFeatures(query, near: anchor);
-      if (_flutterMapExperimentEnabled && !_isOfflineMapActive) {
+      if (!_isOfflineMapActive) {
         _sortSearchFeatures(results, query);
       }
       if (!mounted) return;
@@ -9242,16 +9227,7 @@ _navigationMatchedLocation = null;
                 },
               ),
               children: [
-                if (!_isOfflineMapActive && _flutterMapOnlineStyle != null)
-                  VectorTileLayer(
-                    theme: _flutterMapOnlineStyle!.theme,
-                    sprites: _flutterMapOnlineStyle!.sprites,
-                    tileProviders: _flutterMapOnlineTileProviders ??
-                        _flutterMapOnlineStyle!.providers,
-                    maximumZoom: 18,
-                    concurrency: 2,
-                  )
-                else if (_isOfflineMapActive && _offlineVectorTileProvider != null)
+                if (_isOfflineMapActive && _offlineVectorTileProvider != null)
                   VectorTileLayer(
                     theme: _offlineVectorTheme,
                     tileProviders: TileProviders({
