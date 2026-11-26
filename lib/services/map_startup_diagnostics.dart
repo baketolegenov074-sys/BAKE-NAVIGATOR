@@ -58,7 +58,7 @@ class MapStartupDiagnostics {
       _add('КАРТА УЖЕ БЫЛА ОТКРЫТА', 'После возврата приложение использует ранее созданный виджет карты; измеряется первый кадр после возврата.');
     }
     SchedulerBinding.instance.addTimingsCallback(_onFrameTimings);
-    _finishTimer = Timer(const Duration(seconds: 25), () {
+    _finishTimer = Timer(const Duration(seconds: 45), () {
       unawaited(finish());
     });
     await _persistJson();
