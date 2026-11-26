@@ -1084,7 +1084,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     unawaited(_runStartupDiagnosticTask('Восстановление точек маршрута', _loadSavedRoutePoints));
     unawaited(_runStartupDiagnosticTask('Настройки дорожных слоёв', _loadTrafficLayerPreference));
     unawaited(_runStartupDiagnosticTask('Настройки поиска', _loadNominatimTestMode));
-    unawaited(_runStartupDiagnosticTask('Инициализация офлайн-поиска', _offlineAddressSearch.initialize));
+    // Офлайн-индекс загружается при первом поисковом запросе: его разбор
+    // не должен конкурировать с холодной загрузкой и отрисовкой карты.
     unawaited(_runStartupDiagnosticTask('Настройка голосового движка', _configureVoice));
 
     _roadReportRetryTimer = Timer.periodic(
