@@ -9838,8 +9838,15 @@ _navigationMatchedLocation = null;
                   onTap: () async {
                     _nativeMapLibreTestOpen = true;
                     try {
+                      final gpsPoint = _currentLocation ?? _lastReliableGpsDisplayLocation;
                       await const MethodChannel('bake.navigator/maplibre_experiment')
-                          .invokeMethod<void>('openMap');
+                          .invokeMethod<void>('openMap', gpsPoint == null
+                              ? null
+                              : <String, double>{
+                                  'latitude': gpsPoint.latitude,
+                                  'longitude': gpsPoint.longitude,
+                                  'heading': _gpsHeadingDegrees ?? 0.0,
+                                });
                     } catch (error) {
                       _nativeMapLibreTestOpen = false;
                       if (mounted) {
