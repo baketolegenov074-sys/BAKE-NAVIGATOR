@@ -25,6 +25,7 @@ class MapStartupDiagnostics {
   int _slowFrames = 0;
   int _maxFrameMs = 0;
   bool _firstVectorTileSeen = false;
+  final Set<String> _tileSourcesStarted = <String>{};
   DateTime? _lastSlowFrameEventAt;
   String? _reportBaseName;
   Future<void> _writeQueue = Future<void>.value();
@@ -52,6 +53,7 @@ class MapStartupDiagnostics {
     _slowFrames = 0;
     _maxFrameMs = 0;
     _firstVectorTileSeen = false;
+    _tileSourcesStarted.clear();
     _lastSlowFrameEventAt = null;
     _reportBaseName = 'map_startup_${_startedAt!.microsecondsSinceEpoch}';
     _active = true;
@@ -81,19 +83,37 @@ class MapStartupDiagnostics {
     _add(name, details);
   }
 
-  void recordVectorTileLoaded(String tile, int elapsedMs, int byteCount) {
+  void recordTileRequestStarted(
+    String sourceId,
+    String providerType,
+    String tile,
+  ) {
+    if (!_active || !_tileSourcesStarted.add(sourceId)) return;
+    _add(
+      'НАЧАТ ПЕРВЫЙ ЗАПРОС ТАЙЛА',
+      'Источник: $sourceId; тип: $providerType; тайл: $tile.',
+    );
+  }
+
+  void recordTileLoaded(
+    String sourceId,
+    String providerType,
+    String tile,
+    int elapsedMs,
+    int byteCount,
+  ) {
     if (!_active) return;
-    if (!_firstVectorTileSeen) {
+    if (providerType == 'vector' && !_firstVectorTileSeen) {
       _firstVectorTileSeen = true;
       _add(
         'ПЕРВЫЙ ВЕКТОРНЫЙ ТАЙЛ ПОЛУЧЕН',
-        'Тайл: $tile; время запроса: $elapsedMs мс; размер: $byteCount байт. Это первый успешный ответ тайла, не полная загрузка карты.',
+        'Источник: $sourceId; тайл: $tile; время запроса: $elapsedMs мс; размер: $byteCount байт.',
       );
     }
     if (elapsedMs >= 500) {
       _add(
-        'МЕДЛЕННАЯ ЗАГРУЗКА ВЕКТОРНОГО ТАЙЛА',
-        'Тайл $tile загружался $elapsedMs мс.',
+        'МЕДЛЕННАЯ ЗАГРУЗКА ТАЙЛА',
+        'Источник: $sourceId; тип: $providerType; тайл: $tile; время: $elapsedMs мс.',
       );
     }
   }
