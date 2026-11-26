@@ -9695,6 +9695,7 @@ _navigationMatchedLocation = null;
                 _scheduleHeadingUpReturn();
               },
               child: FlutterMap(
+              backgroundColor: const Color(0xFFF5F7FA),
               mapController: _mapController,
               options: MapOptions(
                 onMapReady: _onOfflineMapReady,
