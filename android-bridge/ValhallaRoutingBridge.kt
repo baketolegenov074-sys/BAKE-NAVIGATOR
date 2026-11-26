@@ -115,6 +115,8 @@ class ValhallaRoutingBridge(
                             .put("costing_options", costingOptions)
                             .put("format", "osrm")
                             .put("shape_format", "geojson")
+                            .put("generalize", 0)
+                            .put("turn_lanes", true)
                             .toString()
                         val responseJson = activeEngine.routeRaw(request)
                         postSuccess(result, responseJson)
