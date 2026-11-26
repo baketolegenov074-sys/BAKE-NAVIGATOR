@@ -670,12 +670,13 @@ jobs:
           dart_main = Path("lib/main.dart")
           dart_content = dart_main.read_text()
           if "bake.navigator/maplibre_experiment" not in dart_content:
-              marker = """                Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.map_outlined),
-                      title: const Text('Экспериментальная карта Maptoolkit Street'),"""
-              if marker not in dart_content:
-                  raise SystemExit("Maptoolkit settings tile marker was not found")
+              marker = "title: const Text('Экспериментальная карта Maptoolkit Street'),"
+              marker_index = dart_content.find(marker)
+              if marker_index < 0:
+                  raise SystemExit("Maptoolkit settings tile title was not found")
+              card_start = dart_content.rfind("                Card(", 0, marker_index)
+              if card_start < 0:
+                  raise SystemExit("Maptoolkit settings Card start was not found")
               native_tile = """                Card(
                     child: ListTile(
                       leading: const Icon(Icons.speed_outlined),
@@ -689,7 +690,7 @@ jobs:
                     ),
                   ),
           """
-              dart_content = dart_content.replace(marker, native_tile + marker, 1)
+              dart_content = dart_content[:card_start] + native_tile + dart_content[card_start:]
               dart_main.write_text(dart_content)
           print("Native MapLibre experiment entry added to Settings")
           print("Valhalla, screen-recording and MapLibre bridges configured")
