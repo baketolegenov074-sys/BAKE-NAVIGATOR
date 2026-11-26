@@ -1098,6 +1098,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }());
     WidgetsBinding.instance.addObserver(this);
     unawaited(_startCompassUpdates());
+    // Start Liberty loading during screen initialization, not after the
+    // first frame. The map can paint immediately while style requests run.
+    unawaited(_runStartupDiagnosticTask('Стиль карты', _loadFlutterMapOnlineStyle));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       MapStartupDiagnostics.instance.markFirstFrame();
@@ -1115,7 +1118,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       return const SizedBox.shrink();
     };
 
-    unawaited(_runStartupDiagnosticTask('Стиль карты', _loadFlutterMapOnlineStyle));
     unawaited(_runStartupDiagnosticTask('Загрузка камер и дорожных данных', _loadBundledRoadAlerts));
     unawaited(_runStartupDiagnosticTask('Восстановление точек маршрута', _loadSavedRoutePoints));
     unawaited(_runStartupDiagnosticTask('Настройки дорожных слоёв', _loadTrafficLayerPreference));
