@@ -172,7 +172,7 @@ class MapStartupDiagnostics {
   String _formatReport(Map<String, Object?> archive) {
     final out = StringBuffer('BAKE Navigator — диагностика запуска карты\n');
     out.writeln('Начало: ${archive['started_at']}');
-    out.writeln('Окончание: ${archive['finished_at'] ?? 'запись прервана'}');
+    out.writeln('Окончание: ${archive["finished_at"] ?? "запись прервана"}');
     out.writeln('Длительность наблюдения: ${archive['duration_ms']} мс');
     out.writeln('Медленных кадров (от 100 мс): ${archive['slow_frame_count']}');
     out.writeln('Максимальный кадр: ${archive['max_frame_ms']} мс');
@@ -180,7 +180,7 @@ class MapStartupDiagnostics {
     final archivedEvents = archive['events'];
     if (archivedEvents is List) {
       for (final value in archivedEvents.whereType<Map>()) {
-        out.writeln('\\n+${value['elapsed_ms']} мс | ${value['title']}');
+        out.writeln('\n+${value["elapsed_ms"]} мс | ${value["title"]}');
         out.writeln(value['details']);
       }
     }
