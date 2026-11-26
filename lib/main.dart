@@ -11003,9 +11003,6 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                 ),
                 Card(
                   child: ListTile(
-                    leading: const Icon(Icons.map_outlined),
-                                    Card(
-                  child: ListTile(
                     leading: const Icon(Icons.navigation_outlined),
                     title: const Text('Экспериментальная карта MapLibre'),
                     subtitle: const Text('Новая нативная векторная карта с текущим GPS'),
@@ -11024,7 +11021,10 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                     },
                   ),
                 ),
-title: const Text('Экспериментальная карта Maptoolkit Street'),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.map_outlined),
+                    title: const Text('Экспериментальная карта Maptoolkit Street'),
                     subtitle: const Text('Отдельная векторная карта из другого источника'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
