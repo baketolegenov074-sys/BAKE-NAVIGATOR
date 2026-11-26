@@ -9717,6 +9717,20 @@ _navigationMatchedLocation = null;
                     // Keep vector PBF sources, but cache their rendered tiles as images.
                     // This avoids repainting vector geometry on every fractional zoom step.
                     layerMode: VectorTileLayerMode.raster,
+                    // Keep Liberty tiles in persistent app-support storage rather
+                    // than the system temporary directory. This survives APK
+                    // upgrades; an uninstall clears app data and triggers refetch.
+                    cacheFolder: () async {
+                      final supportDirectory =
+                          await getApplicationSupportDirectory();
+                      final cacheDirectory = Directory(
+                        '${supportDirectory.path}/LibertyCache',
+                      );
+                      await cacheDirectory.create(recursive: true);
+                      return cacheDirectory;
+                    },
+                    fileCacheMaximumSizeInBytes: 256 * 1024 * 1024,
+                    fileCacheTtl: const Duration(days: 30),
                   ),
                 if (!_isOfflineMapActive &&
                     _trafficLayerEnabled &&
