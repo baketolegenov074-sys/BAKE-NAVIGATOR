@@ -360,7 +360,7 @@ jobs:
           manifest = manifest.replace('android:label="bake_navigator"', 'android:label="BAKE Navigator"')
           service = (
               '        <service android:name=".ScreenRecordingService" '
-              'android:exported="false" android:foregroundServiceType="mediaProjection" />\\n'
+              'android:exported="false" android:foregroundServiceType="mediaProjection" />\n'
           )
           if 'android:name=".ScreenRecordingService"' not in manifest:
               manifest = manifest.replace("    </application>", service + "    </application>", 1)
