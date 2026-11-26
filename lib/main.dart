@@ -61,12 +61,11 @@ class _ResilientVectorTileProvider implements VectorTileProvider {
     try {
       final bytes = await _delegate.provide(tile);
       stopwatch.stop();
-      if (stopwatch.elapsedMilliseconds >= 500) {
-        MapStartupDiagnostics.instance.recordStage(
-          'МЕДЛЕННАЯ ЗАГРУЗКА ВЕКТОРНОГО ТАЙЛА',
-          'Тайл $tile загружался ${stopwatch.elapsedMilliseconds} мс.',
-        );
-      }
+      MapStartupDiagnostics.instance.recordVectorTileLoaded(
+        tile.toString(),
+        stopwatch.elapsedMilliseconds,
+        bytes.length,
+      );
       return bytes;
     } on ProviderException catch (error) {
       MapStartupDiagnostics.instance.recordError(
