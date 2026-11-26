@@ -1432,7 +1432,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       (_gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0) *
       math.pi / 180.0;
 
-  // Reject stale/inaccurate fixes and impossible jumps only for free-drive display.
+  // Reject stale/inaccurate fixes for the raw fallback; Valhalla supplies road matching.
   // Raw coordinates remain untouched for reports, cameras, speed limits and routing.
   LatLng _updateFreeDriveDisplayPosition(Position fix, LatLng rawPoint) {
     final age = DateTime.now().difference(fix.timestamp);
@@ -3121,7 +3121,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 cameraTarget.latitude, cameraTarget.longitude,
               ) > (_isFlutterMapDisplayed ? 3 : 5);
           final routeHeading = _navigationActive && _routePoints.length > 1
-              ? _routeBearingAt(cameraTarget)
+              ? _routeBearingAt(navigationPoint)
               : null;
           final heading = _navigationActive
               ? (routeHeading ?? _gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0)
