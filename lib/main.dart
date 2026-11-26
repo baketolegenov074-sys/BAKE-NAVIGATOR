@@ -1563,7 +1563,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           previous.latitude, previous.longitude,
           matched.latitude, matched.longitude,
         );
-        if (previousDistance <= 30) {
+        if (previousDistance <= 8) {
           // Short interpolation only; never blend a matched point across roads.
           display = LatLng(
             previous.latitude + (matched.latitude - previous.latitude) * 0.8,
@@ -1576,7 +1576,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       if (mounted) {
         setState(() {});
         if (_appInForeground && _mapFollowEnabled && !_headingUpGestureActive) {
-          final heading = fix.speed >= 1.2 && fix.heading.isFinite
+          final heading = fix.speed >= 1.2 &&
+                  fix.heading.isFinite &&
+                  fix.heading >= 0 &&
+                  fix.heading <= 360
               ? fix.heading
               : (_lastCameraHeadingDegrees ?? _gpsHeadingDegrees ?? 0.0);
           _updateNavigationCamera(
@@ -3052,7 +3055,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           _gpsAvailable = true;
           _currentSpeedKmh = math.max(0, position.speed * 3.6).toDouble();
           // Ignore unstable compass headings while stopped or moving very slowly.
-          if (position.speed >= 1.2 && position.heading.isFinite) {
+          if (position.speed >= 1.2 &&
+              position.heading.isFinite &&
+              position.heading >= 0 &&
+              position.heading <= 360) {
             _gpsHeadingDegrees = position.heading;
           }
         });
