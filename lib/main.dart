@@ -1098,12 +1098,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }());
     WidgetsBinding.instance.addObserver(this);
     unawaited(_startCompassUpdates());
-    // Start Liberty loading during screen initialization, not after the
-    // first frame. The map can paint immediately while style requests run.
-    unawaited(_runStartupDiagnosticTask('Стиль карты', _loadFlutterMapOnlineStyle));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       MapStartupDiagnostics.instance.markFirstFrame();
+      // Let the first map frame render before starting Liberty style requests.
+      unawaited(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        if (!mounted) return;
+        await _runStartupDiagnosticTask('Стиль карты', _loadFlutterMapOnlineStyle);
+      }());
       unawaited(_initializeStartupServices());
     });
   }
