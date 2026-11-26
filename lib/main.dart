@@ -78,20 +78,6 @@ TileProviders _resilientOnlineTileProviders(TileProviders providers) {
 // glyph URLs are not used by vector_tile_renderer.
 vtr.Theme _buildBakeOfflineVectorTheme() {
   final base = vtr.ProvidedThemes.lightTheme();
-  final roads = vtr.ThemeReader().read({
-    'id': 'bake-shymkent-road-widths', 'metadata': {'version': '1'},
-    'sources': {'openmaptiles': {'type': 'vector'}},
-    'layers': [
-      {'id': 'bake_transportation_casing', 'type': 'line', 'source': 'openmaptiles', 'source-layer': 'transportation', 'minzoom': 13,
-       'filter': ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'residential', 'unclassified', 'service', 'living_street'],
-       'layout': {'line-cap': 'round', 'line-join': 'round'},
-       'paint': {'line-color': '#FFFFFF', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 9.0, 14, 10.8, 15, 13.0, 16, 16.0, 17, 19.0, 18, 22.0]}},
-      {'id': 'bake_transportation_wide', 'type': 'line', 'source': 'openmaptiles', 'source-layer': 'transportation', 'minzoom': 13,
-       'filter': ['in', 'class', 'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'residential', 'unclassified', 'service', 'living_street'],
-       'layout': {'line-cap': 'round', 'line-join': 'round'},
-       'paint': {'line-color': '#B7C2CE', 'line-width': ['interpolate', ['linear'], ['zoom'], 13, 5.4, 14, 6.8, 15, 8.8, 16, 10.8, 17, 13.5, 18, 16.0]}},
-    ],
-  });
   final labels = vtr.ThemeReader().read({
     'id': 'bake-shymkent-offline-labels',
     'metadata': {'version': '1'},
@@ -273,40 +259,12 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
     ],
   });
 
-  // Remove the default light-theme road strokes: they are drawn above
-  // BAKE's custom strokes and contain the orange casing/fill colors.
-  // Keep railways, one-way arrows, shields, buildings and symbol layers.
-  final baseWithoutDefaultRoadStrokes = base.layers.where((layer) {
-    final isDefaultRoadGeometry = layer.id.startsWith('road_') ||
-        layer.id.startsWith('bridge_') ||
-        layer.id.startsWith('tunnel_');
-    final isRailOrArrow = layer.id.contains('rail') ||
-        layer.id.contains('one_way_arrow');
-    // Remove road line AND fill/casing/pattern layers. The orange
-    // road_area_pattern is a fill layer, not a line layer.
-    // Keep every symbol layer, including road_label and road_shield.
-    return !isDefaultRoadGeometry ||
-        isRailOrArrow ||
-        layer.type == vtr.ThemeLayerType.symbol;
-  }).toList(growable: false);
-
-  // Built-in road labels and BAKE's regional name:* fallback labels stay
-  // above all road geometry.
-  final firstSymbolIndex = baseWithoutDefaultRoadStrokes.indexWhere(
-    (layer) => layer.type == vtr.ThemeLayerType.symbol,
-  );
-  final orderedLayers = firstSymbolIndex < 0
-      ? <vtr.ThemeLayer>[
-          ...baseWithoutDefaultRoadStrokes,
-          ...roads.layers,
-          ...labels.layers,
-        ]
-      : <vtr.ThemeLayer>[
-          ...baseWithoutDefaultRoadStrokes.take(firstSymbolIndex),
-          ...roads.layers,
-          ...baseWithoutDefaultRoadStrokes.skip(firstSymbolIndex),
-          ...labels.layers,
-        ];
+  // Preserve the native light-theme geometry and colors (yellow/orange roads,
+  // green landuse and parks). Only append BAKE's local-font labels on top.
+  final orderedLayers = <vtr.ThemeLayer>[
+    ...base.layers,
+    ...labels.layers,
+  ];
   return vtr.Theme(
     id: 'bake-shymkent-offline',
     version: '5',
