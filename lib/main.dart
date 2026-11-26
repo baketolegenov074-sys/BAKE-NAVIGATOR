@@ -11004,7 +11004,27 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                 Card(
                   child: ListTile(
                     leading: const Icon(Icons.map_outlined),
-                    title: const Text('Экспериментальная карта Maptoolkit Street'),
+                                    Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.navigation_outlined),
+                    title: const Text('Экспериментальная карта MapLibre'),
+                    subtitle: const Text('Новая нативная векторная карта с текущим GPS'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      try {
+                        await const MethodChannel('bake.navigator/maplibre_experiment')
+                            .invokeMethod<void>('openMap');
+                      } catch (error) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Не удалось открыть MapLibre: $error')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ),
+title: const Text('Экспериментальная карта Maptoolkit Street'),
                     subtitle: const Text('Отдельная векторная карта из другого источника'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
