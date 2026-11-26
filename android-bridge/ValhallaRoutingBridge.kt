@@ -22,6 +22,7 @@ import java.util.concurrent.Executors
  * Expected calls:
  *  - initialize(tileExtractPath: String)
  *  - route(startLat: Double, startLon: Double, endLat: Double, endLon: Double)
+ *  - traceRoute(requestJson: String) for offline GPS map matching
  *  - dispose()
  *
  * route() returns the raw OSRM-compatible JSON string. Dart can decode it with
