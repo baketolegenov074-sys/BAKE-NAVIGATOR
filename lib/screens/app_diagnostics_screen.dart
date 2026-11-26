@@ -144,6 +144,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
   bool _checking = false;
   bool _screenRecording = false;
   bool _screenRecordingBusy = false;
+  List<Map<String, dynamic>> _screenRecordings = [];
   DateTime? _lastRun;
 
   static const MethodChannel _screenRecordingChannel =
@@ -154,6 +155,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
     super.initState();
     _loadSavedData(); // Loads history only; never runs checks on app/screen startup.
     _refreshScreenRecordingState();
+    _loadScreenRecordings();
   }
 
   Future<void> _loadSavedData() async {
@@ -192,9 +194,24 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
     try {
       final active = await _screenRecordingChannel.invokeMethod<bool>('isRecording') ?? false;
       if (mounted) setState(() => _screenRecording = active);
-    } catch (_) {
-      // The native screen recorder is available only in the Android build.
+    } catch (_) {}
+  }
+
+  Future<void> _loadScreenRecordings() async {
+    try {
+      final items = await _screenRecordingChannel.invokeMethod<List<dynamic>>('listRecordings') ?? [];
+      if (!mounted) return;
+      setState(() => _screenRecordings = items.whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item)).toList());
+    } catch (_) {}
+  }
+
+  Future<void> _shareScreenRecording(String path) async {
+    if (!await File(path).exists()) {
+      await _loadScreenRecordings();
+      return;
     }
+    await Share.shareXFiles([XFile(path)], text: 'Запись экрана BAKE Navigator для диагностики');
   }
 
   Future<void> _startScreenRecording() async {
@@ -226,6 +243,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
     try {
       final path = await _screenRecordingChannel.invokeMethod<String>('stopRecording');
       if (mounted) setState(() => _screenRecording = false);
+      await _loadScreenRecordings();
       if (path == null || path.isEmpty || !await File(path).exists()) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -251,6 +269,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
 
   Future<void> _shareLastScreenRecording() async {
     try {
+      await _loadScreenRecordings();
       final path = await _screenRecordingChannel.invokeMethod<String>('lastRecordingPath');
       if (path == null || path.isEmpty || !await File(path).exists()) {
         if (mounted) {
@@ -605,17 +624,39 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
                             : 'Начать запись экрана'),
                   ),
                 ),
-                if (!_screenRecording) ...[
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: _shareLastScreenRecording,
-                      icon: const Icon(Icons.video_file_outlined),
-                      label: const Text('Отправить последнюю запись'),
-                    ),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _loadScreenRecordings,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Обновить список записей'),
                   ),
-                ],
+                ),
+                if (_screenRecordings.isEmpty)
+                  const Text('Сохранённых видео пока нет.')
+                else
+                  ..._screenRecordings.map((item) {
+                    final path = item['path'] as String? ?? '';
+                    final name = item['name'] as String? ?? 'Видео';
+                    final bytes = (item['size'] as num?)?.toInt() ?? 0;
+                    final modified = (item['modified'] as num?)?.toInt() ?? 0;
+                    final date = DateTime.fromMillisecondsSinceEpoch(modified * 1000).toLocal();
+                    final sizeText = bytes >= 1024 * 1024
+                        ? '${(bytes / (1024 * 1024)).toStringAsFixed(1)} МБ'
+                        : '${(bytes / 1024).toStringAsFixed(0)} КБ';
+                    return ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text('${date.toString()} · $sizeText'),
+                      trailing: IconButton(
+                        tooltip: 'Отправить видео',
+                        onPressed: path.isEmpty ? null : () => _shareScreenRecording(path),
+                        icon: const Icon(Icons.share),
+                      ),
+                    );
+                  }),
               ],
             ),
           ),
