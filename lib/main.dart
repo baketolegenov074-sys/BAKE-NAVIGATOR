@@ -81,9 +81,7 @@ class _ResilientVectorTileProvider implements VectorTileProvider {
         stopwatch.elapsedMilliseconds,
         bytes.length,
       );
-      if (_delegate.type == TileProviderType.vector) {
-        onFirstTileLoaded?.call();
-      }
+      onFirstTileLoaded?.call();
       return bytes;
     } on ProviderException catch (error, stackTrace) {
       MapStartupDiagnostics.instance.recordError(
@@ -109,19 +107,17 @@ TileProviders _resilientOnlineTileProviders(
   TileProviders providers, {
   VoidCallback? onFirstTileLoaded,
 }) {
-  var firstVectorTileReported = false;
+  var firstTileReported = false;
   return TileProviders({
     for (final entry in providers.tileProviderBySource.entries)
       entry.key: _ResilientVectorTileProvider(
         entry.value,
         sourceId: entry.key,
-        onFirstTileLoaded: entry.value.type == TileProviderType.vector
-            ? () {
-                if (firstVectorTileReported) return;
-                firstVectorTileReported = true;
-                onFirstTileLoaded?.call();
-              }
-            : null,
+        onFirstTileLoaded: () {
+          if (firstTileReported) return;
+          firstTileReported = true;
+          onFirstTileLoaded?.call();
+        },
       ),
   });
 }
