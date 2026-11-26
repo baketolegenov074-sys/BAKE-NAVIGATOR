@@ -9394,13 +9394,26 @@ _navigationMatchedLocation = null;
               ),
             ),
           ),
-          if (!_isOfflineMapActive && _flutterMapOnlineStyle != null)
-            Positioned(
-              top: 190,
-              right: 14,
-              child: SafeArea(
-                bottom: false,
-                child: Mate        content: Text(hasTomTomKey
+          Positioned(
+            top: 238,
+            right: 14,
+            child: SafeArea(
+              bottom: false,
+              child: Material(
+                color: _trafficLayerEnabled ? const Color(0xFFE8F5E9) : Colors.white,
+                elevation: 5,
+                shape: const CircleBorder(),
+                child: IconButton(
+                  tooltip: 'Пробки TomTom и дорожные события',
+                  onPressed: () {
+                    setState(() => _trafficLayerEnabled = !_trafficLayerEnabled);
+                    unawaited(SharedPreferences.getInstance().then(
+                      (prefs) => prefs.setBool('layer_traffic', _trafficLayerEnabled),
+                    ));
+                    if (_trafficLayerEnabled && _trafficReports.isEmpty) {
+                      final hasTomTomKey = _tomtomTrafficApiKey.isNotEmpty;
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(hasTomTomKey
                             ? 'Поток TomTom включён. Подтверждённых отметок о дорожных событиях пока нет.'
                             : 'Для отображения реальных пробок добавьте ключ TomTom в настройках слоёв.'),
                         duration: const Duration(seconds: 3),
