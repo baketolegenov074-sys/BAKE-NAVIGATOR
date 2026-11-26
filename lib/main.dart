@@ -1887,35 +1887,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   Future<void> _loadFlutterMapOnlineStyle() async {
-    if (_flutterMapExperimentLoading || _flutterMapOnlineStyle != null) return;
-    _styleLoadStopwatch.start();
-    setState(() => _flutterMapExperimentLoading = true);
-    try {
-      final style = await StyleReader(
-        uri: 'https://tiles.openfreemap.org/styles/liberty',
-      ).read();
-      if (!mounted) return;
-      setState(() {
-        _flutterMapOnlineStyle = style;
-        _flutterMapOnlineTileProviders =
-            _resilientOnlineTileProviders(style.providers);
-        _flutterMapExperimentEnabled = true;
-      });
-    } catch (error) {
-      debugPrint('BAKE FlutterMap online style failed to load: $error');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Онлайн-карта не загрузилась: $error'),
-          duration: const Duration(seconds: 4),
-        ));
-      }
-    } finally {
-      _styleLoadStopwatch.stop();
-      _styleLoadMs = _styleLoadStopwatch.elapsedMilliseconds;
-      if (mounted) {
-        setState(() => _flutterMapExperimentLoading = false);
-      }
-    }
+    // Keep one stable online renderer. The previous implementation first
+    // displayed OSM raster tiles and then replaced that layer with the
+    // asynchronously loaded Liberty vector style. That renderer swap cleared
+    // the visible tile surface and produced the brief grey map flash.
+    // Keep the existing OSM raster TileLayer as the online map; offline
+    // MBTiles rendering remains unchanged.
+    return;
   }
 
   Future<void> _toggleOfflineMapFromMap() async {
