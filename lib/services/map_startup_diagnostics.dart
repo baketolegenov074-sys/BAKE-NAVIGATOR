@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' show FrameTiming;
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter/scheduler.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// Local-only diagnostics for map cold-start and app-resume latency.
@@ -15,7 +17,6 @@ class MapStartupDiagnostics {
 
   final List<Map<String, Object?>> _events = <Map<String, Object?>>[];
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
-  final Future<void> _initialWrite = Future<void>.value();
 
   DateTime? _startedAt;
   Stopwatch? _stopwatch;
@@ -209,13 +210,7 @@ class MapStartupDiagnostics {
   Future<void> exportReport(File file) async {
     if (!await file.exists()) return;
     // Share Plus handles the native Android share sheet.
-    await ShareStartupReport.share(file);
+    await Share.shareXFiles([XFile(file.path)], text: 'Диагностика запуска карты BAKE Navigator');
   }
 }
 
-/// Kept behind a tiny adapter so the recorder itself stays independent of UI.
-class ShareStartupReport {
-  static Future<void> share(File file) async {
-    await _shareFile(file);
-  }
-}
