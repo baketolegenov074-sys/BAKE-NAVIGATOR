@@ -867,6 +867,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _offlineMapReady = false;
   bool _flutterMapExperimentEnabled = true;
   bool _flutterMapExperimentLoading = false;
+  // Temporary Liberty-only renderer A/B test; defaults to the existing raster mode.
+  bool _libertyVectorTestEnabled = false;
   double _mapZoom = 13;
   Style? _flutterMapOnlineStyle;
   TileProviders? _flutterMapOnlineTileProviders;
@@ -9283,6 +9285,9 @@ _navigationMatchedLocation = null;
                     // Vector providers overzoom their last available tile.
                     maximumZoom: 20,
                     concurrency: 2,
+                    layerMode: _libertyVectorTestEnabled
+                        ? VectorTileLayerMode.vector
+                        : VectorTileLayerMode.raster,
                   ),
                 if (!_isOfflineMapActive &&
                     _trafficLayerEnabled &&
@@ -9393,6 +9398,54 @@ _navigationMatchedLocation = null;
               ),
             ),
           ),
+          if (!_isOfflineMapActive && _flutterMapOnlineStyle != null)
+            Positioned(
+              top: 190,
+              right: 14,
+              child: SafeArea(
+                bottom: false,
+                child: Material(
+                  color: _libertyVectorTestEnabled
+                      ? const Color(0xFFE8F5E9)
+                      : Colors.white,
+                  elevation: 5,
+                  borderRadius: BorderRadius.circular(18),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () => setState(() {
+                      _libertyVectorTestEnabled = !_libertyVectorTestEnabled;
+                    }),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 9,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.high_quality,
+                            size: 18,
+                            color: _libertyVectorTestEnabled
+                                ? const Color(0xFF169B55)
+                                : const Color(0xFF555B63),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _libertyVectorTestEnabled ? 'ВЕКТОР' : 'РАСТР',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF263238),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             top: 238,
             right: 14,
