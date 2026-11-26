@@ -14,6 +14,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/road_report_sync_service.dart';
+import '../services/map_startup_diagnostics.dart';
 
 enum _CheckState { ok, warning, error, notChecked }
 
@@ -553,7 +554,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Кабинет диагностики'),
@@ -561,6 +562,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
             isScrollable: true,
             tabs: [
               Tab(icon: Icon(Icons.health_and_safety_outlined), text: 'Проверка'),
+              Tab(icon: Icon(Icons.speed_outlined), text: 'Запуск карты'),
               Tab(icon: Icon(Icons.route_outlined), text: 'Поездка'),
               Tab(icon: Icon(Icons.error_outline), text: 'Ошибки'),
               Tab(icon: Icon(Icons.cloud_outlined), text: 'Облако'),
@@ -570,6 +572,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
         body: TabBarView(
           children: [
             _buildChecksTab(),
+            _buildMapStartupTab(),
             _buildGpsTab(),
             _buildErrorsTab(),
             _buildCloudTab(),
@@ -710,6 +713,151 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
             ),
           )),
       ],
+    );
+  }
+
+  Widget _buildMapStartupTab() {
+    final recorder = MapStartupDiagnostics.instance;
+    return ValueListenableBuilder<int>(
+      valueListenable: recorder.revision,
+      builder: (context, revision, _) => FutureBuilder<List<File>>(
+        future: recorder.listReports(),
+        builder: (context, snapshot) {
+          final reports = snapshot.data ?? const <File>[];
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              const Text(
+                'Автоматическая локальная запись каждого холодного запуска и каждого возврата в приложение. Измеряются первый кадр, готовность карты, длительность задач запуска и медленные кадры. Никаких сетевых запросов и отправки в облако.',
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(
+                        recorder.active ? Icons.fiber_manual_record : Icons.save_outlined,
+                        color: recorder.active ? Colors.red : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          recorder.active
+                              ? 'Идёт запись текущего запуска/возврата'
+                              : 'Текущая запись завершена или приложение в фоне',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Отдельных отчётов: ${reports.length}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Обновить',
+                    onPressed: () => recorder.revision.value++,
+                    icon: const Icon(Icons.refresh),
+                  ),
+                  IconButton(
+                    tooltip: 'Удалить все отчёты запуска карты',
+                    onPressed: reports.isEmpty
+                        ? null
+                        : () async {
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (dialogContext) => AlertDialog(
+                                title: const Text('Удалить отчёты запуска карты?'),
+                                content: const Text('Будут удалены только отдельные отчёты запуска карты. GPS и остальные журналы не затрагиваются.'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(dialogContext, false),
+                                    child: const Text('Отмена'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () => Navigator.pop(dialogContext, true),
+                                    child: const Text('Удалить'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed == true) await recorder.deleteAllReports();
+                          },
+                    icon: const Icon(Icons.delete_sweep_outlined),
+                  ),
+                ],
+              ),
+              if (snapshot.connectionState == ConnectionState.waiting && reports.isEmpty)
+                const Center(child: CircularProgressIndicator())
+              else if (reports.isEmpty)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('Отчётов пока нет. Они появятся автоматически после запуска или возврата в приложение.'),
+                  ),
+                )
+              else
+                ...reports.map((file) {
+                  final name = file.path.split(Platform.pathSeparator).last;
+                  final stamp = name
+                      .replaceFirst('map_startup_', '')
+                      .replaceFirst('.txt', '');
+                  final micros = int.tryParse(stamp);
+                  final date = micros == null
+                      ? name
+                      : DateTime.fromMicrosecondsSinceEpoch(micros).toLocal().toString().split('.').first;
+                  return Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.description_outlined),
+                      title: Text(date),
+                      subtitle: const Text('Локальный отчёт запуска карты · TXT'),
+                      onTap: () async {
+                        final text = await file.readAsString();
+                        if (!context.mounted) return;
+                        await showDialog<void>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('Диагностика запуска карты'),
+                            content: SizedBox(
+                              width: double.maxFinite,
+                              child: SingleChildScrollView(
+                                child: SelectableText(text),
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pop(dialogContext);
+                                  unawaited(recorder.exportReport(file));
+                                },
+                                child: const Text('Отправить'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(dialogContext),
+                                child: const Text('Закрыть'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                      trailing: IconButton(
+                        tooltip: 'Поделиться отчётом',
+                        icon: const Icon(Icons.ios_share),
+                        onPressed: () => recorder.exportReport(file),
+                      ),
+                    ),
+                  );
+                }),
+            ],
+          );
+        },
+      ),
     );
   }
 
