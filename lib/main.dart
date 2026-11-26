@@ -57,9 +57,22 @@ class _ResilientVectorTileProvider implements VectorTileProvider {
 
   @override
   Future<Uint8List> provide(TileIdentity tile) async {
+    final stopwatch = Stopwatch()..start();
     try {
-      return await _delegate.provide(tile);
-    } on ProviderException {
+      final bytes = await _delegate.provide(tile);
+      stopwatch.stop();
+      if (stopwatch.elapsedMilliseconds >= 500) {
+        MapStartupDiagnostics.instance.recordStage(
+          'МЕДЛЕННАЯ ЗАГРУЗКА ВЕКТОРНОГО ТАЙЛА',
+          'Тайл $tile загружался ${stopwatch.elapsedMilliseconds} мс.',
+        );
+      }
+      return bytes;
+    } on ProviderException catch (error) {
+      MapStartupDiagnostics.instance.recordError(
+        'Загрузка векторного тайла $tile',
+        error,
+      );
       // An unavailable network tile is an empty protobuf tile, not a reason
       // to let one failed request interrupt map rendering or navigation.
       return Uint8List(0);
