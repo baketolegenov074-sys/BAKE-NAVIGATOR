@@ -347,6 +347,7 @@ jobs:
               "ACTIVITY_RECOGNITION",
               "FOREGROUND_SERVICE",
               "FOREGROUND_SERVICE_LOCATION",
+              "FOREGROUND_SERVICE_MEDIA_PROJECTION",
               "POST_NOTIFICATIONS",
           ]
           # Add each permission independently. A pre-existing foreground GPS
@@ -357,6 +358,12 @@ jobs:
                   line = f'    <uses-permission android:name="{permission_name}" />\n'
                   manifest = manifest.replace("    <application", line + "    <application", 1)
           manifest = manifest.replace('android:label="bake_navigator"', 'android:label="BAKE Navigator"')
+          service = (
+              '        <service android:name=".ScreenRecordingService" '
+              'android:exported="false" android:foregroundServiceType="mediaProjection" />\\n'
+          )
+          if 'android:name=".ScreenRecordingService"' not in manifest:
+              manifest = manifest.replace("    </application>", service + "    </application>", 1)
           path.write_text(manifest)
           PY
 
@@ -420,15 +427,19 @@ jobs:
           if not bridge_source.is_file():
               raise SystemExit("Checked-in Valhalla bridge source is missing")
           shutil.copy2(bridge_source, package_dir / "ValhallaRoutingBridge.kt")
+          shutil.copy2(Path("android-bridge/ScreenRecordingService.kt"), package_dir / "ScreenRecordingService.kt")
+          shutil.copy2(Path("android-bridge/ScreenRecordingBridge.kt"), package_dir / "ScreenRecordingBridge.kt")
 
           main_activity = package_dir / "MainActivity.kt"
           main_activity.write_text("""package kz.bake.bake_navigator
 
+          import android.content.Intent
           import io.flutter.embedding.android.FlutterActivity
           import io.flutter.embedding.engine.FlutterEngine
 
           class MainActivity : FlutterActivity() {
               private var valhallaBridge: ValhallaRoutingBridge? = null
+              private var screenRecordingBridge: ScreenRecordingBridge? = null
 
               override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
                   super.configureFlutterEngine(flutterEngine)
@@ -436,16 +447,30 @@ jobs:
                       flutterEngine.dartExecutor.binaryMessenger,
                       applicationContext
                   )
+                  screenRecordingBridge = ScreenRecordingBridge(
+                      this,
+                      flutterEngine.dartExecutor.binaryMessenger,
+                      applicationContext
+                  )
+              }
+
+              @Deprecated("Deprecated in Java")
+              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                  if (screenRecordingBridge?.onActivityResult(requestCode, resultCode, data) != true) {
+                      super.onActivityResult(requestCode, resultCode, data)
+                  }
               }
 
               override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
                   valhallaBridge?.close()
                   valhallaBridge = null
+                  screenRecordingBridge?.close()
+                  screenRecordingBridge = null
                   super.cleanUpFlutterEngine(flutterEngine)
               }
           }
           """)
-          print("Valhalla MethodChannel registered in generated MainActivity")
+          print("Valhalla and screen-recording MethodChannels registered in generated MainActivity")
           PY
       - name: Install dependencies
         run: flutter pub get
