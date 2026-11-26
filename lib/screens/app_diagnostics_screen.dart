@@ -142,12 +142,18 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
   String? _cloudErrorMessage;
   String? _startupResult;
   bool _checking = false;
+  bool _screenRecording = false;
+  bool _screenRecordingBusy = false;
   DateTime? _lastRun;
+
+  static const MethodChannel _screenRecordingChannel =
+      MethodChannel('bake.navigator/screen_recording');
 
   @override
   void initState() {
     super.initState();
     _loadSavedData(); // Loads history only; never runs checks on app/screen startup.
+    _refreshScreenRecordingState();
   }
 
   Future<void> _loadSavedData() async {
@@ -180,6 +186,91 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Запись включена только на следующий запуск. Перезапустите приложение; карта и ошибки будут измерены один раз.')),
     );
+  }
+
+  Future<void> _refreshScreenRecordingState() async {
+    try {
+      final active = await _screenRecordingChannel.invokeMethod<bool>('isRecording') ?? false;
+      if (mounted) setState(() => _screenRecording = active);
+    } catch (_) {
+      // The native screen recorder is available only in the Android build.
+    }
+  }
+
+  Future<void> _startScreenRecording() async {
+    if (_screenRecordingBusy || _screenRecording) return;
+    setState(() => _screenRecordingBusy = true);
+    try {
+      final started = await _screenRecordingChannel.invokeMethod<bool>('startRecording') ?? false;
+      if (!mounted) return;
+      setState(() => _screenRecording = started);
+      if (started) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Запись идёт. Сверните BAKE, воспроизведите серый экран, затем вернитесь и остановите запись.')),
+        );
+      }
+    } on PlatformException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось начать запись: ${error.message ?? error.code}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _screenRecordingBusy = false);
+    }
+  }
+
+  Future<void> _stopAndShareScreenRecording() async {
+    if (_screenRecordingBusy) return;
+    setState(() => _screenRecordingBusy = true);
+    try {
+      final path = await _screenRecordingChannel.invokeMethod<String>('stopRecording');
+      if (mounted) setState(() => _screenRecording = false);
+      if (path == null || path.isEmpty || !await File(path).exists()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Видео не сохранено. Проверьте, что запись успела начаться.')),
+          );
+        }
+        return;
+      }
+      await Share.shareXFiles(
+        [XFile(path)],
+        text: 'Запись экрана BAKE Navigator для диагностики',
+      );
+    } on PlatformException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось остановить запись: ${error.message ?? error.code}')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _screenRecordingBusy = false);
+    }
+  }
+
+  Future<void> _shareLastScreenRecording() async {
+    try {
+      final path = await _screenRecordingChannel.invokeMethod<String>('lastRecordingPath');
+      if (path == null || path.isEmpty || !await File(path).exists()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Сохранённой записи нет.')),
+          );
+        }
+        return;
+      }
+      await Share.shareXFiles(
+        [XFile(path)],
+        text: 'Запись экрана BAKE Navigator для диагностики',
+      );
+    } on PlatformException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Не удалось открыть запись: ${error.message ?? error.code}')),
+        );
+      }
+    }
   }
 
   Future<void> _loadCloudErrors() async {
@@ -481,6 +572,50 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> {
                   icon: const Icon(Icons.timer_outlined),
                   label: const Text('Записать следующий запуск'),
                 ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Запись экрана для проверки', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 6),
+                const Text('Запустите запись, сверните BAKE и повторите запуск приложения. Вернитесь сюда, чтобы остановить запись и отправить видео.'),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _screenRecordingBusy
+                        ? null
+                        : _screenRecording
+                            ? _stopAndShareScreenRecording
+                            : _startScreenRecording,
+                    icon: _screenRecordingBusy
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Icon(_screenRecording ? Icons.stop_circle_outlined : Icons.fiber_manual_record),
+                    label: Text(_screenRecordingBusy
+                        ? 'Подождите…'
+                        : _screenRecording
+                            ? 'Остановить и отправить видео'
+                            : 'Начать запись экрана'),
+                  ),
+                ),
+                if (!_screenRecording) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _shareLastScreenRecording,
+                      icon: const Icon(Icons.video_file_outlined),
+                      label: const Text('Отправить последнюю запись'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
