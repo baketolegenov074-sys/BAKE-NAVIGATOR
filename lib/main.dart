@@ -31,6 +31,7 @@ import 'screens/app_diagnostics_screen.dart';
 import 'screens/openfreemap_experiment.dart';
 import 'services/road_report_sync_service.dart';
 import 'services/valhalla_archive_validator.dart';
+import 'services/map_startup_diagnostics.dart';
 
 
 bool _isExpectedVectorTileCancellation(Object error, StackTrace? stackTrace) {
@@ -284,6 +285,7 @@ void main() {
     FlutterError.presentError(details);
     unawaited(AppDiagnosticsScreen.recordTripRuntimeError('Flutter', details.exception));
     unawaited(AppDiagnosticsScreen.recordStartupRuntimeError('Flutter', details.exception));
+    MapStartupDiagnostics.instance.recordError('Flutter', details.exception, details.stack);
   };
   ui.PlatformDispatcher.instance.onError = (error, stackTrace) {
     if (_isExpectedVectorTileCancellation(error, stackTrace)) {
@@ -291,6 +293,7 @@ void main() {
     }
     unawaited(AppDiagnosticsScreen.recordTripRuntimeError('Platform', error));
     unawaited(AppDiagnosticsScreen.recordStartupRuntimeError('Platform', error));
+    MapStartupDiagnostics.instance.recordError('Platform', error, stackTrace);
     return false;
   };
   runApp(const BakeNavigatorApp());
@@ -1034,6 +1037,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   void initState() {
     super.initState();
     _mapOpenStopwatch.start();
+    unawaited(MapStartupDiagnostics.instance.beginSession('Холодный запуск приложения'));
     unawaited(() async {
       if (!await AppDiagnosticsScreen.isStartupCheckArmed()) return;
       await Future<void>.delayed(const Duration(seconds: 30));
@@ -1044,6 +1048,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     WidgetsBinding.instance.addObserver(this);
         WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      MapStartupDiagnostics.instance.markFirstFrame();
       unawaited(_initializeStartupServices());
     });
   }
@@ -1053,17 +1058,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       debugPrint('BAKE RELEASE WIDGET ERROR: ${details.exceptionAsString()}');
       debugPrintStack(stackTrace: details.stack);
       unawaited(AppDiagnosticsScreen.recordStartupRuntimeError('Widget', details.exception));
+      MapStartupDiagnostics.instance.recordError('Flutter Widget', details.exception, details.stack);
       // Keep the failing subtree invisible; diagnostics remain recorded above.
       return const SizedBox.shrink();
     };
 
-    unawaited(_loadFlutterMapOnlineStyle());
-    unawaited(_loadBundledRoadAlerts());
-    unawaited(_loadSavedRoutePoints());
-    unawaited(_loadTrafficLayerPreference());
-    unawaited(_loadNominatimTestMode());
-    unawaited(_offlineAddressSearch.initialize());
-    _configureVoice();
+    unawaited(_runStartupDiagnosticTask('Стиль карты', _loadFlutterMapOnlineStyle));
+    unawaited(_runStartupDiagnosticTask('Загрузка камер и дорожных данных', _loadBundledRoadAlerts));
+    unawaited(_runStartupDiagnosticTask('Восстановление точек маршрута', _loadSavedRoutePoints));
+    unawaited(_runStartupDiagnosticTask('Настройки дорожных слоёв', _loadTrafficLayerPreference));
+    unawaited(_runStartupDiagnosticTask('Настройки поиска', _loadNominatimTestMode));
+    unawaited(_runStartupDiagnosticTask('Инициализация офлайн-поиска', _offlineAddressSearch.initialize));
+    unawaited(_runStartupDiagnosticTask('Настройка голосового движка', _configureVoice));
 
     _roadReportRetryTimer = Timer.periodic(
       const Duration(seconds: 45),
@@ -1106,7 +1112,31 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     // Its archive/native initialization must not compete with first paint.
 
     // One-time startup checks; never repeated on AppLifecycleState.resumed.
-    unawaited(_locateMe());
+    unawaited(_runStartupDiagnosticTask('Получение первого GPS-местоположения', _locateMe));
+  }
+
+  Future<void> _runStartupDiagnosticTask(
+    String name,
+    Future<void> Function() action,
+  ) async {
+    final stopwatch = Stopwatch()..start();
+    MapStartupDiagnostics.instance.recordStage('ЭТАП НАЧАТ', name);
+    try {
+      await action();
+      stopwatch.stop();
+      MapStartupDiagnostics.instance.recordStage(
+        'ЭТАП ЗАВЕРШЁН',
+        '$name: ${stopwatch.elapsedMilliseconds} мс.',
+      );
+    } catch (error, stackTrace) {
+      stopwatch.stop();
+      MapStartupDiagnostics.instance.recordError(
+        name,
+        error,
+        stackTrace,
+      );
+      rethrow;
+    }
   }
 
   void _dismissMapPointPreview() {
@@ -1647,7 +1677,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _valhallaStartupScheduled = true;
     unawaited(Future<void>.delayed(const Duration(seconds: 3), () async {
       if (!mounted) return;
-      await _ensureValhallaReady();
+      await _runStartupDiagnosticTask('Инициализация офлайн-маршрутизатора Valhalla', _ensureValhallaReady);
     }));
   }
 
@@ -1660,6 +1690,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _mapOpenStopwatch.stop();
         _mapOpenMs = _mapOpenStopwatch.elapsedMilliseconds;
         unawaited(AppDiagnosticsScreen.recordStartupMapReady(_mapOpenMs!));
+        MapStartupDiagnostics.instance.markMapReady(_mapOpenMs!);
         setState(() {});
         _scheduleValhallaStartupAfterMapPaint();
       });
@@ -5194,6 +5225,13 @@ _navigationMatchedLocation = null;
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _recordGpsDiagnostic(event: 'APP_LIFECYCLE', detail: state.name);
     if (state == AppLifecycleState.resumed) {
+      unawaited(MapStartupDiagnostics.instance.beginSession(
+        'Возврат в приложение после сворачивания/блокировки экрана',
+        mapAlreadyMounted: _offlineMapReady,
+      ));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        MapStartupDiagnostics.instance.markFirstFrame();
+      });
       _appInForeground = true;
       _lastCameraUpdateAt = null;
       _lastMapAnnotationUpdateAt = null;
@@ -5218,6 +5256,7 @@ _navigationMatchedLocation = null;
     if (state == AppLifecycleState.hidden ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      MapStartupDiagnostics.instance.markBackground(state.name);
       _appInForeground = false;
       _headingUpResumeTimer?.cancel();
       _headingUpResumeTimer = null;
