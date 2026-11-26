@@ -1687,7 +1687,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _offlineMapReady = true;
     MapStartupDiagnostics.instance.recordStage(
       'КОНФИГУРАЦИЯ КАРТЫ',
-      'Режим: ${_isOfflineMapActive ? 'офлайн' : 'онлайн'}; векторный провайдер: ${_isOfflineMapActive ? _offlineVectorTileProvider != null : _flutterMapOnlineStyle != null}; Liberty style готов: ${_flutterMapOnlineStyle != null}.',
+      'Режим: ${_isOfflineMapActive ? "офлайн" : "онлайн"}; векторный провайдер: ${_isOfflineMapActive ? _offlineVectorTileProvider != null : _flutterMapOnlineStyle != null}; Liberty style готов: ${_flutterMapOnlineStyle != null}.',
     );
     if (_mapOpenMs == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -5241,7 +5241,7 @@ _navigationMatchedLocation = null;
       ));
       MapStartupDiagnostics.instance.recordStage(
         'СОСТОЯНИЕ КАРТЫ ПРИ ВОЗВРАТЕ',
-        'Карта готова: $_offlineMapReady; режим: ${_isOfflineMapActive ? 'офлайн' : 'онлайн'}; Liberty style готов: ${_flutterMapOnlineStyle != null}.',
+        'Карта готова: $_offlineMapReady; режим: ${_isOfflineMapActive ? "офлайн" : "онлайн"}; Liberty style готов: ${_flutterMapOnlineStyle != null}.',
       );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         MapStartupDiagnostics.instance.markFirstFrame();
