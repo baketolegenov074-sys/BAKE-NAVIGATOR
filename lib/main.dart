@@ -9175,7 +9175,7 @@ _navigationMatchedLocation = null;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      backgroundColor: const Color(0xFFF3F6FA),
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
           Listener(
