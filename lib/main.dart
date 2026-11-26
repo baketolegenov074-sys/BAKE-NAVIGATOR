@@ -47,11 +47,13 @@ class _ResilientVectorTileProvider implements VectorTileProvider {
     this._delegate, {
     required this.sourceId,
     this.onFirstTileLoaded,
+    this.swallowProviderExceptions = true,
   });
 
   final VectorTileProvider _delegate;
   final String sourceId;
   final VoidCallback? onFirstTileLoaded;
+  final bool swallowProviderExceptions;
 
   @override
   int get maximumZoom => _delegate.maximumZoom;
@@ -89,8 +91,9 @@ class _ResilientVectorTileProvider implements VectorTileProvider {
         error,
         stackTrace,
       );
-      // An unavailable network tile is an empty tile, not a reason
-      // to let one failed request interrupt map rendering or navigation.
+      // Keep the legacy fallback only for the original map. The clean
+      // Liberty test passes provider errors through unchanged.
+      if (!swallowProviderExceptions) rethrow;
       return Uint8List(0);
     } catch (error, stackTrace) {
       MapStartupDiagnostics.instance.recordError(
@@ -106,6 +109,7 @@ class _ResilientVectorTileProvider implements VectorTileProvider {
 TileProviders _resilientOnlineTileProviders(
   TileProviders providers, {
   VoidCallback? onFirstTileLoaded,
+  bool swallowProviderExceptions = true,
 }) {
   var firstTileReported = false;
   return TileProviders({
@@ -113,6 +117,7 @@ TileProviders _resilientOnlineTileProviders(
       entry.key: _ResilientVectorTileProvider(
         entry.value,
         sourceId: entry.key,
+        swallowProviderExceptions: swallowProviderExceptions,
         onFirstTileLoaded: () {
           if (firstTileReported) return;
           firstTileReported = true;
@@ -918,6 +923,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _offlineMapReady = false;
   bool _flutterMapExperimentEnabled = true;
   bool _flutterMapExperimentLoading = false;
+  bool _useCleanLibertyMap = false;
   bool _firstOnlineVectorTileLoaded = false;
   double _mapZoom = 13;
   Style? _flutterMapOnlineStyle;
@@ -2088,34 +2094,43 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _loadFlutterMapOnlineStyle() async {
     if (_flutterMapExperimentLoading || _flutterMapOnlineStyle != null) return;
-    _styleLoadStopwatch.start();
+    _styleLoadStopwatch
+      ..reset()
+      ..start();
     if (mounted) setState(() => _flutterMapExperimentLoading = true);
     try {
+      final prefs = await SharedPreferences.getInstance();
+      _useCleanLibertyMap = prefs.getBool('bake_clean_liberty_map_v1') ?? false;
       final style = await StyleReader(
         uri: 'https://tiles.openfreemap.org/styles/liberty',
       ).read();
       if (!mounted) return;
-      // Liberty includes a separate Natural Earth raster relief source.
-      // Remove only that layer/source; keep OpenMapTiles vector styling intact.
-      final vectorOnlyTheme = vtr.Theme(
-        id: style.theme.id,
-        version: style.theme.version,
-        layers: style.theme.layers
-            .where((layer) =>
-                layer.id != 'natural_earth' &&
-                layer.tileSource != 'ne2_shaded')
-            .toList(growable: false),
-      );
-      final vectorOnlyProviders = TileProviders({
-        for (final entry in style.providers.tileProviderBySource.entries)
-          if (entry.key != 'ne2_shaded') entry.key: entry.value,
-      });
+      // The clean test uses Liberty exactly as StyleReader returns it.
+      // The original map keeps its existing filtered theme/provider setup.
+      final selectedTheme = _useCleanLibertyMap
+          ? style.theme
+          : vtr.Theme(
+              id: style.theme.id,
+              version: style.theme.version,
+              layers: style.theme.layers
+                  .where((layer) =>
+                      layer.id != 'natural_earth' &&
+                      layer.tileSource != 'ne2_shaded')
+                  .toList(growable: false),
+            );
+      final selectedProviders = _useCleanLibertyMap
+          ? style.providers
+          : TileProviders({
+              for (final entry in style.providers.tileProviderBySource.entries)
+                if (entry.key != 'ne2_shaded') entry.key: entry.value,
+            });
       setState(() {
         _flutterMapOnlineStyle = style;
-        _flutterMapOnlineTheme = vectorOnlyTheme;
+        _flutterMapOnlineTheme = selectedTheme;
         _flutterMapOnlineTileProviders =
             _resilientOnlineTileProviders(
-          vectorOnlyProviders,
+          selectedProviders,
+          swallowProviderExceptions: !_useCleanLibertyMap,
           onFirstTileLoaded: () {
             if (_firstOnlineVectorTileLoaded) return;
             // Let the first tile finish rasterization before compass-driven
@@ -2191,6 +2206,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     ));
   }
 
+  Future<void> _changeOnlineMapStyle(bool useCleanLiberty) async {
+    if (!mounted || _useCleanLibertyMap == useCleanLiberty) return;
+    setState(() {
+      _useCleanLibertyMap = useCleanLiberty;
+      // Remove the previous online layer before creating the selected one.
+      // The two map renderers are never mounted together.
+      _flutterMapOnlineStyle = null;
+      _flutterMapOnlineTheme = null;
+      _flutterMapOnlineTileProviders = null;
+      _firstOnlineVectorTileLoaded = false;
+    });
+    await _loadFlutterMapOnlineStyle();
+  }
+
   Future<void> _openSettings() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -2199,6 +2228,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           onOpenRoutePreferences: _openRoutePreferences,
           onOpenProfile: _openProfileMenu,
           onOpenGpsDiagnostics: _openGpsDiagnostics,
+          onMapStyleChanged: _changeOnlineMapStyle,
           onVoiceChanged: (enabled) {
             setState(() => _voiceMode = enabled ? 3 : 0);
             if (!enabled) {
@@ -9707,6 +9737,14 @@ _navigationMatchedLocation = null;
                   )
                 else if (_isOfflineMapActive)
                   TileLayer(tileProvider: _offlineTileProvider!)
+                else if (_flutterMapOnlineStyle != null && _useCleanLibertyMap)
+                  VectorTileLayer(
+                    theme: _flutterMapOnlineStyle!.theme,
+                    sprites: _flutterMapOnlineStyle!.sprites,
+                    tileProviders: _flutterMapOnlineTileProviders ??
+                        _flutterMapOnlineStyle!.providers,
+                    maximumZoom: 18,
+                  )
                 else if (_flutterMapOnlineStyle != null)
                   VectorTileLayer(
                     theme: _flutterMapOnlineTheme ?? _flutterMapOnlineStyle!.theme,
@@ -9717,12 +9755,7 @@ _navigationMatchedLocation = null;
                     // Vector providers overzoom their last available tile.
                     maximumZoom: 20,
                     concurrency: 2,
-                    // Keep vector PBF sources, but cache their rendered tiles as images.
-                    // This avoids repainting vector geometry on every fractional zoom step.
                     layerMode: VectorTileLayerMode.vector,
-                    // Keep Liberty tiles in persistent app-support storage rather
-                    // than the system temporary directory. This survives APK
-                    // upgrades; an uninstall clears app data and triggers refetch.
                     cacheFolder: () async {
                       final supportDirectory =
                           await getApplicationSupportDirectory();
@@ -10538,6 +10571,7 @@ class NavigatorPreferencesScreen extends StatefulWidget {
     required this.onOpenRoutePreferences,
     required this.onOpenProfile,
     required this.onOpenGpsDiagnostics,
+    required this.onMapStyleChanged,
     required this.onVoiceChanged,
   });
 
@@ -10545,6 +10579,7 @@ class NavigatorPreferencesScreen extends StatefulWidget {
   final Future<void> Function() onOpenRoutePreferences;
   final Future<void> Function() onOpenProfile;
   final Future<void> Function() onOpenGpsDiagnostics;
+  final Future<void> Function(bool) onMapStyleChanged;
   final ValueChanged<bool> onVoiceChanged;
 
   @override
@@ -10553,6 +10588,7 @@ class NavigatorPreferencesScreen extends StatefulWidget {
 
 class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen> {
   bool _voiceEnabled = true;
+  bool _cleanLibertyMap = false;
   bool _avoidTolls = false;
   bool _loading = true;
   String _appLanguage = 'kk';
@@ -10589,6 +10625,7 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
     if (!mounted) return;
     setState(() {
       _voiceEnabled = (prefs.getInt('voice_mode') ?? 3) != 0;
+      _cleanLibertyMap = prefs.getBool('bake_clean_liberty_map_v1') ?? false;
       _avoidTolls = prefs.getBool('avoid_tolls') ?? false;
       _appLanguage = prefs.getString('app_language') ?? 'kk';
       _loading = false;
@@ -10602,6 +10639,14 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
     if (!mounted) return;
     setState(() => _voiceEnabled = value);
     widget.onVoiceChanged(value);
+  }
+
+  Future<void> _setCleanLibertyMap(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('bake_clean_liberty_map_v1', value);
+    if (!mounted) return;
+    setState(() => _cleanLibertyMap = value);
+    await widget.onMapStyleChanged(value);
   }
 
   Future<void> _setAvoidTolls(bool value) async {
@@ -10641,6 +10686,13 @@ class _NavigatorPreferencesScreenState extends State<NavigatorPreferencesScreen>
                   title: Text(AppLocale.tr('Голосовые подсказки')),
                   value: _voiceEnabled,
                   onChanged: _setVoice,
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.map_outlined),
+                  title: const Text('Чистая карта Liberty (тест)'),
+                  subtitle: const Text('Выбор сохраняется после перезапуска; загружается только выбранная карта'),
+                  value: _cleanLibertyMap,
+                  onChanged: _setCleanLibertyMap,
                 ),
                 ListTile(
                   leading: const Icon(Icons.record_voice_over_outlined),
