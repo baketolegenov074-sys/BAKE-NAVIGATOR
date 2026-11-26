@@ -18,6 +18,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
@@ -1035,6 +1036,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _isBuildingRoute = false;
   int _voiceMode = 3;
   double? _gpsHeadingDegrees;
+  double? _compassHeadingDegrees;
+  StreamSubscription<CompassEvent>? _compassSubscription;
   double? _lastCameraHeadingDegrees;
   bool _northUpLocked = false;
   bool _mapFollowEnabled = true;
@@ -1058,7 +1061,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
     }());
     WidgetsBinding.instance.addObserver(this);
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+    unawaited(_startCompassUpdates());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       MapStartupDiagnostics.instance.markFirstFrame();
       unawaited(_initializeStartupServices());
@@ -1472,7 +1476,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   double get _vehicleDisplayBearing =>
-      (_gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0) *
+      ((_navigationActive && _currentSpeedKmh >= 5.4
+                  ? (_gpsHeadingDegrees ?? _compassHeadingDegrees)
+                  : (_compassHeadingDegrees ?? _gpsHeadingDegrees ?? _lastCameraHeadingDegrees)) ??
+              0.0) *
       math.pi / 180.0;
 
   // Reject stale/inaccurate fixes for the raw fallback; Valhalla supplies road matching.
@@ -1661,6 +1668,32 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _mapController.move(point, zoom);
   }
 
+  Future<void> _startCompassUpdates() async {
+    await _compassSubscription?.cancel();
+    _compassSubscription = null;
+    final events = FlutterCompass.events;
+    if (events == null) {
+      debugPrint('BAKE compass sensor is unavailable on this device');
+      return;
+    }
+    _compassSubscription = events.listen((CompassEvent event) {
+      final heading = event.heading;
+      if (!mounted || heading == null || !heading.isFinite || heading < 0 || heading >= 360) return;
+      final previous = _compassHeadingDegrees;
+      final difference = previous == null ? 360.0 : ((heading - previous + 540) % 360) - 180;
+      if (difference.abs() < 1.2) return;
+      _compassHeadingDegrees = heading;
+      if (!_northUpLocked && _appInForeground && _offlineMapReady &&
+          (!_navigationActive || _currentSpeedKmh < 5.4)) {
+        _lastCameraHeadingDegrees = heading;
+        _mapController.rotate(-heading);
+      }
+      setState(() {});
+    }, onError: (Object error) {
+      debugPrint('BAKE compass stream error: $error');
+    });
+  }
+
   void _updateNavigationCamera(LatLng point, double zoom, double heading) {
     _lastCameraHeadingDegrees = heading;
     if (!_appInForeground || !_offlineMapReady) return;
@@ -1785,6 +1818,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _roadReportRetryTimer?.cancel();
     unawaited(_stopLiveLocationUpdates(reason: 'widget_disposed'));
     _headingUpResumeTimer?.cancel();
+    unawaited(_compassSubscription?.cancel());
+    _compassSubscription = null;
     _navigationPredictionTimer?.cancel();
     _disposeOfflineMap();
     _offlineAddressSearch.dispose();
@@ -3182,12 +3217,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                 cameraCenter.latitude, cameraCenter.longitude,
                 cameraTarget.latitude, cameraTarget.longitude,
               ) > (_isFlutterMapDisplayed ? 3 : 5);
-          final routeHeading = _navigationActive && _routePoints.length > 1
+          final routeHeading = _navigationActive && _currentSpeedKmh >= 5.4 && _routePoints.length > 1
               ? _routeBearingAt(navigationPoint)
               : null;
-          final heading = _navigationActive
-              ? (routeHeading ?? _gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0)
-              : (_northUpLocked ? 0.0 : (_gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0));
+          final heading = _northUpLocked
+              ? 0.0
+              : (routeHeading ?? _compassHeadingDegrees ?? _gpsHeadingDegrees ?? _lastCameraHeadingDegrees ?? 0.0);
           final normalizedHeading = (heading % 360 + 360) % 360;
           final previousHeading = _lastCameraHeadingDegrees;
           final difference = previousHeading == null
@@ -5259,6 +5294,7 @@ _navigationMatchedLocation = null;
         MapStartupDiagnostics.instance.markFirstFrame();
       });
       _appInForeground = true;
+      unawaited(_startCompassUpdates());
       _lastCameraUpdateAt = null;
       _lastMapAnnotationUpdateAt = null;
       _headingUpGestureActive = false;
@@ -5284,6 +5320,8 @@ _navigationMatchedLocation = null;
         state == AppLifecycleState.detached) {
       MapStartupDiagnostics.instance.markBackground(state.name);
       _appInForeground = false;
+      unawaited(_compassSubscription?.cancel());
+      _compassSubscription = null;
       _headingUpResumeTimer?.cancel();
       _headingUpResumeTimer = null;
       _roadReportRetryTimer?.cancel();
