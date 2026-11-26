@@ -9659,7 +9659,6 @@ _navigationMatchedLocation = null;
                     _mapFollowEnabled = false;
                     _scheduleHeadingUpReturn();
                   }
-                  final now = DateTime.now();
                   final zoomChanged = (_mapZoom - camera.zoom).abs() >= 0.01;
                   if (zoomChanged) {
                     _mapZoom = camera.zoom;
