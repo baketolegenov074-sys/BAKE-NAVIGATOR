@@ -177,9 +177,12 @@ class MapStartupDiagnostics {
     out.writeln('Медленных кадров (от 100 мс): ${archive['slow_frame_count']}');
     out.writeln('Максимальный кадр: ${archive['max_frame_ms']} мс');
     out.writeln('\nСОБЫТИЯ:');
-    for (final item in (_events)) {
-      out.writeln('\n+${item['elapsed_ms']} мс | ${item['title']}');
-      out.writeln(item['details']);
+    final archivedEvents = archive['events'];
+    if (archivedEvents is List) {
+      for (final value in archivedEvents.whereType<Map>()) {
+        out.writeln('\\n+${value['elapsed_ms']} мс | ${value['title']}');
+        out.writeln(value['details']);
+      }
     }
     out.writeln('\nПримечание: готовность виджета карты не означает, что все тайлы и подписи уже загружены.');
     return out.toString();
@@ -188,6 +191,26 @@ class MapStartupDiagnostics {
   Future<List<File>> listReports() async {
     final directory = await _directory();
     if (!await directory.exists()) return <File>[];
+    // Recover readable reports if Android killed the process before finalization.
+    final jsonFiles = directory
+        .listSync()
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.json'));
+    for (final jsonFile in jsonFiles) {
+      final textFile = File(jsonFile.path.replaceFirst('.json', '.txt'));
+      if (await textFile.exists()) continue;
+      try {
+        final decoded = jsonDecode(await jsonFile.readAsString());
+        if (decoded is Map) {
+          await textFile.writeAsString(
+            _formatReport(Map<String, Object?>.from(decoded)),
+            flush: true,
+          );
+        }
+      } catch (_) {
+        // Leave a damaged snapshot untouched for later inspection.
+      }
+    }
     final files = directory
         .listSync()
         .whereType<File>()
