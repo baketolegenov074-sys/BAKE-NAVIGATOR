@@ -9273,26 +9273,16 @@ _navigationMatchedLocation = null;
                   )
                 else if (_isOfflineMapActive)
                   TileLayer(tileProvider: _offlineTileProvider!)
-                else if (_flutterMapOnlineStyle != null &&
-                    _mapZoom >= 5 && _mapZoom <= 16)
+                else if (_flutterMapOnlineStyle != null)
                   VectorTileLayer(
                     theme: _flutterMapOnlineStyle!.theme,
                     sprites: _flutterMapOnlineStyle!.sprites,
                     tileProviders: _flutterMapOnlineTileProviders ??
                         _flutterMapOnlineStyle!.providers,
-                    maximumZoom: 18,
+                    // Keep Liberty active through the full map zoom range.
+                    // Vector providers overzoom their last available tile.
+                    maximumZoom: 20,
                     concurrency: 2,
-                  )
-                else
-                  TileLayer(
-                    // Global raster coverage prevents blank/gray edges when
-                    // Liberty has sparse detail at overview or extreme zoom.
-                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'kz.bake.bake_navigator',
-                    minNativeZoom: 0,
-                    maxNativeZoom: 19,
-                    maxZoom: 20,
-                    keepBuffer: 3,
                   ),
                 if (!_isOfflineMapActive &&
                     _trafficLayerEnabled &&
