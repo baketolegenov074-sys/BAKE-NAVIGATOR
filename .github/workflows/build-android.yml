@@ -236,13 +236,13 @@ jobs:
           }
           """
           else:
-              dependency_block = re.search(r"dependencyResolutionManagement\\s*\\{([\\s\\S]*?)\\n\\}", settings_content)
+              dependency_block = re.search(r"dependencyResolutionManagement\s*\{([\s\S]*?)\n\}", settings_content)
               if not dependency_block:
                   raise SystemExit("Generated dependencyResolutionManagement block is malformed")
               dependency_text = dependency_block.group(1)
-              repositories_block = re.search(r"repositories\\s*\\{([^}]*)\\}", dependency_text)
+              repositories_block = re.search(r"repositories\s*\{([^}]*)\}", dependency_text)
               if not repositories_block:
-                  dependency_text += "\\n    repositories {\\n        google()\\n        mavenCentral()\\n    }\\n"
+                  dependency_text += "\n    repositories {\n        google()\n        mavenCentral()\n    }\n"
               else:
                   repo_text = repositories_block.group(1)
                   for repository in ("google()", "mavenCentral()"):
