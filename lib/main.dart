@@ -4680,8 +4680,21 @@ _navigationMatchedLocation = null;
     final distanceText = meters >= 1000
         ? _localized('${(meters / 1000).toStringAsFixed(1)} километра', '${(meters / 1000).toStringAsFixed(1)} километр', '${(meters / 1000).toStringAsFixed(1)} kilometers')
         : _localized('${meters.round()} метров', '${meters.round()} метр', '${meters.round()} meters');
+    if (instruction.maneuverType == 'arrive') {
+      // The arrival approach is announced by _updateNavigationProgress at 150 m.
+      // Do not announce "you have arrived" when the final step first becomes active.
+      if (meters > 150) return;
+      if (_voiceMode >= 2) {
+        await _speakText(_localized(
+          'Пункт назначения рядом, через ${distanceText}.',
+          'Межелі жер жақын, ${distanceText} кейін.',
+          'Destination nearby, in ${distanceText}.',
+        ));
+      }
+      return;
+    }
     if (_voiceMode >= 2) {
-      await _speakText(_localized('${instruction.text} через $distanceText.', '${instruction.text} $distanceText кейін.', '${instruction.text} in $distanceText.'));
+      await _speakText(_localized('${instruction.text} через ${distanceText}.', '${instruction.text} ${distanceText} кейін.', '${instruction.text} in ${distanceText}.'));
     }
   }
 
@@ -5689,8 +5702,10 @@ _navigationMatchedLocation = null;
 
     // HUD, voice prompts and maneuver switching share one monotonic route distance.
     final isArrivalInstruction = _instructionIndex + 1 >= _instructions.length;
+    // Arrival is not an ordinary maneuver: announce one approach cue only
+    // within 150 m, then announce arrival when the destination is reached.
     final stage = isArrivalInstruction
-        ? (meters <= 150 ? 2 : meters <= 500 ? 1 : 0)
+        ? (meters <= 150 ? 1 : 0)
         : (meters <= 35 ? 3 : meters <= 150 ? 2 : meters <= 500 ? 1 : 0);
     if (stage > _announcedManeuverStage) {
       _announcedManeuverStage = stage;
@@ -5699,11 +5714,18 @@ _navigationMatchedLocation = null;
         'Этап: $stage; манёвр: ${target.text}; расстояние: ${meters.toStringAsFixed(1)} м; тип: ${target.maneuverType}; направление: ${target.maneuverModifier}; данные полос: ${target.laneGuidance.isEmpty ? 'отсутствуют в маршруте' : target.laneGuidance.map((value) => value ? 'разрешена' : 'не рекомендована').join(', ')}.',
       ));
       if (_voiceMode >= 2) {
-        final announcement = stage == 1
-            ? _localized('Через 500 метров: ${target.text}', '500 метрден кейін: ${target.text}', 'In 500 meters: ${target.text}')
-            : stage == 2
-                ? _localized('Через 150 метров: ${target.text}', '150 метрден кейін: ${target.text}', 'In 150 meters: ${target.text}')
-                : target.text;        unawaited(_speakText(announcement));
+        final announcement = isArrivalInstruction
+            ? _localized(
+                'Пункт назначения через 150 метров.',
+                'Межелі жерге 150 метр қалды.',
+                'Destination in 150 meters.',
+              )
+            : stage == 1
+                ? _localized('Через 500 метров: ${target.text}', '500 метрден кейін: ${target.text}', 'In 500 meters: ${target.text}')
+                : stage == 2
+                    ? _localized('Через 150 метров: ${target.text}', '150 метрден кейін: ${target.text}', 'In 150 meters: ${target.text}')
+                    : target.text;
+        unawaited(_speakText(announcement));
       }
     }
 
@@ -5898,32 +5920,35 @@ _navigationMatchedLocation = null;
 
   void _checkForOffRoute(Position position) {
     if (!_navigationActive || _isBuildingRoute || _destination == null) return;
-    // Allow normal urban GPS variation, but reject stale/very inaccurate fixes.
-    // Two consecutive off-route fixes are still required to avoid false reroutes.
-    if (!position.accuracy.isFinite ||
+    // Only fresh, usable GPS fixes may trigger a route rebuild.
+    final fixAge = DateTime.now().difference(position.timestamp);
+    if (fixAge.isNegative || fixAge > const Duration(seconds: 5) ||
+        !position.accuracy.isFinite ||
         position.accuracy <= 0 ||
         position.accuracy > 60 ||
         _routePoints.length < 2) return;
     final now = DateTime.now();
     if (_lastAutomaticReroute != null &&
-        now.difference(_lastAutomaticReroute!) < const Duration(seconds: 4)) {
+        now.difference(_lastAutomaticReroute!) < const Duration(seconds: 6)) {
       return;
     }
     final distance = _distanceToRouteMeters(
       LatLng(position.latitude, position.longitude),
     );
-    final offRouteLimit = math.max(25.0, position.accuracy * 1.25);
+    // Match the 55 m acceptance radius used by _matchNavigationPosition.
+    // Otherwise guidance accepts a fix as on-route while this detector rejects it.
+    final offRouteLimit = math.max(55.0, position.accuracy * 1.8);
     if (distance > offRouteLimit) {
       _offRouteSamples++;
     } else {
       _offRouteSamples = 0;
     }
-    if (_offRouteSamples >= 2) {
+    if (_offRouteSamples >= 3) {
       _offRouteSamples = 0;
       _lastAutomaticReroute = now;
       unawaited(AppDiagnosticsScreen.recordTripEvent(
         'Обнаружено отклонение от маршрута',
-        'Расстояние до линии: ${distance.toStringAsFixed(1)} м; порог: ${offRouteLimit.toStringAsFixed(1)} м; точность GPS: ±${position.accuracy.toStringAsFixed(1)} м. Подтверждено двумя фиксациями.',
+        'Расстояние до линии: ${distance.toStringAsFixed(1)} м; порог: ${offRouteLimit.toStringAsFixed(1)} м; точность GPS: ±${position.accuracy.toStringAsFixed(1)} м. Подтверждено тремя свежими фиксациями.',
       ));
       _buildRoute(automaticReroute: true);
     }
