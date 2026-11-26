@@ -947,6 +947,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   LatLng? _navigationMatchedLocation;
   LatLng? _navigationFixMatchedLocation;
   DateTime? _navigationFixTimestamp;
+  DateTime? _lastRawGpsFixTimestamp;
   double _navigationFixSpeedMetersPerSecond = 0;
   int _navigationFixSegmentIndex = 0;
   double _navigationFixSegmentT = 0;
@@ -2901,6 +2902,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     ).listen(
       (position) {
         if (!mounted) return;
+        _lastRawGpsFixTimestamp = position.timestamp;
         unawaited(AppDiagnosticsScreen.recordTripPosition(position));
         final wasWaitingForNavigationFix =
             _navigationActive && _currentLocation == null;
@@ -5927,6 +5929,78 @@ _navigationMatchedLocation = null;
     }
   }
 
+  Future<void> _loadOnlineRerouteAlternatives({
+    required LatLng origin,
+    required LatLng destination,
+    required int requestGeneration,
+  }) async {
+    try {
+      final coordinates =
+          '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
+      final uri = Uri.parse(
+        'https://router.project-osrm.org/route/v1/driving/$coordinates'
+        '?overview=full&geometries=geojson&steps=true&alternatives=true',
+      );
+      final response = await http.get(
+        uri,
+        headers: const {'User-Agent': 'BAKE-Navigator/1.0 (Android navigation app)'},
+      ).timeout(const Duration(seconds: 5));
+      if (response.statusCode != 200) return;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (data['code'] != 'Ok') return;
+      final routes = (data['routes'] as List?) ?? const [];
+      if (routes.length < 2) return;
+
+      final directDistance = Geolocator.distanceBetween(
+        origin.latitude, origin.longitude,
+        destination.latitude, destination.longitude,
+      );
+      final additions = <Map<String, dynamic>>[];
+      // OSRM's first result is its primary route; the remaining results are
+      // genuine alternatives. Keep Valhalla's offline route as the main line.
+      for (final value in routes.skip(1)) {
+        if (value is! Map<String, dynamic>) continue;
+        final distance = value['distance'];
+        final duration = value['duration'];
+        final geometry = value['geometry'];
+        if (distance is! num || duration is! num ||
+            geometry is! Map<String, dynamic>) continue;
+        final rawCoordinates = geometry['coordinates'];
+        if (rawCoordinates is! List || rawCoordinates.length < 2 ||
+            rawCoordinates.any((pair) =>
+                pair is! List || pair.length < 2 ||
+                pair[0] is! num || pair[1] is! num)) continue;
+        if (distance.toDouble() > math.max(5000.0, directDistance * 8.0)) continue;
+        additions.add(value);
+        if (additions.length >= 2) break;
+      }
+      if (additions.isEmpty || !mounted ||
+          requestGeneration != _routeRequestGeneration ||
+          !_navigationActive) return;
+
+      final merged = <Map<String, dynamic>>[..._routeAlternatives];
+      for (final route in additions) {
+        final distance = (route['distance'] as num).toDouble();
+        final duration = (route['duration'] as num).toDouble();
+        final duplicate = merged.any((existing) {
+          final oldDistance = (existing['distance'] as num).toDouble();
+          final oldDuration = (existing['duration'] as num).toDouble();
+          return (oldDistance - distance).abs() <= math.max(30.0, distance * 0.01) &&
+              (oldDuration - duration).abs() <= math.max(10.0, duration * 0.03);
+        });
+        if (!duplicate && merged.length < 3) merged.add(route);
+      }
+      if (merged.length > _routeAlternatives.length) {
+        setState(() {
+          _routeAlternatives = merged;
+          _navigationAlternativesCleared = false;
+        });
+      }
+    } catch (error) {
+      debugPrint('BAKE online reroute alternatives unavailable: $error');
+    }
+  }
+
   Future<void> _buildRoute({bool automaticReroute = false}) async {
     unawaited(AppDiagnosticsScreen.recordTripEvent(
       automaticReroute ? 'Начат перерасчёт маршрута' : 'Начато построение маршрута',
@@ -5944,8 +6018,8 @@ _navigationMatchedLocation = null;
     if (_routeOrigin == null && _currentLocation == null) await _locateMe();
     // Require a recent live fix before calculating an automatic reroute.
     if (automaticReroute &&
-        (_navigationFixTimestamp == null ||
-         DateTime.now().difference(_navigationFixTimestamp!) > const Duration(seconds: 10))) {
+        (_lastRawGpsFixTimestamp == null ||
+         DateTime.now().difference(_lastRawGpsFixTimestamp!) > const Duration(seconds: 10))) {
       if (mounted) {
         setState(() => _message = AppLocale.pick(
           'Ожидаем актуальную координату GPS для перестроения маршрута.',
@@ -5986,6 +6060,7 @@ _navigationMatchedLocation = null;
           .map((point) => '${point.longitude},${point.latitude}')
           .join(';');
       Map<String, dynamic>? routeData;
+      var usedValhallaRoute = false;
 
       // Valhalla handles direct Shymkent routes for both car and pedestrian
       // costing. OSRM remains the fallback and handles intermediate stops.
@@ -6063,6 +6138,7 @@ _navigationMatchedLocation = null;
             }
             localData['routes'] = usableLocalRoutes;
             routeData = localData;
+            usedValhallaRoute = true;
           } catch (error) {
             routingNotice = AppLocale.pick(
               '${_valhallaErrorForUser(error)} Пробуем построить маршрут через интернет.',
@@ -6154,6 +6230,13 @@ _navigationMatchedLocation = null;
             ? AppLocale.pick('Маршрут перестроен. Продолжаем навигацию.', 'Маршрут қайта құрылды. Навигация жалғасуда.', 'Route recalculated. Continuing navigation.')
             : '');
       });
+      if (automaticReroute && resumeNavigation && usedValhallaRoute) {
+        unawaited(_loadOnlineRerouteAlternatives(
+          origin: routeOrigin,
+          destination: destination,
+          requestGeneration: requestGeneration,
+        ));
+      }
       unawaited(AppDiagnosticsScreen.recordTripEvent(
         automaticReroute ? 'Маршрут перестроен' : 'Маршрут построен',
         'Точек линии: ${points.length}; манёвров: ${instructions.length}; манёвров с данными полос: ${instructions.where((item) => item.laneGuidance.isNotEmpty).length}; манёвров без данных полос: ${instructions.where((item) => item.laneGuidance.isEmpty).length}.',
