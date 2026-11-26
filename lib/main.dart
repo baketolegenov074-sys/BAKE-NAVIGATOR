@@ -4677,22 +4677,11 @@ _navigationMatchedLocation = null;
       currentLocation.latitude, currentLocation.longitude,
       instruction.location.latitude, instruction.location.longitude,
     );
+    // Arrival is announced only by the staged 150 m prompt and final arrival event.
+    if (instruction.maneuverType == 'arrive') return;
     final distanceText = meters >= 1000
         ? _localized('${(meters / 1000).toStringAsFixed(1)} километра', '${(meters / 1000).toStringAsFixed(1)} километр', '${(meters / 1000).toStringAsFixed(1)} kilometers')
         : _localized('${meters.round()} метров', '${meters.round()} метр', '${meters.round()} meters');
-    if (instruction.maneuverType == 'arrive') {
-      // The arrival approach is announced by _updateNavigationProgress at 150 m.
-      // Do not announce "you have arrived" when the final step first becomes active.
-      if (meters > 150) return;
-      if (_voiceMode >= 2) {
-        await _speakText(_localized(
-          'Пункт назначения рядом, через ${distanceText}.',
-          'Межелі жер жақын, ${distanceText} кейін.',
-          'Destination nearby, in ${distanceText}.',
-        ));
-      }
-      return;
-    }
     if (_voiceMode >= 2) {
       await _speakText(_localized('${instruction.text} через ${distanceText}.', '${instruction.text} ${distanceText} кейін.', '${instruction.text} in ${distanceText}.'));
     }
