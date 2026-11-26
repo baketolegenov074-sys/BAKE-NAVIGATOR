@@ -1045,6 +1045,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   DateTime? _lastGpsDiagnosticFixAt;
   LatLng? _lastGpsDiagnosticRawPoint;
   bool _appInForeground = true;
+  bool _nativeMapLibreTestOpen = false;
   DateTime? _lastCameraUpdateAt;
   DateTime? _lastMapAnnotationUpdateAt;
   final Stopwatch _mapOpenStopwatch = Stopwatch();
@@ -3227,6 +3228,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       (position) {
         if (!mounted) return;
         _lastRawGpsFixTimestamp = position.timestamp;
+        if (_nativeMapLibreTestOpen) {
+          unawaited(const MethodChannel('bake.navigator/maplibre_experiment')
+              .invokeMethod<void>('updateLocation', <String, double>{
+            'latitude': position.latitude,
+            'longitude': position.longitude,
+            'heading': position.heading.isFinite ? position.heading : 0.0,
+          }));
+        }
         unawaited(AppDiagnosticsScreen.recordTripPosition(position));
         final wasWaitingForNavigationFix =
             _navigationActive && _currentLocation == null;
@@ -5413,6 +5422,7 @@ _navigationMatchedLocation = null;
         MapStartupDiagnostics.instance.markFirstFrame();
       });
       _appInForeground = true;
+      _nativeMapLibreTestOpen = false;
       unawaited(_startCompassUpdates());
       _lastCameraUpdateAt = null;
       _lastMapAnnotationUpdateAt = null;
@@ -5445,7 +5455,7 @@ _navigationMatchedLocation = null;
       _headingUpResumeTimer = null;
       _roadReportRetryTimer?.cancel();
       _roadReportRetryTimer = null;
-      if (!_navigationActive) {
+      if (!_navigationActive && !_nativeMapLibreTestOpen) {
         unawaited(_stopLiveLocationUpdates(reason: 'app_${state.name}'));
       }
     }
