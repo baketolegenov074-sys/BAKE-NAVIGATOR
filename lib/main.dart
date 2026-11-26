@@ -1115,19 +1115,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     unawaited(_runStartupDiagnosticTask('Получение первого GPS-местоположения', _locateMe));
   }
 
-  Future<void> _runStartupDiagnosticTask(
+  Future<T> _runStartupDiagnosticTask<T>(
     String name,
-    Future<void> Function() action,
+    Future<T> Function() action,
   ) async {
     final stopwatch = Stopwatch()..start();
     MapStartupDiagnostics.instance.recordStage('ЭТАП НАЧАТ', name);
     try {
-      await action();
+      final result = await action();
       stopwatch.stop();
       MapStartupDiagnostics.instance.recordStage(
         'ЭТАП ЗАВЕРШЁН',
         '$name: ${stopwatch.elapsedMilliseconds} мс.',
       );
+      return result;
     } catch (error, stackTrace) {
       stopwatch.stop();
       MapStartupDiagnostics.instance.recordError(
@@ -1684,6 +1685,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   void _onOfflineMapReady() {
     if (!mounted || !_isFlutterMapDisplayed) return;
     _offlineMapReady = true;
+    MapStartupDiagnostics.instance.recordStage(
+      'КОНФИГУРАЦИЯ КАРТЫ',
+      'Режим: ${_isOfflineMapActive ? 'офлайн' : 'онлайн'}; векторный провайдер: ${_isOfflineMapActive ? _offlineVectorTileProvider != null : _flutterMapOnlineStyle != null}; Liberty style готов: ${_flutterMapOnlineStyle != null}.',
+    );
     if (_mapOpenMs == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _mapOpenMs != null) return;
@@ -1997,10 +2002,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _flutterMapExperimentEnabled = true;
       });
     } catch (error) {
+      MapStartupDiagnostics.instance.recordError('Загрузка стиля Liberty', error);
       debugPrint('BAKE FlutterMap Liberty style failed to load: $error');
     } finally {
       _styleLoadStopwatch.stop();
       _styleLoadMs = _styleLoadStopwatch.elapsedMilliseconds;
+      MapStartupDiagnostics.instance.recordStage(
+        'ЗАГРУЗКА СТИЛЯ КАРТЫ ЗАВЕРШЕНА',
+        'Время: ${_styleLoadMs} мс; стиль доступен: ${_flutterMapOnlineStyle != null}.',
+      );
       if (mounted) {
         setState(() => _flutterMapExperimentLoading = false);
       }
@@ -5229,6 +5239,10 @@ _navigationMatchedLocation = null;
         'Возврат в приложение после сворачивания/блокировки экрана',
         mapAlreadyMounted: _offlineMapReady,
       ));
+      MapStartupDiagnostics.instance.recordStage(
+        'СОСТОЯНИЕ КАРТЫ ПРИ ВОЗВРАТЕ',
+        'Карта готова: $_offlineMapReady; режим: ${_isOfflineMapActive ? 'офлайн' : 'онлайн'}; Liberty style готов: ${_flutterMapOnlineStyle != null}.',
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         MapStartupDiagnostics.instance.markFirstFrame();
       });
