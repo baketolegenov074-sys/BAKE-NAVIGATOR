@@ -30,6 +30,7 @@ import 'services/offline_address_search.dart';
 import 'screens/road_report_center.dart';
 import 'screens/app_diagnostics_screen.dart';
 import 'screens/openfreemap_experiment.dart';
+import 'screens/maptoolkit_experiment.dart';
 import 'services/road_report_sync_service.dart';
 import 'services/valhalla_archive_validator.dart';
 import 'services/map_startup_diagnostics.dart';
@@ -10984,6 +10985,21 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => const OpenFreeMapExperimentScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.map_outlined),
+                    title: const Text('Экспериментальная карта Maptoolkit Street'),
+                    subtitle: const Text('Отдельная векторная карта из другого источника'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const MaptoolkitExperimentScreen(),
                         ),
                       );
                     },
