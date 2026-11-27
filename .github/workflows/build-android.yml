@@ -10,7 +10,7 @@ on:
       - fix/address-gps-route-reset
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-android:
@@ -939,3 +939,11 @@ jobs:
           name: BAKE-NAVIGATOR-APK
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+      - name: Publish public APK download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: bake-navigator-${{ github.run_number }}
+          name: BAKE Navigator ${{ github.run_number }}
+          files: build/app/outputs/flutter-apk/app-release.apk
+          fail_on_unmatched_files: true
