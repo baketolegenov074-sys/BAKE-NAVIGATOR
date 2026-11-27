@@ -24,10 +24,8 @@ dependencies:
   flutter_compass: 0.8.1
   flutter_tts: 4.2.0
   speech_to_text: ^7.3.0
-  archive: ^3.6.1
   crypto: ^3.0.6
   http: 1.2.2
-  dio: ^5.7.0
   shared_preferences: 2.3.2
   share_plus: ^10.1.4
   supabase_flutter: ^2.15.4
