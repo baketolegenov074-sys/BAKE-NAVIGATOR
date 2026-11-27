@@ -34,12 +34,12 @@ jobs:
           test -s kazakhstan-latest.osm.pbf
           osmium fileinfo kazakhstan-latest.osm.pbf
 
-      - name: Resolve official OSM administrative boundary of Shymkent city
+      - name: Resolve OSM administrative boundary of Shymkent city
         run: |
           set -euo pipefail
           python3 scripts/resolve_shymkent_city_boundary.py
           test -s shymkent-city-boundary.geojson
-          cat shymkent-city-boundary.geojson | jq -e '.features | length == 1 and .[0].geometry.type == "MultiPolygon" or .[0].geometry.type == "Polygon"'
+          cat shymkent-city-boundary.geojson | jq -e '.features | (length == 1) and (.[0].geometry.type == "MultiPolygon" or .[0].geometry.type == "Polygon")'
 
       - name: Extract only the Shymkent city polygon
         run: |
