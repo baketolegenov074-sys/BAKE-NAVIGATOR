@@ -10,7 +10,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_mbtiles/flutter_map_mbtiles.dart';
 import 'package:mbtiles/mbtiles.dart';
 import 'package:vector_map_tiles/vector_map_tiles.dart';
 import 'package:vector_map_tiles_mbtiles/vector_map_tiles_mbtiles.dart';
@@ -955,21 +954,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _showShymkentCamerasOnMap = true;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  MbTilesTileProvider? _offlineTileProvider;
   String? _activeOfflineMapPath;
   bool _offlineMapLoadInProgress = false;
   MbTiles? _offlineVectorMbtiles;
   MbTilesVectorTileProvider? _offlineVectorTileProvider;
   final vtr.Theme _offlineVectorTheme = _buildBakeOfflineVectorTheme();
 
-  bool get _isOfflineMapActive =>
-      _offlineTileProvider != null || _offlineVectorTileProvider != null;
+  bool get _isOfflineMapActive => _offlineVectorTileProvider != null;
 
   void _disposeOfflineMap() {
     // The FlutterMap widget remains mounted when its tile source changes.
     // Keep controller readiness; onMapReady will not fire again for provider swaps.
-    _offlineTileProvider?.dispose();
-    _offlineTileProvider = null;
     _offlineVectorMbtiles?.dispose();
     _offlineVectorMbtiles = null;
     _offlineVectorTileProvider = null;
@@ -2074,25 +2069,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       try {
         final database = MbTiles(mbtilesPath: path);
         final format = database.getMetadata().format?.toLowerCase();
-        MbTilesVectorTileProvider? vectorProvider;
-        MbTilesTileProvider? rasterProvider;
-        if (format == 'pbf' || format == 'mvt') {
-          vectorProvider = MbTilesVectorTileProvider(mbtiles: database);
-        } else {
+        if (format != 'pbf' && format != 'mvt') {
           database.dispose();
-          rasterProvider = MbTilesTileProvider.fromPath(path: path);
+          await prefs.remove('offline_map_path');
+          debugPrint('BAKE MBTiles ignored: raster format is no longer supported');
+          return;
         }
+        final vectorProvider = MbTilesVectorTileProvider(mbtiles: database);
         if (!mounted) {
           database.dispose();
-          rasterProvider?.dispose();
           return;
         }
         _disposeOfflineMap();
         setState(() {
           _activeOfflineMapPath = path;
-          _offlineTileProvider = rasterProvider;
-          _offlineVectorMbtiles =
-              vectorProvider == null ? null : database;
+          _offlineVectorMbtiles = database;
           _offlineVectorTileProvider = vectorProvider;
         });
       } catch (error) {
@@ -2403,23 +2394,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     try {
       final database = MbTiles(mbtilesPath: selectedPath);
       final format = database.getMetadata().format?.toLowerCase();
-      if (format == 'pbf' || format == 'mvt') {
-        final vectorProvider = MbTilesVectorTileProvider(mbtiles: database);
-        _disposeOfflineMap();
-        setState(() {
-          _offlineVectorMbtiles = database;
-          _offlineVectorTileProvider = vectorProvider;
-          _message = '';
-        });
-      } else {
+      if (format != 'pbf' && format != 'mvt') {
         database.dispose();
-        final provider = MbTilesTileProvider.fromPath(path: selectedPath);
-        _disposeOfflineMap();
-        setState(() {
-          _offlineTileProvider = provider;
-          _message = '';
-        });
+        throw Exception('Поддерживается только векторная MBTiles-карта (PBF/MVT).');
       }
+      final vectorProvider = MbTilesVectorTileProvider(mbtiles: database);
+      _disposeOfflineMap();
+      setState(() {
+        _offlineVectorMbtiles = database;
+        _offlineVectorTileProvider = vectorProvider;
+        _message = '';
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() => _message = AppLocale.pick('Не удалось открыть офлайн-карту: $error', 'Офлайн картаны ашу мүмкін болмады: $error', 'Could not open offline map: $error'));
@@ -9671,8 +9656,6 @@ _navigationMatchedLocation = null;
                     }),
                     maximumZoom: 18,
                   )
-                else if (_isOfflineMapActive)
-                  TileLayer(tileProvider: _offlineTileProvider!)
                 else if (_flutterMapOnlineStyle != null)
                   VectorTileLayer(
                     theme: _flutterMapOnlineTheme ?? _flutterMapOnlineStyle!.theme,
@@ -10824,8 +10807,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
       final validationFormat = validationDatabase.getMetadata().format?.toLowerCase();
       validationDatabase.dispose();
       if (validationFormat != 'pbf' && validationFormat != 'mvt') {
-        final validationProvider = MbTilesTileProvider.fromPath(path: destination.path);
-        validationProvider.dispose();
+        throw Exception('Поддерживается только векторная MBTiles-карта (PBF/MVT).');
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('offline_map_path', destination.path);
@@ -11070,7 +11052,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                             icon: _importingOfflineMap
                                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                                 : const Icon(Icons.file_open_outlined),
-                            label: Text(AppLocale.tr(_importingOfflineMap ? 'Импортируем…' : 'Импортировать MBTiles-карту')),
+                            label: Text(AppLocale.tr(_importingOfflineMap ? 'Импортируем…' : 'Импортировать векторную MBTiles-карту')),
                           ),
                         ),
                         if (_offlineMapPath != null)
@@ -11080,7 +11062,7 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                             label: Text(AppLocale.tr('Отключить офлайн-карту')),
                           ),
                         Text(
-                          AppLocale.tr('Исходный OSM PBF не является готовой MBTiles-картой. Для офлайн-режима нужны отдельно подготовленные тайлы.'),
+                          AppLocale.tr('Поддерживается векторная MBTiles-карта (PBF/MVT). Растровый формат отключён.'),
                           style: TextStyle(fontSize: 12, color: Colors.black54),
                         ),
                       ],
