@@ -5093,9 +5093,6 @@ _navigationMatchedLocation = null;
           ? _gpsHeadingDegrees!
           : 0.0;
       _updateNavigationCamera(livePoint, 17, initialHeading);
-      if (_gpsHeadingDegrees != null && _currentSpeedKmh >= 5.4) {
-        _lastCameraHeadingDegrees = initialHeading;
-      }
       await _speakCurrentInstruction();
     }
   }
@@ -6801,12 +6798,10 @@ _navigationMatchedLocation = null;
       if (points.isNotEmpty) {
         if (!automaticReroute || _mapFollowEnabled) _fitMapCamera(points);
         if (automaticReroute && resumeNavigation && _mapFollowEnabled && _currentLocation != null) {
-          _moveMapCamera(_currentLocation!, 17);
-          final heading = _gpsHeadingDegrees;
-          if (heading != null && _currentSpeedKmh >= 5.4) {
-            _rotateMapCamera(-heading);
-            _lastCameraHeadingDegrees = heading;
-          }
+          final heading = _gpsHeadingDegrees != null && _currentSpeedKmh >= 5.4
+              ? _gpsHeadingDegrees!
+              : (_lastCameraHeadingDegrees ?? 0.0);
+          _updateNavigationCamera(_currentLocation!, 17, heading);
         }
       }
       if (automaticReroute && resumeNavigation) {
@@ -10537,7 +10532,6 @@ _navigationMatchedLocation = null;
                       _rotateMapCamera(0);
                     } else {
                       final heading = _gpsHeadingDegrees ?? 0.0;
-                      _lastCameraHeadingDegrees = heading;
                       final point = _currentLocation;
                       if (point != null) {
                         _updateNavigationCamera(
