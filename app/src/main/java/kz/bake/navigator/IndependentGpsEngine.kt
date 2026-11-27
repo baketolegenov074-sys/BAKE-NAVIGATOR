@@ -13,11 +13,11 @@ import android.os.Handler
 import android.os.Looper
 
 /**
- * Standalone GPS engine for BAKE Navigator Test.
+ * Independent Android GNSS receiver.
  *
- * Uses the device GPS provider directly. It does not use fused location,
- * cached positions, route snapping, coordinate averaging, or another app's code.
- * Every accepted fix is the unmodified Android GPS location.
+ * Publishes original Android coordinates only after basic quality and
+ * physically-plausible movement checks. It does not snap to roads/routes
+ * or average coordinates.
  */
 class IndependentGpsEngine(context: Context) {
     private val appContext = context.applicationContext
@@ -28,12 +28,12 @@ class IndependentGpsEngine(context: Context) {
     private var listener: LocationListener? = null
     private var gnssCallback: GnssStatus.Callback? = null
     private var lastElapsedRealtimeNanos = 0L
+    private var lastAcceptedLocation: Location? = null
+
     var speedKmh: Float = 0f
         private set
-
     var satellitesVisible: Int = 0
         private set
-
     var satellitesUsedInFix: Int = 0
         private set
 
@@ -47,6 +47,7 @@ class IndependentGpsEngine(context: Context) {
         }
 
         lastElapsedRealtimeNanos = 0L
+        lastAcceptedLocation = null
         speedKmh = 0f
         satellitesVisible = 0
         satellitesUsedInFix = 0
@@ -70,7 +71,6 @@ class IndependentGpsEngine(context: Context) {
 
         listener = newListener
         try {
-            // Register exactly one listener for hardware-backed GNSS/GPS fixes.
             locationManager.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER,
                 1000L,
@@ -80,13 +80,13 @@ class IndependentGpsEngine(context: Context) {
             )
             registerGnssDiagnostics()
         } catch (error: SecurityException) {
-            listener = null
+            stopGps()
             onError("Нет разрешения на точное местоположение")
         } catch (error: IllegalArgumentException) {
-            listener = null
+            stopGps()
             onError("GPS_PROVIDER недоступен: ${error.message ?: "ошибка Android"}")
         } catch (error: Exception) {
-            listener = null
+            stopGps()
             onError("Не удалось запустить GPS: ${error.message ?: "ошибка Android"}")
         }
     }
@@ -103,21 +103,46 @@ class IndependentGpsEngine(context: Context) {
         if (latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return
         if (timestamp <= 0L || timestamp <= lastElapsedRealtimeNanos) return
 
-        // Do not average, shift, snap, or delay the hardware GPS coordinates.
+        // Do not put visibly inaccurate GPS fixes on the map.
+        if (!location.hasAccuracy() || !location.accuracy.isFinite() ||
+            location.accuracy <= 0f || location.accuracy > MAX_ACCEPTED_ACCURACY_METERS
+        ) return
+
+        val previous = lastAcceptedLocation
+        if (previous != null) {
+            val elapsedSeconds =
+                (timestamp - previous.elapsedRealtimeNanos) / NANOS_PER_SECOND
+            if (elapsedSeconds <= 0.0) return
+
+            // Reject implausible one-to-three-second teleports. Longer gaps are
+            // not constrained because the vehicle may genuinely have moved.
+            if (elapsedSeconds <= MAX_JUMP_CHECK_INTERVAL_SECONDS) {
+                val distance = previous.distanceTo(location).toDouble()
+                val accuracyAllowance =
+                    (previous.accuracy.coerceAtMost(20f) +
+                        location.accuracy.coerceAtMost(20f)) * 0.75 + 8.0
+                val allowedDistance =
+                    maxOf(MIN_MOVEMENT_ALLOWANCE_METERS,
+                        MAX_PLAUSIBLE_SPEED_MPS * elapsedSeconds + accuracyAllowance)
+                if (distance > allowedDistance) return
+            }
+        }
+
         val fix = Location(location)
         lastElapsedRealtimeNanos = timestamp
+        lastAcceptedLocation = fix
         speedKmh = if (fix.hasSpeed() && fix.speed.isFinite()) {
             (fix.speed * 3.6f).coerceAtLeast(0f)
         } else {
             0f
         }
 
+        // The accepted coordinates remain the original Android GPS fix.
         onFix(fix, LatLng(latitude, longitude))
     }
 
     private fun registerGnssDiagnostics() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return
-        if (gnssCallback != null) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || gnssCallback != null) return
 
         val callback = object : GnssStatus.Callback() {
             override fun onSatelliteStatusChanged(status: GnssStatus) {
@@ -159,6 +184,7 @@ class IndependentGpsEngine(context: Context) {
         }
         gnssCallback = null
         lastElapsedRealtimeNanos = 0L
+        lastAcceptedLocation = null
         speedKmh = 0f
         satellitesVisible = 0
         satellitesUsedInFix = 0
@@ -166,5 +192,13 @@ class IndependentGpsEngine(context: Context) {
 
     fun release() {
         stopGps()
+    }
+
+    private companion object {
+        const val NANOS_PER_SECOND = 1_000_000_000.0
+        const val MAX_ACCEPTED_ACCURACY_METERS = 35f
+        const val MAX_JUMP_CHECK_INTERVAL_SECONDS = 3.0
+        const val MAX_PLAUSIBLE_SPEED_MPS = 40.0
+        const val MIN_MOVEMENT_ALLOWANCE_METERS = 30.0
     }
 }
