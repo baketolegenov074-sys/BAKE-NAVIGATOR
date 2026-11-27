@@ -121,7 +121,9 @@ class KazakhstanMapDownloader {
     );
     if (completedBytes != validBoundary) {
       if (await assembling.exists()) {
-        await assembling.truncate(validBoundary);
+        final fileHandle = await assembling.open(mode: FileMode.append);
+        await fileHandle.truncate(validBoundary);
+        await fileHandle.close();
       }
       completedBytes = validBoundary;
     }
