@@ -131,7 +131,7 @@ class RoadSnapEngine {
         val maxSnapDistance = if (moving) {
             minOf(MAX_MOVING_SNAP_METERS, maxOf(5.0, location.accuracy * 0.8))
         } else {
-            minOf(MAX_STATIONARY_SNAP_METERS, maxOf(3.0, location.accuracy * 0.5))
+            minOf(MAX_STATIONARY_SNAP_METERS, maxOf(3.0, location.accuracy * 0.9))
         }
         if (bestDistance > maxSnapDistance || !bestLat.isFinite() || !bestLon.isFinite()) return null
         return LatLng(bestLat, bestLon)
