@@ -5358,7 +5358,6 @@ _navigationMatchedLocation = null;
         unawaited(_stopLiveLocationUpdates(reason: 'app_${state.name}'));
       }
     }
-  }
 
   /// Re-send locally stored reports that have not reached Supabase yet.
   /// This runs on app resume and every 45 seconds while the app is open.
