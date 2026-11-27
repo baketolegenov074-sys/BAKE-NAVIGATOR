@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Resolve the OSM administrative polygon for Shymkent (city only)."""
+# Boundary-only workflow trigger: keep this pipeline isolated from app builds.
 import json
 import urllib.parse
 import urllib.request
