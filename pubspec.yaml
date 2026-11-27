@@ -13,7 +13,6 @@ dependencies:
 
   cupertino_icons: 1.0.8
   flutter_map: 7.0.2
-  flutter_map_mbtiles: 1.0.4
   mbtiles: ^0.4.2
   vector_map_tiles: ^8.0.0
   vector_map_tiles_mbtiles: 1.2.0
