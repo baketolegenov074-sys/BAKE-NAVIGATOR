@@ -436,7 +436,7 @@ jobs:
               "io.github.rallista:valhalla-models:0.6.0",
               "io.github.rallista:valhalla-models-config:0.6.0",
               "com.stadiamaps:osrm-openapi:0.0.10",
-              "org.maplibre.gl:android-sdk-opengl:13.7.1",
+              "org.maplibre.gl:android-sdk:13.7.1",
               "androidx.appcompat:appcompat:1.7.0",
               "com.google.android.material:material:1.12.0",
               "androidx.lifecycle:lifecycle-runtime-ktx:2.8.7",
@@ -594,7 +594,6 @@ jobs:
               private var latestGps: Triple<Double, Double, Double>? = null
               private var firstGpsCameraMove = true
               private var recenterButton: TextView? = null
-              private lateinit var mapStatus: TextView
 
               private fun showGpsLocation(latitude: Double, longitude: Double, heading: Double) {
                   if (!latitude.isFinite() || !longitude.isFinite() ||
@@ -743,23 +742,6 @@ jobs:
                       Gravity.END or Gravity.CENTER_VERTICAL
                   ).apply { setMargins(0, 0, dp(14), 0) }
                   root.addView(mapControls, controlsParams)
-
-                  mapStatus = TextView(this).apply {
-                      text = "Загрузка стиля карты…"
-                      textSize = 13f
-                      setTextColor(0xFFFFFFFF.toInt())
-                      setPadding(dp(12), dp(8), dp(12), dp(8))
-                      background = android.graphics.drawable.GradientDrawable().apply {
-                          setColor(0xDD202124.toInt())
-                          cornerRadius = dp(8).toFloat()
-                      }
-                  }
-                  val statusParams = FrameLayout.LayoutParams(
-                      ViewGroup.LayoutParams.WRAP_CONTENT,
-                      ViewGroup.LayoutParams.WRAP_CONTENT,
-                      Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                  ).apply { setMargins(dp(12), dp(64), dp(12), 0) }
-                  root.addView(mapStatus, statusParams)
                   setContentView(root)
 
                   Thread {
@@ -775,22 +757,6 @@ jobs:
                       }
                   }.start()
 
-                  mapView.addOnDidFailLoadingMapListener { errorMessage ->
-                      runOnUiThread {
-                          mapStatus.text = "Ошибка загрузки карты: $errorMessage"
-                          mapStatus.visibility = View.VISIBLE
-                      }
-                  }
-                  mapView.addOnDidFinishLoadingStyleListener {
-                      runOnUiThread {
-                          mapStatus.text = "Стиль загружен. Загружаем тайлы…"
-                          mapStatus.visibility = View.VISIBLE
-                      }
-                  }
-                  mapView.addOnDidFinishLoadingMapListener {
-                      runOnUiThread { mapStatus.visibility = View.GONE }
-                  }
-
                   mapView.getMapAsync { map ->
                       nativeMap = map
                       map.cameraPosition = CameraPosition.Builder()
@@ -798,7 +764,6 @@ jobs:
                           .zoom(12.0)
                           .build()
                       map.setStyle(Style.Builder().fromUri(STYLE_URL)) { style ->
-                          mapStatus.text = "Стиль загружен. Загружаем тайлы…"
                           val source = GeoJsonSource(
                               "bake-gps-source",
                               Feature.fromGeometry(Point.fromLngLat(SHYMKENT.longitude, SHYMKENT.latitude))
