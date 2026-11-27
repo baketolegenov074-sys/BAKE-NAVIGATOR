@@ -9667,8 +9667,10 @@ _navigationMatchedLocation = null;
               options: MapOptions(
                 backgroundColor: const Color(0xFFF5F7FA),
                 onMapReady: _onOfflineMapReady,
-                initialCenter: _shymkent,
-                initialZoom: 13,
+                // Prefer the actual GPS fix; Shymkent is only a fallback
+                // while the device has not supplied any location yet.
+                initialCenter: _currentLocation ?? _shymkent,
+                initialZoom: _currentLocation == null ? 13 : 16,
                 minZoom: 0,
                 maxZoom: 20,
                 onTap: (_, point) {
