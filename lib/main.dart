@@ -1728,6 +1728,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   void _moveMapCamera(LatLng point, double zoom) {
     if (!_offlineMapReady) return;
+    _cancelCameraFollowAnimation();
     _mapController.move(point, zoom);
   }
 
@@ -1927,11 +1928,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   void _rotateMapCamera(double rotation) {
     if (!_offlineMapReady) return;
+    _cancelCameraFollowAnimation();
     _mapController.rotate(rotation);
   }
 
   void _fitMapCamera(List<LatLng> points) {
     if (points.isEmpty || !_offlineMapReady) return;
+    _cancelCameraFollowAnimation();
     _mapController.fitCamera(CameraFit.coordinates(
       coordinates: points,
       padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
