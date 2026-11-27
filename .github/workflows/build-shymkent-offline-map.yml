@@ -7,6 +7,7 @@ on:
       - fix/address-gps-route-reset
     paths:
       - scripts/resolve_shymkent_city_boundary.py
+      - .github/workflows/build-shymkent-offline-map.yml
   schedule:
     - cron: "25 3 1 * *"
 
