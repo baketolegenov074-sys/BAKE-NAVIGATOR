@@ -2049,21 +2049,55 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
 
+  Future<String> _ensureBundledShymkentMap(SharedPreferences prefs) async {
+    final directory = await getApplicationSupportDirectory();
+    final destination = File('${directory.path}/shymkent_offline.mbtiles');
+
+    if (await destination.exists()) {
+      try {
+        final existing = MbTiles(mbtilesPath: destination.path);
+        final format = existing.getMetadata().format?.toLowerCase();
+        existing.dispose();
+        if (format == 'pbf' || format == 'mvt') {
+          await prefs.setString('offline_map_path', destination.path);
+          await prefs.setBool('offline_map_auto_connected', true);
+          return destination.path;
+        }
+      } catch (_) {
+        // Replace an incomplete copy from an interrupted first launch.
+      }
+      await destination.delete();
+    }
+
+    final data = await rootBundle.load('assets/data/shymkent.mbtiles');
+    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final temporary = File('${destination.path}.tmp');
+    await temporary.writeAsBytes(bytes, flush: true);
+
+    final validation = MbTiles(mbtilesPath: temporary.path);
+    final format = validation.getMetadata().format?.toLowerCase();
+    validation.dispose();
+    if (format != 'pbf' && format != 'mvt') {
+      await temporary.delete();
+      throw const FormatException('Встроенная карта Шымкента имеет неверный формат.');
+    }
+
+    await temporary.rename(destination.path);
+    await prefs.setString('offline_map_path', destination.path);
+    await prefs.setBool('offline_map_auto_connected', true);
+    return destination.path;
+  }
+
   Future<void> _loadSavedOfflineMap() async {
     if (_offlineMapLoadInProgress) return;
     _offlineMapLoadInProgress = true;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final path = prefs.getString('offline_map_path');
-      if (path == null || path.isEmpty || !mounted) return;
-
-      // Only load a map explicitly imported through the system file picker.
-      // Shared-storage scans are intentionally disabled.
-      if (!await File(path).exists()) {
-        await prefs.remove('offline_map_path');
-        await prefs.remove('offline_map_auto_connected');
-        return;
+      var path = prefs.getString('offline_map_path');
+      if (path == null || path.isEmpty || !await File(path).exists()) {
+        path = await _ensureBundledShymkentMap(prefs);
       }
+      if (!mounted) return;
       if (_activeOfflineMapPath == path && _isOfflineMapActive) return;
 
       try {
@@ -10650,8 +10684,6 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   bool _loading = true;
   String? _offlineMapPath;
   bool _offlineMapAutoConnected = false;
-  bool _importingOfflineMap = false;
-  bool _downloadingKazakhstanMap = false;
   double _kazakhstanMapProgress = 0;
   String _kazakhstanMapDownloadStatus = '';
   String? _valhallaExtractPath;
@@ -10715,155 +10747,6 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     _avoidTolls = prefs.getBool('avoid_tolls') ?? false;
     _avoidUnpaved = prefs.getBool('avoid_unpaved') ?? false;
     if (mounted) setState(() => _loading = false);
-  }
-
-  String _formatMapDownloadSize(int bytes) {
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} ГБ';
-  }
-
-  Future<void> _downloadKazakhstanMap() async {
-    if (_downloadingKazakhstanMap || _importingOfflineMap) return;
-    try {
-      final downloader = KazakhstanMapDownloader();
-      final release = await downloader.fetchLatestRelease();
-      if (!mounted) return;
-      final accepted = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Офлайн-карта Казахстана'),
-          content: Text(
-            'Размер карты: ${_formatMapDownloadSize(release.totalBytes)}. '
-            'Понадобится стабильный Wi-Fi и свободное место на телефоне. '
-            'Карта будет загружена частями, проверена и собрана автоматически.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Отмена'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Начать загрузку'),
-            ),
-          ],
-        ),
-      );
-      if (accepted != true || !mounted) return;
-
-      setState(() {
-        _downloadingKazakhstanMap = true;
-        _kazakhstanMapProgress = 0;
-        _kazakhstanMapDownloadStatus = 'Подготовка загрузки…';
-      });
-      final directory = await getApplicationSupportDirectory();
-      final path = await downloader.download(
-        release: release,
-        directory: directory,
-        onProgress: (received, total, status) {
-          if (!mounted) return;
-          setState(() {
-            _kazakhstanMapProgress =
-                total == 0 ? 0 : (received / total).clamp(0.0, 1.0);
-            _kazakhstanMapDownloadStatus =
-                '$status · ${_formatMapDownloadSize(received)} / ${_formatMapDownloadSize(total)}';
-          });
-        },
-      );
-
-      final validationDatabase = MbTiles(mbtilesPath: path);
-      final format = validationDatabase.getMetadata().format?.toLowerCase();
-      validationDatabase.dispose();
-      if (format != 'pbf' && format != 'mvt') {
-        await File(path).delete();
-        throw Exception('Загруженный файл не является векторной MBTiles-картой.');
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('offline_map_path', path);
-      await prefs.setBool('offline_map_auto_connected', true);
-      if (!mounted) return;
-      setState(() {
-        _offlineMapPath = path;
-        _offlineMapAutoConnected = true;
-        _kazakhstanMapProgress = 1;
-        _kazakhstanMapDownloadStatus = 'Карта Казахстана подключается…';
-      });
-      Navigator.of(context).pop(path);
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Не удалось загрузить карту Казахстана: $error'),
-          duration: const Duration(seconds: 6),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _downloadingKazakhstanMap = false);
-      }
-    }
-  }
-
-  Future<void> _importOfflineMap() async {
-    if (_importingOfflineMap) return;
-    setState(() => _importingOfflineMap = true);
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-        allowMultiple: false,
-        withData: false,
-      );
-      if (result == null || result.files.isEmpty) return;
-      if (!result.files.single.name.toLowerCase().endsWith('.mbtiles')) {
-        throw Exception('Выберите файл с расширением .mbtiles.');
-      }
-      final sourcePath = result.files.single.path;
-      if (sourcePath == null) {
-        throw Exception('Сначала сохраните файл карты в память телефона, затем выберите его.');
-      }
-      final source = File(sourcePath);
-      // Validate the selected file before replacing the currently installed map.
-      final validationDatabase = MbTiles(mbtilesPath: source.path);
-      final validationFormat = validationDatabase.getMetadata().format?.toLowerCase();
-      validationDatabase.dispose();
-      if (validationFormat != 'pbf' && validationFormat != 'mvt') {
-        throw Exception('Поддерживается только векторная MBTiles-карта (PBF/MVT).');
-      }
-      final directory = await getApplicationSupportDirectory();
-      final destination = File('${directory.path}/bake_offline_map.mbtiles');
-      if (source.absolute.path != destination.absolute.path) {
-        if (await destination.exists()) await destination.delete();
-        await source.copy(destination.path);
-      }
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('offline_map_path', destination.path);
-      await prefs.setBool('offline_map_auto_connected', false);
-      if (!mounted) return;
-      setState(() {
-        _offlineMapPath = destination.path;
-        _offlineMapAutoConnected = false;
-      });
-      Navigator.of(context).pop(destination.path);
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_valhallaErrorForUser(error, duringImport: true))),
-      );
-    } finally {
-      if (mounted) setState(() => _importingOfflineMap = false);
-    }
-  }
-
-  Future<void> _removeOfflineMap() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('offline_map_path');
-    await prefs.remove('offline_map_auto_connected');
-    if (!mounted) return;
-    setState(() {
-      _offlineMapPath = null;
-      _offlineMapAutoConnected = false;
-    });
-    Navigator.of(context).pop('__use_online_map__');
   }
 
   Future<void> _importValhallaExtract() async {
@@ -11046,53 +10929,11 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                           leading: const Icon(Icons.map_outlined),
                           title: Text(AppLocale.tr('Офлайн-карта')),
                           subtitle: Text(_offlineMapPath == null
-                              ? AppLocale.tr('Готовый MBTiles-файл пока не подключён.')
+                              ? AppLocale.tr('Встроенная офлайн-карта Шымкента подключится при включении.')
                               : _offlineMapAutoConnected
                                   ? 'Офлайн-карта подключена автоматически: ${_offlineMapPath!.split(Platform.pathSeparator).last}'
                                   : 'Офлайн-карта подключена: ${_offlineMapPath!.split(Platform.pathSeparator).last}'),
                         ),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.icon(
-                            onPressed: (_downloadingKazakhstanMap || _importingOfflineMap)
-                                ? null
-                                : _downloadKazakhstanMap,
-                            icon: _downloadingKazakhstanMap
-                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                                : const Icon(Icons.download_for_offline_outlined),
-                            label: Text(_downloadingKazakhstanMap
-                                ? 'Загружаем карту Казахстана…'
-                                : 'Скачать карту Казахстана автоматически'),
-                          ),
-                        ),
-                        if (_downloadingKazakhstanMap) ...[
-                          const SizedBox(height: 10),
-                          LinearProgressIndicator(value: _kazakhstanMapProgress),
-                          const SizedBox(height: 6),
-                          Text(
-                            _kazakhstanMapDownloadStatus,
-                            style: const TextStyle(fontSize: 12, color: Colors.black54),
-                          ),
-                        ],
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: (_importingOfflineMap || _downloadingKazakhstanMap)
-                                ? null
-                                : _importOfflineMap,
-                            icon: _importingOfflineMap
-                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                                : const Icon(Icons.file_open_outlined),
-                            label: Text(AppLocale.tr(_importingOfflineMap ? 'Импортируем…' : 'Импортировать векторную MBTiles-карту')),
-                          ),
-                        ),
-                        if (_offlineMapPath != null)
-                          TextButton.icon(
-                            onPressed: _removeOfflineMap,
-                            icon: const Icon(Icons.cloud_outlined),
-                            label: Text(AppLocale.tr('Отключить офлайн-карту')),
-                          ),
                         Text(
                           AppLocale.tr('Поддерживается векторная MBTiles-карта (PBF/MVT). Растровый формат отключён.'),
                           style: TextStyle(fontSize: 12, color: Colors.black54),

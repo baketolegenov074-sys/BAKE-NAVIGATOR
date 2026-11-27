@@ -856,6 +856,52 @@ jobs:
           print("Native MapLibre experiment entry added to Settings")
           print("Valhalla, screen-recording and MapLibre bridges configured")
           PY
+      - name: Build embedded Shymkent offline vector map
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git libboost-all-dev liblua5.3-dev lua5.3 libshp-dev libsqlite3-dev rapidjson-dev sqlite3
+          git clone --depth 1 https://github.com/systemed/tilemaker.git /tmp/tilemaker
+          make -C /tmp/tilemaker -j2
+          jq '
+            .settings.minzoom = 7
+            | .settings.maxzoom = 17
+            | .settings.basezoom = 17
+            | .settings.combine_below = 14
+            | .settings.name = "BAKE Navigator - Shymkent"
+            | .settings.version = "1.0"
+            | .settings.description = "Offline OpenStreetMap vector map for Shymkent"
+            | .settings.filemetadata.attribution = "© OpenStreetMap contributors"
+            | .layers |= with_entries(.value.maxzoom = 17)
+            | .layers.housenumber.minzoom = 14
+            | .layers.building.minzoom = 13
+          ' /tmp/tilemaker/resources/config-openmaptiles.json > /tmp/config-shymkent.json
+          mkdir -p assets/data
+          /tmp/tilemaker/tilemaker \
+            --input shymkent-search.osm.pbf \
+            --output assets/data/shymkent.mbtiles \
+            --config /tmp/config-shymkent.json \
+            --process /tmp/tilemaker/resources/process-openmaptiles.lua \
+            --store /tmp/tilemaker-shymkent-store \
+            --threads 2
+          sqlite3 assets/data/shymkent.mbtiles "PRAGMA integrity_check;" | grep -qx ok
+          test "$(sqlite3 assets/data/shymkent.mbtiles 'SELECT COUNT(*) FROM tiles;')" -gt 0
+          test "$(sqlite3 assets/data/shymkent.mbtiles "SELECT value FROM metadata WHERE name='format';")" = "pbf"
+          ls -lh assets/data/shymkent.mbtiles
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("pubspec.yaml")
+          content = path.read_text()
+          marker = "    - assets/data/shymkent_search.json.gz"
+          if content.count(marker) != 1:
+              raise SystemExit("Could not register the generated Shymkent map asset")
+          if "assets/data/shymkent.mbtiles" not in content:
+              content = content.replace(marker, marker + "\n    - assets/data/shymkent.mbtiles")
+          path.write_text(content)
+          print("Embedded Shymkent MBTiles registered in Flutter assets")
+          PY
+
       - name: Install dependencies
         run: flutter pub get
 
