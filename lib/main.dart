@@ -1086,7 +1086,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   StreamSubscription<CompassEvent>? _compassSubscription;
   double? _lastCameraHeadingDegrees;
   bool _northUpLocked = false;
-  bool _mapFollowEnabled = false;
+  bool _mapFollowEnabled = true;
   bool _headingUpGestureActive = false;
   Timer? _headingUpResumeTimer;
   int _announcedManeuverStage = 0;
@@ -1186,7 +1186,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     // One-time startup checks; never repeated on AppLifecycleState.resumed.
     unawaited(_runStartupDiagnosticTask(
       'Получение первого GPS-местоположения',
-      () => _locateMe(recenterMap: false),
+      _locateMe,
     ));
   }
 
@@ -1757,6 +1757,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     });
   }
 
+  void _setNavigationCameraImmediately(LatLng point, double zoom, double heading) {
+    if (!point.latitude.isFinite || !point.longitude.isFinite ||
+        !zoom.isFinite || !heading.isFinite ||
+        !_appInForeground || !_offlineMapReady) return;
+    _cancelCameraFollowAnimation();
+    final normalizedHeading = _normalizeCameraHeading(heading);
+    _lastCameraHeadingDegrees = normalizedHeading;
+    _cameraFollowCurrentCenter = point;
+    _cameraFollowTargetCenter = point;
+    _cameraFollowCurrentZoom = zoom;
+    _cameraFollowTargetZoom = zoom;
+    _cameraFollowCurrentHeading = normalizedHeading;
+    _cameraFollowTargetHeading = normalizedHeading;
+    _mapController.move(point, zoom);
+    _mapController.rotate(-normalizedHeading);
+  }
+
   void _updateNavigationCamera(LatLng point, double zoom, double heading) {
     if (!point.latitude.isFinite || !point.longitude.isFinite ||
         !zoom.isFinite || !heading.isFinite) return;
@@ -1969,8 +1986,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _scheduleValhallaStartupAfterMapPaint();
       });
     }
-    // Do not drag the map from Shymkent's initial view to GPS when the
-    // tile provider becomes ready. GPS marker and routing stay independent.
+    // If GPS arrived before the map controller was ready, center the map
+    // on that first fix in one camera operation (no animated flight).
+    final startupGpsPoint = _currentLocation;
+    if (startupGpsPoint != null) {
+      _mapFollowEnabled = true;
+      _setNavigationCameraImmediately(
+        startupGpsPoint,
+        _navigationActive ? 17.0 : 16.0,
+        _gpsHeadingDegrees ?? 0.0,
+      );
+    }
   }
   // Diagnostic build: verify the satellite toggle and Esri raster tiles on device.
   List<LatLng> _simplifyRouteForDisplay(List<LatLng> points) {
@@ -2690,16 +2716,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       // In particular, keep the Android foreground GPS subscription alive while
       // navigating; replacing it with a foreground-only stream can break tracking.
       if (recenterMap) {
-        if (_navigationActive) {
-          final heading = _gpsHeadingDegrees;
-          _updateNavigationCamera(
-            point,
-            17,
-            heading != null && _currentSpeedKmh >= 5.4 ? heading : 0.0,
-          );
-        } else {
-          _updateNavigationCamera(point, 16, _gpsHeadingDegrees ?? 0.0);
-        }
+        _setNavigationCameraImmediately(
+          point,
+          _navigationActive ? 17.0 : 16.0,
+          _navigationActive && _gpsHeadingDegrees != null && _currentSpeedKmh >= 5.4
+              ? _gpsHeadingDegrees!
+              : (_gpsHeadingDegrees ?? 0.0),
+        );
       }
       if (_navigationActive) {
         // Navigation already owns a background location stream. Do not cancel
