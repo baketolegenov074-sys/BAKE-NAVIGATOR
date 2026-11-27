@@ -9625,7 +9625,13 @@ _navigationMatchedLocation = null;
       backgroundColor: Colors.white,
       body: Stack(
         children: [
-          Listener(
+          if (_currentLocation == null)
+            const ColoredBox(
+              color: Color(0xFFF5F7FA),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else
+            Listener(
               onPointerDown: (event) {
                 _mapPointerDownAt = DateTime.now();
                 _mapPointerDownPosition = event.localPosition;
@@ -9667,10 +9673,10 @@ _navigationMatchedLocation = null;
               options: MapOptions(
                 backgroundColor: const Color(0xFFF5F7FA),
                 onMapReady: _onOfflineMapReady,
-                // Prefer the actual GPS fix; Shymkent is only a fallback
-                // while the device has not supplied any location yet.
-                initialCenter: _currentLocation ?? _shymkent,
-                initialZoom: _currentLocation == null ? 13 : 16,
+                // FlutterMap is created only after the first GPS fix.
+                // Its initial camera therefore starts at the device position.
+                initialCenter: _currentLocation!,
+                initialZoom: 16,
                 minZoom: 0,
                 maxZoom: 20,
                 onTap: (_, point) {
