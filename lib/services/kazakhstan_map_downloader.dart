@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
+import 'package:mbtiles/mbtiles.dart';
 
 class KazakhstanMapAsset {
   const KazakhstanMapAsset({
@@ -203,6 +204,14 @@ class KazakhstanMapDownloader {
     if (!await assembling.exists() ||
         await assembling.length() != release.totalBytes) {
       throw const FormatException('Собранный файл карты имеет неверный размер.');
+    }
+
+    final validationDatabase = MbTiles(mbtilesPath: assembling.path);
+    final format = validationDatabase.getMetadata().format?.toLowerCase();
+    validationDatabase.dispose();
+    if (format != 'pbf' && format != 'mvt') {
+      await assembling.delete();
+      throw const FormatException('Собранный файл не является векторной MBTiles-картой.');
     }
 
     final backup = File('${directory.path}/bake_offline_map.previous');
