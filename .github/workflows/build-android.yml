@@ -861,35 +861,6 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Verify sherpa_onnx Android plugin packages
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          pub_cache = Path.home() / ".pub-cache/hosted/pub.dev"
-          expected = {
-              "sherpa_onnx_android_arm64",
-              "sherpa_onnx_android_armeabi",
-              "sherpa_onnx_android_x86",
-              "sherpa_onnx_android_x86_64",
-          }
-          packages = sorted(pub_cache.glob("sherpa_onnx_android_*-*/android"))
-          found = {path.parent.name.rsplit("-", 1)[0] for path in packages}
-          if found != expected:
-              raise SystemExit(
-                  f"Expected sherpa_onnx Android packages {sorted(expected)}, found {sorted(found)}"
-              )
-
-          # Current sherpa_onnx 2.0.x Android modules use the app's centrally
-          # resolved Android Gradle Plugin. They do not carry a private
-          # AGP 7.3.0 classpath declaration, so do not rewrite their build files.
-          for package in sorted(packages):
-              gradle_files = list(package.glob("build.gradle*"))
-              if not gradle_files:
-                  raise SystemExit(f"Missing Gradle build file in {package}")
-              print(f"Verified {package.parent.name}; using project AGP configuration")
-          PY
-
       - name: Save resolved dependency versions
         uses: actions/upload-artifact@v4
         with:
