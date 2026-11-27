@@ -75,7 +75,7 @@ jobs:
           jq '
             .settings.minzoom = 5
             | .settings.maxzoom = 17
-            | .settings.basezoom = 14
+            | .settings.basezoom = 17
             | .settings.combine_below = 14
             | .settings.name = "BAKE Navigator - Kazakhstan"
             | .settings.version = "1.0"
