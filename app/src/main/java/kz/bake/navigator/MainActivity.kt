@@ -43,6 +43,9 @@ class MainActivity : AppCompatActivity() {
  private lateinit var routeSimulation:RouteSimulationManager
  private lateinit var voice:NavigationVoiceHelper
  private val routes=RouteAndSearchManager()
+ private val roadSnapEngine=RoadSnapEngine()
+ private var lastRoadRefreshRequestedAt=0L
+ private var roadRefreshJob:Job?=null
  private var alternatives:List<RouteAndSearchManager.RouteResult> = emptyList()
  private var activeSteps:List<RouteAndSearchManager.NavigationStep> = emptyList()
  private var selectedRouteIndex=0
@@ -254,9 +257,22 @@ class MainActivity : AppCompatActivity() {
  }
  private fun startGps(){
   locationManager.start({loc,p->
-   mapEngine.updateRealLocation(loc)
    realGpsLatLng=p
    currentLocation=loc
+   // Snap only the map marker; raw GPS remains untouched for all navigation logic.
+   mapEngine.updateRealLocation(loc,roadSnapEngine.snap(loc)?:p)
+   val now=System.currentTimeMillis()
+   if(now-lastRoadRefreshRequestedAt>=10_000L&&roadRefreshJob?.isActive!=true){
+    lastRoadRefreshRequestedAt=now
+    roadRefreshJob=lifecycleScope.launch{
+     withContext(Dispatchers.IO){roadSnapEngine.refreshRoads(loc)}
+     val latest=currentLocation
+     if(latest!=null){
+      val raw=LatLng(latest.latitude,latest.longitude)
+      mapEngine.updateRealLocation(latest,roadSnapEngine.snap(latest)?:raw)
+     }
+    }
+   }
    val simulationActive=routeSimulation.isSimulationActive
    val activeNavigation=navigating&&!simulationActive
    // The real GPS puck, camera and navigation state use the same raw Android fix.
@@ -290,6 +306,6 @@ class MainActivity : AppCompatActivity() {
  override fun onPause(){super.onPause();mapView.onPause()}
  override fun onStop(){locationManager.stopGps();super.onStop();mapView.onStop()}
  override fun onLowMemory(){super.onLowMemory();mapView.onLowMemory()}
- override fun onDestroy(){searchJob?.cancel();locationManager.release();routeSimulation.release();voice.release();mapView.onDestroy();super.onDestroy()}
+ override fun onDestroy(){searchJob?.cancel();roadRefreshJob?.cancel();locationManager.release();routeSimulation.release();voice.release();mapView.onDestroy();super.onDestroy()}
  override fun onSaveInstanceState(outState:Bundle){super.onSaveInstanceState(outState);mapView.onSaveInstanceState(outState)}
 }
