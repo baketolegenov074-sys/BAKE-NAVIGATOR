@@ -60,6 +60,7 @@ class MainActivity : AppCompatActivity() {
  private var lastOverspeedAnnouncementAt=0L
  private var current=LatLng(42.3417,69.5901)
  private var realGpsLatLng:LatLng?=null
+ private var hasCenteredOnGpsFix=false
  private var currentLocation:Location?=null
  private var pendingDestination:LatLng?=null
  private var routePoints:List<Point> = emptyList()
@@ -123,7 +124,11 @@ class MainActivity : AppCompatActivity() {
   findViewById<Button>(R.id.btnAdmin).setOnClickListener{startActivity(Intent(this,AdminActivity::class.java))}
   findViewById<Button>(R.id.btnZoomIn).setOnClickListener{mapEngine.map?.animateCamera(CameraUpdateFactory.zoomIn())}
   findViewById<Button>(R.id.btnZoomOut).setOnClickListener{mapEngine.map?.animateCamera(CameraUpdateFactory.zoomOut())}
-  findViewById<Button>(R.id.btnMyLocation).setOnClickListener{mapEngine.cameraTo(current,if(navigating)17.0 else 16.0)}
+  findViewById<Button>(R.id.btnMyLocation).setOnClickListener{
+   val position=realGpsLatLng
+   if(position!=null)mapEngine.cameraTo(position,if(navigating)17.0 else 16.0)
+   else setStatus("Ожидаем актуальную позицию GPS…")
+  }
   goButton.setOnClickListener{if(!loadingRoute&&routePoints.isNotEmpty()){if(navigating)stopNavigation()else startNavigation()}}
   findViewById<Button>(R.id.btnReset).setOnClickListener{resetRoute()}
   voiceLanguageButton.setOnClickListener{
@@ -259,6 +264,12 @@ class MainActivity : AppCompatActivity() {
   locationManager.start({loc,p->
    realGpsLatLng=p
    currentLocation=loc
+   current=p
+   // The standalone map must center on its first live GPS fix, not its old Shymkent placeholder.
+   if(!hasCenteredOnGpsFix){
+    hasCenteredOnGpsFix=true
+    mapEngine.cameraTo(p,16.0)
+   }
    // Snap only the map marker; raw GPS remains untouched for all navigation logic.
    mapEngine.updateRealLocation(loc,roadSnapEngine.snap(loc)?:p)
    val now=System.currentTimeMillis()
