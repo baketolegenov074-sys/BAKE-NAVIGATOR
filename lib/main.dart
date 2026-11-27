@@ -1035,7 +1035,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   DateTime? _lastGpsDiagnosticFixAt;
   LatLng? _lastGpsDiagnosticRawPoint;
   bool _appInForeground = true;
-  bool _nativeMapLibreTestOpen = false;
   DateTime? _lastCameraUpdateAt;
   DateTime? _lastMapAnnotationUpdateAt;
   late final Ticker _cameraFollowTicker = Ticker(_onCameraFollowTick);
@@ -3142,14 +3141,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       (position) {
         if (!mounted) return;
         _lastRawGpsFixTimestamp = position.timestamp;
-        if (_nativeMapLibreTestOpen) {
-          unawaited(const MethodChannel('bake.navigator/maplibre_experiment')
-              .invokeMethod<void>('updateLocation', <String, double>{
-            'latitude': position.latitude,
-            'longitude': position.longitude,
-            'heading': position.heading.isFinite ? position.heading : 0.0,
-          }));
-        }
         unawaited(AppDiagnosticsScreen.recordTripPosition(position));
         final wasWaitingForNavigationFix =
             _navigationActive && _currentLocation == null;
@@ -5332,7 +5323,6 @@ _navigationMatchedLocation = null;
         MapStartupDiagnostics.instance.markFirstFrame();
       });
       _appInForeground = true;
-      _nativeMapLibreTestOpen = false;
       unawaited(_startCompassUpdates());
       _lastCameraUpdateAt = null;
       _lastMapAnnotationUpdateAt = null;
@@ -5365,7 +5355,6 @@ _navigationMatchedLocation = null;
       _headingUpResumeTimer = null;
       _roadReportRetryTimer?.cancel();
       _roadReportRetryTimer = null;
-      if (!_navigationActive && !_nativeMapLibreTestOpen) {
         unawaited(_stopLiveLocationUpdates(reason: 'app_${state.name}'));
       }
     }
@@ -9726,60 +9715,6 @@ _navigationMatchedLocation = null;
             ),
             ),
           Positioned(
-            top: 14,
-            left: 14,
-            child: SafeArea(
-              bottom: false,
-              child: Material(
-                color: Colors.white,
-                elevation: 5,
-                borderRadius: BorderRadius.circular(24),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(24),
-                  onTap: () async {
-                    _nativeMapLibreTestOpen = true;
-                    try {
-                      final gpsPoint = _currentLocation ?? _lastReliableGpsDisplayLocation;
-                      await const MethodChannel('bake.navigator/maplibre_experiment')
-                          .invokeMethod<void>('openMap', gpsPoint == null
-                              ? null
-                              : <String, double>{
-                                  'latitude': gpsPoint.latitude,
-                                  'longitude': gpsPoint.longitude,
-                                  'heading': _gpsHeadingDegrees ?? 0.0,
-                                });
-                    } catch (error) {
-                      _nativeMapLibreTestOpen = false;
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Не удалось открыть MapLibre: $error')),
-                        );
-                      }
-                    }
-                  },
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.swap_horiz, color: Color(0xFF1769AA), size: 23),
-                        SizedBox(width: 7),
-                        Text(
-                          'Переключить карту',
-                          style: TextStyle(
-                            color: Color(0xFF202124),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
             left: 10,
             bottom: 150,
             child: IgnorePointer(
@@ -10932,26 +10867,6 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                           builder: (_) => const OpenFreeMapExperimentScreen(),
                         ),
                       );
-                    },
-                  ),
-                ),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.navigation_outlined),
-                    title: const Text('Экспериментальная карта MapLibre'),
-                    subtitle: const Text('Новая нативная векторная карта с текущим GPS'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () async {
-                      try {
-                        await const MethodChannel('bake.navigator/maplibre_experiment')
-                            .invokeMethod<void>('openMap');
-                      } catch (error) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Не удалось открыть MapLibre: $error')),
-                          );
-                        }
-                      }
                     },
                   ),
                 ),
