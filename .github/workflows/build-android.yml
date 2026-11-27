@@ -879,6 +879,7 @@ jobs:
           ' /tmp/tilemaker/resources/config-openmaptiles.json > /tmp/config-shymkent.json
           mkdir -p assets/data
           /tmp/tilemaker/tilemaker \
+            --bbox 69.35,42.12,69.90,42.53 \
             --input shymkent-search.osm.pbf \
             --output assets/data/shymkent.mbtiles \
             --config /tmp/config-shymkent.json \
