@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_mbtiles/flutter_map_mbtiles.dart';
 import 'package:mbtiles/mbtiles.dart';
@@ -1048,6 +1049,18 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _nativeMapLibreTestOpen = false;
   DateTime? _lastCameraUpdateAt;
   DateTime? _lastMapAnnotationUpdateAt;
+  late final Ticker _cameraFollowTicker = Ticker(_onCameraFollowTick);
+  LatLng? _cameraFollowCurrentCenter;
+  LatLng? _cameraFollowTargetCenter;
+  double? _cameraFollowCurrentZoom;
+  double? _cameraFollowTargetZoom;
+  double? _cameraFollowCurrentHeading;
+  double? _cameraFollowTargetHeading;
+  Duration? _cameraFollowLastTickElapsed;
+  LatLng? _cameraFollowLastSentCenter;
+  double? _cameraFollowLastSentZoom;
+  double? _cameraFollowLastSentHeading;
+  DateTime? _cameraFollowLastSentAt;
   final Stopwatch _mapOpenStopwatch = Stopwatch();
   final Stopwatch _cameraLoadStopwatch = Stopwatch();
   final Stopwatch _valhallaInitStopwatch = Stopwatch();
@@ -1741,7 +1754,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           mapCanFollowCompass &&
           (!_navigationActive || _currentSpeedKmh < 5.4)) {
         _lastCameraHeadingDegrees = heading;
-        _mapController.rotate(-heading);
+        _updateNavigationCamera(_mapCameraCenter, _mapCameraZoom, heading);
       }
       // Compass events must not rebuild FlutterMap while its first online
       // vector tiles are loading; those rebuilds cancel pending raster jobs.
@@ -1752,10 +1765,167 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   void _updateNavigationCamera(LatLng point, double zoom, double heading) {
-    _lastCameraHeadingDegrees = heading;
+    if (!point.latitude.isFinite || !point.longitude.isFinite ||
+        !zoom.isFinite || !heading.isFinite) return;
+    _lastCameraHeadingDegrees = _normalizeCameraHeading(heading);
     if (!_appInForeground || !_offlineMapReady) return;
-    _mapController.move(point, zoom);
-    _mapController.rotate(-heading);
+
+    final normalizedHeading = _normalizeCameraHeading(heading);
+    if (_cameraFollowCurrentCenter == null ||
+        _cameraFollowCurrentZoom == null ||
+        _cameraFollowCurrentHeading == null) {
+      _cameraFollowCurrentCenter = _mapController.camera.center;
+      _cameraFollowCurrentZoom = _mapController.camera.zoom;
+      // The first camera transition starts from north-up unless a prior
+      // camera heading is already known. GPS coordinates remain untouched.
+      _cameraFollowCurrentHeading = _lastCameraHeadingDegrees == normalizedHeading
+          ? 0.0
+          : (_lastCameraHeadingDegrees ?? 0.0);
+      _cameraFollowLastSentCenter = _cameraFollowCurrentCenter;
+      _cameraFollowLastSentZoom = _cameraFollowCurrentZoom;
+      _cameraFollowLastSentHeading = _cameraFollowCurrentHeading;
+      _cameraFollowLastSentAt = DateTime.now();
+    }
+
+    _cameraFollowTargetCenter = point;
+    _cameraFollowTargetZoom = zoom;
+    _cameraFollowTargetHeading = normalizedHeading;
+    _cameraFollowLastTickElapsed = null;
+    if (!_cameraFollowTicker.isActive) {
+      _cameraFollowTicker.start();
+    }
+  }
+
+  static double _normalizeCameraHeading(double value) =>
+      ((value % 360.0) + 360.0) % 360.0;
+
+  static double _signedCameraHeadingDelta(double target, double current) {
+    var delta = (target - current) % 360.0;
+    if (delta > 180.0) delta -= 360.0;
+    if (delta < -180.0) delta += 360.0;
+    return delta;
+  }
+
+  void _onCameraFollowTick(Duration elapsed) {
+    final currentCenter = _cameraFollowCurrentCenter;
+    final targetCenter = _cameraFollowTargetCenter;
+    final currentZoom = _cameraFollowCurrentZoom;
+    final targetZoom = _cameraFollowTargetZoom;
+    final currentHeading = _cameraFollowCurrentHeading;
+    final targetHeading = _cameraFollowTargetHeading;
+    if (!mounted || !_appInForeground || !_offlineMapReady ||
+        currentCenter == null || targetCenter == null ||
+        currentZoom == null || targetZoom == null ||
+        currentHeading == null || targetHeading == null) {
+      _cameraFollowTicker.stop();
+      _cameraFollowLastTickElapsed = null;
+      return;
+    }
+
+    final previousElapsed = _cameraFollowLastTickElapsed;
+    final deltaMillis = previousElapsed == null
+        ? 16
+        : (elapsed - previousElapsed).inMilliseconds.clamp(1, 100);
+    _cameraFollowLastTickElapsed = elapsed;
+
+    // Roadstr CameraFollowEasing: exponential 350 ms time constant,
+    // with the camera rotation additionally capped at 90 degrees/second.
+    final interpolation = 1.0 - math.exp(-deltaMillis / 350.0);
+    final nextCenter = LatLng(
+      currentCenter.latitude +
+          (targetCenter.latitude - currentCenter.latitude) * interpolation,
+      currentCenter.longitude +
+          (targetCenter.longitude - currentCenter.longitude) * interpolation,
+    );
+    final nextZoom = currentZoom + (targetZoom - currentZoom) * interpolation;
+    final headingDelta = _signedCameraHeadingDelta(targetHeading, currentHeading);
+    final maximumTurn = 90.0 * deltaMillis / 1000.0;
+    final headingStep = (headingDelta * interpolation)
+        .clamp(-maximumTurn, maximumTurn)
+        .toDouble();
+    var nextHeading = _normalizeCameraHeading(currentHeading + headingStep);
+
+    final latitudeMeters = (targetCenter.latitude - nextCenter.latitude) * 111320.0;
+    final longitudeMeters = (targetCenter.longitude - nextCenter.longitude) *
+        111320.0 * math.cos(nextCenter.latitude * math.pi / 180.0);
+    final remainingMetersSquared =
+        latitudeMeters * latitudeMeters + longitudeMeters * longitudeMeters;
+    final caughtUp = remainingMetersSquared < 0.25 &&
+        (targetZoom - nextZoom).abs() < 0.005 &&
+        _signedCameraHeadingDelta(targetHeading, nextHeading).abs() < 0.05;
+
+    final settledCenter = caughtUp ? targetCenter : nextCenter;
+    final settledZoom = caughtUp ? targetZoom : nextZoom;
+    if (caughtUp) nextHeading = targetHeading;
+
+    if (_shouldSendCameraFrame(settledCenter, settledZoom, nextHeading,
+        force: caughtUp)) {
+      _mapController.move(settledCenter, settledZoom);
+      _mapController.rotate(-nextHeading);
+      _cameraFollowLastSentCenter = settledCenter;
+      _cameraFollowLastSentZoom = settledZoom;
+      _cameraFollowLastSentHeading = nextHeading;
+      _cameraFollowLastSentAt = DateTime.now();
+    }
+
+    _cameraFollowCurrentCenter = settledCenter;
+    _cameraFollowCurrentZoom = settledZoom;
+    _cameraFollowCurrentHeading = nextHeading;
+    if (caughtUp) {
+      _cameraFollowTicker.stop();
+      _cameraFollowLastTickElapsed = null;
+    }
+  }
+
+  bool _shouldSendCameraFrame(
+    LatLng center,
+    double zoom,
+    double heading, {
+    bool force = false,
+  }) {
+    final previousCenter = _cameraFollowLastSentCenter;
+    final previousZoom = _cameraFollowLastSentZoom;
+    final previousHeading = _cameraFollowLastSentHeading;
+    if (force || previousCenter == null || previousZoom == null ||
+        previousHeading == null) return true;
+
+    final latitudeMeters =
+        (center.latitude - previousCenter.latitude) * 111320.0;
+    final longitudeMeters =
+        (center.longitude - previousCenter.longitude) *
+        111320.0 * math.cos(center.latitude * math.pi / 180.0);
+    final travelMeters = math.sqrt(
+      latitudeMeters * latitudeMeters + longitudeMeters * longitudeMeters,
+    );
+    final metersPerDp = 78271.51696 *
+        math.cos(center.latitude * math.pi / 180.0).abs() /
+        math.pow(2.0, zoom);
+    final travelDp = metersPerDp > 0 ? travelMeters / metersPerDp : 0.0;
+    final turnDp = _signedCameraHeadingDelta(heading, previousHeading).abs() *
+        math.pi / 180.0 * 400.0;
+    final zoomDp =
+        (math.pow(2.0, (zoom - previousZoom).abs()) - 1.0) * 400.0;
+    final changeDp = travelDp + turnDp + zoomDp;
+    if (changeDp >= 0.6) return true;
+    final elapsed = _cameraFollowLastSentAt == null
+        ? 0
+        : DateTime.now().difference(_cameraFollowLastSentAt!).inMilliseconds;
+    return changeDp > 0.05 && elapsed >= 150;
+  }
+
+  void _cancelCameraFollowAnimation() {
+    if (_cameraFollowTicker.isActive) _cameraFollowTicker.stop();
+    _cameraFollowLastTickElapsed = null;
+    _cameraFollowCurrentCenter = null;
+    _cameraFollowTargetCenter = null;
+    _cameraFollowCurrentZoom = null;
+    _cameraFollowTargetZoom = null;
+    _cameraFollowCurrentHeading = null;
+    _cameraFollowTargetHeading = null;
+    _cameraFollowLastSentCenter = null;
+    _cameraFollowLastSentZoom = null;
+    _cameraFollowLastSentHeading = null;
+    _cameraFollowLastSentAt = null;
   }
 
   void _rotateMapCamera(double rotation) {
@@ -1879,6 +2049,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _roadReportRetryTimer?.cancel();
     unawaited(_stopLiveLocationUpdates(reason: 'widget_disposed'));
     _headingUpResumeTimer?.cancel();
+    _cancelCameraFollowAnimation();
     unawaited(_compassSubscription?.cancel());
     _compassSubscription = null;
     _navigationPredictionTimer?.cancel();
@@ -9721,6 +9892,7 @@ _navigationMatchedLocation = null;
                 onLongPress: (_, point) => _captureMapLongPressPoint(point),
                 onPositionChanged: (camera, hasGesture) {
                   if (hasGesture) {
+                    _cancelCameraFollowAnimation();
                     _mapFollowEnabled = false;
                     _scheduleHeadingUpReturn();
                   }
@@ -9811,6 +9983,8 @@ _navigationMatchedLocation = null;
                       Polyline(points: visibleRoutePoints, strokeWidth: 10, color: const Color(0xFF0878F9)),
                     ],
                   ),
+                // MarkerLayer projects each GPS LatLng through MapCamera on
+                // every map frame; the cursor stays map-anchored, not screen-pinned.
                 MarkerLayer(markers: markers),
                 RichAttributionWidget(
                   attributions: [
