@@ -141,14 +141,29 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Split map for GitHub Release asset limit
+        run: |
+          set -euo pipefail
+          mkdir -p output/release-parts
+          split -b 1800M -d -a 2 output/kazakhstan.mbtiles output/release-parts/kazakhstan.mbtiles.part-
+          ls -lh output/release-parts/
+
       - name: Publish latest map package
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           TAG="kazakhstan-map-latest"
+          cat >> output/README_RU.txt <<'EOF'
+
+          В GitHub Release карта разделена на части из-за ограничения размера одного файла.
+          Для восстановления исходного MBTiles объедините части по порядку:
+          Linux/macOS: cat kazakhstan.mbtiles.part-* > kazakhstan.mbtiles
+          Windows CMD: copy /b kazakhstan.mbtiles.part-00+kazakhstan.mbtiles.part-01 kazakhstan.mbtiles
+          EOF
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" output/kazakhstan.mbtiles output/README_RU.txt --clobber
-            gh release edit "$TAG" --title "BAKE Navigator — Kazakhstan offline vector map" --notes "Офлайн-векторная карта всего Казахстана. © OpenStreetMap contributors, ODbL. Зумы 5–17."
+            gh release upload "$TAG" output/release-parts/kazakhstan.mbtiles.part-* output/README_RU.txt --clobber
+            gh release edit "$TAG" --title "BAKE Navigator — Kazakhstan offline vector map" --notes "Офлайн-векторная карта всего Казахстана. © OpenStreetMap contributors, ODbL. Зумы 5–17. Файл разделён на части менее 2 ГиБ."
           else
-            gh release create "$TAG" output/kazakhstan.mbtiles output/README_RU.txt --title "BAKE Navigator — Kazakhstan offline vector map" --notes "Офлайн-векторная карта всего Казахстана. © OpenStreetMap contributors, ODbL. Зумы 5–17."
+            gh release create "$TAG" output/release-parts/kazakhstan.mbtiles.part-* output/README_RU.txt --title "BAKE Navigator — Kazakhstan offline vector map" --notes "Офлайн-векторная карта всего Казахстана. © OpenStreetMap contributors, ODbL. Зумы 5–17. Файл разделён на части менее 2 ГиБ."
           fi
