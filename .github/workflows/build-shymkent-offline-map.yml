@@ -2,6 +2,11 @@ name: Build Shymkent Offline Map
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - fix/address-gps-route-reset
+    paths:
+      - scripts/resolve_shymkent_city_boundary.py
   schedule:
     - cron: "25 3 1 * *"
 
