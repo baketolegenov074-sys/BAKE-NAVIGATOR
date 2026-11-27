@@ -23,28 +23,30 @@ jobs:
       - name: Install map build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y             build-essential cmake git curl jq sqlite3             osmium-tool             libboost-all-dev liblua5.3-dev libshp-dev             libsqlite3-dev rapidjson-dev
+          sudo apt-get install -y build-essential cmake git curl jq sqlite3 osmium-tool libboost-all-dev liblua5.3-dev libshp-dev libsqlite3-dev rapidjson-dev
 
       - name: Download current Kazakhstan OSM extract
         shell: bash
         run: |
           set -euo pipefail
           URL="https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf"
-          curl --fail --location --retry 5 --retry-all-errors \
-            --retry-delay 10 --connect-timeout 30 \
-            "$URL" -o kazakhstan-latest.osm.pbf
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 "$URL" -o kazakhstan-latest.osm.pbf
           test -s kazakhstan-latest.osm.pbf
           osmium fileinfo kazakhstan-latest.osm.pbf
 
-      - name: Extract Shymkent region
+      - name: Resolve official OSM administrative boundary of Shymkent city
         run: |
-          osmium extract \
-            --bbox 69.45,42.20,69.80,42.45 \
-            --strategy smart \
-            --output shymkent.osm.pbf \
-            kazakhstan-latest.osm.pbf
-          test -s shymkent.osm.pbf
-          osmium fileinfo shymkent.osm.pbf
+          set -euo pipefail
+          python3 scripts/resolve_shymkent_city_boundary.py
+          test -s shymkent-city-boundary.geojson
+          cat shymkent-city-boundary.geojson | jq -e '.features | length == 1 and .[0].geometry.type == "MultiPolygon" or .[0].geometry.type == "Polygon"'
+
+      - name: Extract only the Shymkent city polygon
+        run: |
+          set -euo pipefail
+          osmium extract --polygon shymkent-city-boundary.geojson --strategy smart --output shymkent-city.osm.pbf kazakhstan-latest.osm.pbf
+          test -s shymkent-city.osm.pbf
+          osmium fileinfo shymkent-city.osm.pbf
 
       - name: Build Tilemaker
         run: |
@@ -61,7 +63,7 @@ jobs:
             | .settings.combine_below = 17
             | .settings.name = "BAKE Navigator - Shymkent"
             | .settings.version = "1.0"
-            | .settings.description = "Offline OpenStreetMap vector map for Shymkent, Kazakhstan"
+            | .settings.description = "Offline OpenStreetMap vector map for Shymkent city"
             | .settings.filemetadata.attribution = "© OpenStreetMap contributors"
             | .layers |= with_entries(.value.maxzoom = 17)
             | .layers.housenumber.minzoom = 14
@@ -71,7 +73,7 @@ jobs:
       - name: Generate MBTiles
         run: |
           /tmp/tilemaker/tilemaker \
-            --input shymkent.osm.pbf \
+            --input shymkent-city.osm.pbf \
             --output shymkent.mbtiles \
             --config /tmp/config-shymkent.json \
             --process /tmp/tilemaker/resources/process-openmaptiles.lua \
@@ -81,10 +83,9 @@ jobs:
 
       - name: Validate MBTiles database
         run: |
+          set -euo pipefail
           sqlite3 shymkent.mbtiles "PRAGMA integrity_check;" | grep -qx ok
-          sqlite3 shymkent.mbtiles "SELECT name || '=' || value FROM metadata ORDER BY name;"
           TILE_COUNT="$(sqlite3 shymkent.mbtiles 'SELECT COUNT(*) FROM tiles;')"
-          echo "Tile count: $TILE_COUNT"
           test "$TILE_COUNT" -gt 0
           sqlite3 shymkent.mbtiles "SELECT zoom_level, COUNT(*) FROM tiles GROUP BY zoom_level ORDER BY zoom_level;"
           META_JSON="$(sqlite3 shymkent.mbtiles "SELECT value FROM metadata WHERE name='json';")"
@@ -97,31 +98,28 @@ jobs:
           if road is None:
               raise SystemExit("MBTiles has no transportation_name vector layer")
           fields = sorted((road.get("fields") or {}).keys())
-          name_fields = {"name", "name:latin", "name:nonlatin"}
-          available_name_fields = sorted(name_fields.intersection(fields))
-          if not available_name_fields:
-              raise SystemExit(f"transportation_name has no supported name field; fields={fields}")
-          print("Offline MBTiles source-layer: transportation_name")
-          print("Offline road-label fields: " + ", ".join(fields))
-          print("Usable street-name fields: " + ", ".join(available_name_fields))
+          if not {"name", "name:latin", "name:nonlatin"}.intersection(fields):
+              raise SystemExit(f"transportation_name has no usable name field: {fields}")
+          print("Street labels validated:", ", ".join(fields))
           PY
           mkdir -p output
           cp shymkent.mbtiles output/shymkent.mbtiles
+          cp shymkent-city-boundary.geojson output/shymkent-city-boundary.geojson
           cat > output/README_RU.txt <<'EOF'
-          BAKE Navigator — офлайн-карта Шымкента
-          Источник: © OpenStreetMap contributors, лицензия ODbL.
+          BAKE Navigator — офлайн-векторная карта города Шымкента
+          Территория: административный полигон города Шымкента из OpenStreetMap.
+          Туркестанская область в пакет не входит.
+          Источник данных: © OpenStreetMap contributors, лицензия ODbL.
           Формат: MBTiles, векторные тайлы PBF.
-          Регион: прямоугольная область 69.45,42.20 — 69.80,42.45.
-          Зумы: 10–17.
-          Важно: граница задана прямоугольником, не административным полигоном.
-          Пакет содержит картографические тайлы, но не граф офлайн-маршрутизации и не поисковый индекс.
-          Слой названий улиц: transportation_name; основное поле: name.
+          Зумы: 10–17. Названия улиц: transportation_name.
+          Пакет содержит только картографические тайлы; граф маршрутизации и индекс поиска отдельно.
+          Файл shymkent-city-boundary.geojson содержит использованную границу города.
           EOF
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BAKE-Shymkent-MBTiles
+          name: BAKE-Shymkent-City-MBTiles
           path: output/*
           if-no-files-found: error
           retention-days: 30
@@ -132,10 +130,8 @@ jobs:
         run: |
           TAG="shymkent-map-latest"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" output/shymkent.mbtiles output/README_RU.txt --clobber
-            gh release edit "$TAG" --title "BAKE Navigator — Shymkent offline map" --notes "Обновляемая офлайн-векторная карта Шымкента. © OpenStreetMap contributors, ODbL. Область: 69.45,42.20,69.80,42.45. Зумы 10–17. Не включает офлайн-маршрутизатор и индекс поиска."
+            gh release upload "$TAG" output/shymkent.mbtiles output/shymkent-city-boundary.geojson output/README_RU.txt --clobber
+            gh release edit "$TAG" --title "BAKE Navigator — Shymkent city offline map" --notes "Офлайн-векторная карта административной территории города Шымкента. © OpenStreetMap contributors, ODbL. Зумы 10–17."
           else
-            gh release create "$TAG" output/shymkent.mbtiles output/README_RU.txt \
-              --title "BAKE Navigator — Shymkent offline map" \
-              --notes "Офлайн-векторная карта Шымкента. © OpenStreetMap contributors, ODbL. Зумы 10–17."
+            gh release create "$TAG" output/shymkent.mbtiles output/shymkent-city-boundary.geojson output/README_RU.txt --title "BAKE Navigator — Shymkent city offline map" --notes "Офлайн-векторная карта административной территории города Шымкента. © OpenStreetMap contributors, ODbL. Зумы 10–17."
           fi
