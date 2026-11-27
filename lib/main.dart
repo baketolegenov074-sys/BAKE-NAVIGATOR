@@ -25,7 +25,6 @@ import 'package:latlong2/latlong.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
-import 'kazakh_voice_service.dart';
 import 'services/road_alert_service.dart';
 import 'services/offline_address_search.dart';
 import 'screens/road_report_center.dart';
@@ -936,7 +935,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   final FlutterTts _tts = FlutterTts();
   Future<void> _speechQueue = Future<void>.value();
   int _speechGeneration = 0;
-  final KazakhVoiceService _kazakhVoiceService = KazakhVoiceService();
   final RoadAlertService _roadAlertService = RoadAlertService();
   List<RoadFeature> _roadFeatures = <RoadFeature>[];
   DateTime? _lastRoadFeatureLookup;
@@ -955,8 +953,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   LatLng? _lastRoadAlertLookupPoint;
   bool _roadAlertLookupInProgress = false;
   bool _showShymkentCamerasOnMap = true;
-  int _kazakhVoiceId = 0;
-  bool _kazakhVoiceEnabled = false;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   MbTilesTileProvider? _offlineTileProvider;
@@ -1396,8 +1392,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _navigationLanguage = _normalizeNavigationLanguage(prefs.getString('navigation_language') ?? 'ru-RU');
       _selectedVoiceName = prefs.getString('voice_name');
       _selectedVoiceLocale = prefs.getString('voice_locale');
-      _kazakhVoiceId = (prefs.getInt('kazakh_voice_sid') ?? 0).clamp(0, 5).toInt();
-      _kazakhVoiceEnabled = prefs.getBool('kazakh_voice_enabled') ?? false;
       await _tts.awaitSpeakCompletion(true);
       await _tts.setLanguage(_navigationLanguage);
       await _tts.setSpeechRate(0.5);
@@ -1451,7 +1445,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _speechGeneration++;
     _speechQueue = Future<void>.value();
     unawaited(_tts.stop());
-    unawaited(_kazakhVoiceService.stop());
   }
 
   Future<void> _speakText(String text) {
@@ -2056,7 +2049,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _searchController.dispose();
     _searchFocusNode.dispose();
     _tts.stop();
-    unawaited(_kazakhVoiceService.dispose());
     _roadAlertService.dispose();
     super.dispose();
   }
@@ -2381,12 +2373,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           onOpenGpsDiagnostics: _openGpsDiagnostics,
           onVoiceChanged: (enabled) {
             setState(() => _voiceMode = enabled ? 3 : 0);
-            if (!enabled) {
-              unawaited(_tts.stop());
-              unawaited(_kazakhVoiceService.stopAndUnload().catchError((Object error) {
-                debugPrint('BAKE ISSAI unload after voice switch failed: $error');
-              }));
-            }
+            if (!enabled) unawaited(_tts.stop());
           },
         ),
       ),
@@ -2454,17 +2441,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     var volume = prefs.getDouble('voice_volume') ?? 1.0;
     var rate = prefs.getDouble('voice_rate') ?? 0.48;
     var language = prefs.getString('navigation_language') ?? _navigationLanguage;
-    var kazakhVoiceId = (prefs.getInt('kazakh_voice_sid') ?? _kazakhVoiceId).clamp(0, 5).toInt();
-    var kazakhVoiceEnabled = prefs.getBool('kazakh_voice_enabled') ?? false;
-    var offlineVoiceBusy = false;
-    var offlineVoiceReady = await _kazakhVoiceService.isInstalled;
-    var offlineVoiceStatus = offlineVoiceReady ? 'Голос Иса уже скачан и доступен без интернета.' : '';
-    var offlineVoiceFailed = false;
-    var progressReceived = 0;
-    var progressTotal = -1;
     var selectedKey = (_selectedVoiceName == null || _selectedVoiceLocale == null)
         ? ''
-        : '$_selectedVoiceName|$_selectedVoiceLocale';
+        : '${_selectedVoiceName}|${_selectedVoiceLocale}';
     const languages = <String, String>{
       'ru-RU': 'Русский',
       'kk-KZ': 'Қазақша',
@@ -2474,101 +2453,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     List<Map<String, String>> voicesFor(String lang) => _availableVoices
         .where((v) => (v['locale'] ?? '').toLowerCase().replaceAll('_', '-').startsWith(lang.substring(0, 2).toLowerCase()))
         .toList();
-    StateSetter refreshSheet = (_) {};
-
-    Future<void> loadAndPreviewVoice() async {
-      if (offlineVoiceBusy) return;
-      offlineVoiceBusy = true;
-      offlineVoiceFailed = false;
-      offlineVoiceStatus = AppLocale.pick(
-        'Қазақша дауыс дайындалып жатыр…',
-        'Қазақша дауыс дайындалып жатыр…',
-        'Preparing Kazakh voice…',
-      );
-      progressReceived = 0;
-      progressTotal = -1;
-      refreshSheet(() {});
-      try {
-        // Previewing ISSAI must not silently enable navigation voice.
-        refreshSheet(() {});
-        await _kazakhVoiceService.speak(
-          text: 'Сәлем, мен Иса, жолға дайынмын!',
-          speakerId: kazakhVoiceId,
-          speed: 1.0,
-          onDownloadProgress: (received, total) {
-            progressReceived = received;
-            progressTotal = total;
-            final receivedMb = (received / (1024 * 1024)).toStringAsFixed(0);
-            if (total > 0) {
-              final totalMb = (total / (1024 * 1024)).toStringAsFixed(0);
-              final percent = (received * 100 / total).clamp(0, 100).round();
-              offlineVoiceStatus = 'Жүктелуде: $percent% ($receivedMb / $totalMb МБ)';
-            } else {
-              offlineVoiceStatus = 'Жүктелуде: $receivedMb МБ';
-            }
-            refreshSheet(() {});
-          },
-          onStage: (stage) {
-            offlineVoiceStatus = stage == 'extracting'
-                ? 'Архив распаковывается…'
-                : 'Қазақша дауыс қозғалтқышы іске қосылуда…';
-            refreshSheet(() {});
-          },
-        );
-        offlineVoiceReady = true;
-        offlineVoiceFailed = false;
-        offlineVoiceStatus = AppLocale.pick(
-          'Қазақша офлайн дауыс дайын.',
-          'Қазақша офлайн дауыс дайын.',
-          'Kazakh offline voice is ready.',
-        );
-      } catch (error) {
-        offlineVoiceFailed = true;
-        final detail = error.toString().replaceFirst('Exception: ', '').trim();
-        offlineVoiceStatus = detail.isEmpty
-            ? 'Қазақша дауыс іске қосылмады.'
-            : (detail.length > 220 ? '${detail.substring(0, 220)}…' : detail);
-      } finally {
-        await _kazakhVoiceService.stopAndUnload();
-        offlineVoiceBusy = false;
-        refreshSheet(() {});
-      }
-    }
-
-    Future<void> importVoiceArchive() async {
-      if (offlineVoiceBusy) return;
-      offlineVoiceBusy = true;
-      offlineVoiceFailed = false;
-      offlineVoiceStatus = 'Архив тексеріліп, орнатылуда…';
-      refreshSheet(() {});
-      try {
-        final directory = await _kazakhVoiceService.importModelArchive();
-        if (directory == null) {
-          offlineVoiceStatus = '';
-        } else {
-          await _kazakhVoiceService.speak(
-            text: 'Сәлем, мен Иса, жолға дайынмын!',
-            speakerId: kazakhVoiceId,
-            speed: 1.0,
-          );
-          offlineVoiceReady = true;
-          offlineVoiceStatus = 'Қазақша офлайн дауыс дайын.';
-        }
-      } catch (error) {
-        offlineVoiceFailed = true;
-        // Keep the real failure visible: import, extraction and TTS startup
-        // are different stages and must not all be reported as a bad archive.
-        final detail = error.toString().replaceFirst('Exception: ', '').trim();
-        offlineVoiceStatus = detail.isEmpty
-            ? 'Архивті өңдеу кезінде қате болды. Файлды қайта таңдаңыз.'
-            : (detail.length > 220 ? '${detail.substring(0, 220)}…' : detail);
-      } finally {
-        await _kazakhVoiceService.stopAndUnload();
-        offlineVoiceBusy = false;
-        refreshSheet(() {});
-      }
-    }
-
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -2576,7 +2460,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (sheetContext) => StatefulBuilder(
         builder: (sheetContext, refresh) {
-          refreshSheet = refresh;
           final voices = voicesFor(language);
           final selectedExists = voices.any((v) => '${v['name']}|${v['locale']}' == selectedKey);
           return SafeArea(
@@ -2601,25 +2484,13 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                       selected: language == entry.key,
                       onSelected: (_) async {
                         final value = entry.key;
-                        // Apply language immediately; native ISSAI shutdown is
-                        // independent and must not block Russian/English selection.
                         language = value;
                         _navigationLanguage = value;
                         _selectedVoiceName = null;
                         _selectedVoiceLocale = null;
                         selectedKey = '';
-                        if (value != 'kk-KZ') {
-                          kazakhVoiceEnabled = false;
-                          _kazakhVoiceEnabled = false;
-                        }
                         refresh(() {});
                         await prefs.setString('navigation_language', value);
-                        if (value != 'kk-KZ') {
-                          await prefs.setBool('kazakh_voice_enabled', false);
-                          unawaited(_kazakhVoiceService.stopAndUnload().catchError((Object error) {
-                            debugPrint('BAKE ISSAI unload after language change failed: $error');
-                          }));
-                        }
                         await prefs.remove('voice_name');
                         await prefs.remove('voice_locale');
                         await _tts.setLanguage(value);
@@ -2629,101 +2500,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                       },
                     )).toList(),
                   ),
-                  if (language == 'kk-KZ') ...[
-                    const SizedBox(height: 14),
-                    Text('Қазақша офлайн дауысы · ISSAI', style: const TextStyle(fontWeight: FontWeight.w700)),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Использовать голос Исай'),
-                      subtitle: const Text('Выключено — модель не загружается и не запускается автоматически.'),
-                      value: kazakhVoiceEnabled,
-                      onChanged: (value) async {
-                        kazakhVoiceEnabled = value;
-                        _kazakhVoiceEnabled = value;
-                        await prefs.setBool('kazakh_voice_enabled', value);
-                        if (!value) {
-                          await _kazakhVoiceService.stopAndUnload();
-                          offlineVoiceStatus = 'Голос Исай выключен. Файл модели сохранён на телефоне.';
-                        } else {
-                          offlineVoiceStatus = 'Голос Исай включён. Загрузка начнётся при проверке голоса или навигационной подсказке.';
-                        }
-                        refresh(() {});
-                      },
-                    ),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<int>(
-                      value: kazakhVoiceId,
-                      isExpanded: true,
-                      items: KazakhVoiceService.voices.map((voice) =>
-                        DropdownMenuItem<int>(
-                          value: voice.id,
-                          child: Text(voice.label, overflow: TextOverflow.ellipsis),
-                        ),
-                      ).toList(),
-                      onChanged: (value) async {
-                        if (value == null) return;
-                        kazakhVoiceId = value;
-                        _kazakhVoiceId = value;
-                        await prefs.setInt('kazakh_voice_sid', value);
-                        refresh(() {});
-                      },
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      AppLocale.pick('В пакете 2 мужских и 4 женских голоса. Первая загрузка — около 129 МБ, дальше работает без интернета.', 'Бір пакетте 2 ер және 4 әйел дауысы бар. Алғашқы жүктеу шамамен 129 МБ, кейін интернетсіз жұмыс істейді.', 'One package includes 2 male and 4 female voices. First download is about 129 MB; after that it works offline.'),
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF62666D)),
-                    ),
-                    const SizedBox(height: 8),                    Row(
-                      children: [
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: offlineVoiceBusy ? null : loadAndPreviewVoice,
-                            icon: offlineVoiceBusy
-                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                                : Icon(offlineVoiceReady ? Icons.check_circle_outline : Icons.download_for_offline_outlined),
-                            label: Text(offlineVoiceBusy
-                                ? AppLocale.pick('Загрузка голоса…', 'Дауыс жүктелуде…', 'Downloading voice…')
-                                : offlineVoiceReady
-                                    ? AppLocale.pick('Голос Иса скачан · Проверить', 'Иса дауысы жүктелген · Тексеру', 'Issai voice downloaded · Test')
-                                    : AppLocale.pick('Скачать голос Иса', 'Иса дауысын жүктеу', 'Download Issai voice')),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (offlineVoiceBusy) ...[
-                      const SizedBox(height: 8),
-                      LinearProgressIndicator(
-                        value: progressTotal > 0
-                            ? (progressReceived / progressTotal).clamp(0.0, 1.0)
-                            : null,
-                        minHeight: 5,
-                      ),
-                    ],
-                    OutlinedButton.icon(
-                      onPressed: offlineVoiceBusy ? null : importVoiceArchive,
-                      icon: const Icon(Icons.folder_open_outlined),
-                      label: const Text('Файлдан таңдау (Выбрать архив с телефона)'),
-                    ),
-                    if (offlineVoiceFailed)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: offlineVoiceBusy ? null : loadAndPreviewVoice,
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('Қайталау'),
-                        ),
-                      ),
-                    if (offlineVoiceStatus.isNotEmpty)
-                      Text(offlineVoiceStatus, style: const TextStyle(fontSize: 12, color: Color(0xFF62666D))),
-                  ],
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   Text(AppLocale.tr('Голос телефона'), style: TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
                   if (voices.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       child: Text(
-                        AppLocale.tr('Список голосов Android пуст. Для казахского языка можно загрузить встроенный офлайн-пакет ISSAI выше.'),
+                        AppLocale.tr('Список голосов Android пуст.'),
                         style: const TextStyle(color: Color(0xFF9A5B00)),
                       ),
                     )
@@ -2752,7 +2536,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                           _selectedVoiceLocale = voice['locale'];
                           await prefs.setString('voice_name', _selectedVoiceName!);
                           await prefs.setString('voice_locale', _selectedVoiceLocale!);
-                          // Custom voices are not applied; the navigator uses one system voice.
                         }
                         refresh(() {});
                       },
@@ -2784,10 +2567,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                         _voiceMode = index;
                         refresh(() {});
                         await prefs.setInt('voice_mode', index);
-                        if (index == 0) {
-                          await _tts.stop();
-                          await _kazakhVoiceService.stopAndUnload();
-                        }
+                        if (index == 0) await _tts.stop();
                       },
                     )),
                   ),
@@ -2806,7 +2586,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
                     await prefs.setDouble('voice_volume', value); await _tts.setVolume(value);
                   }),
                   Text('${AppLocale.tr('Скорость речи')} · ${rate.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                  Slider(value: rate, min: 0.25, max: 0.75, divisions: 10, onChanged: (value) async {                    rate = value; refresh(() {});
+                  Slider(value: rate, min: 0.25, max: 0.75, divisions: 10, onChanged: (value) async {
+                    rate = value; refresh(() {});
                     await prefs.setDouble('voice_rate', value); await _tts.setSpeechRate(value);
                   }),
                   const SizedBox(height: 12),
@@ -5106,7 +4887,6 @@ _navigationMatchedLocation = null;
       _searchController.clear();
     });
     await _tts.stop();
-    await _kazakhVoiceService.stop();
     await _removeSavedRoutePoint(_savedRouteDestinationKey);
     // Clear the rendered map route and destination annotation immediately.
   }
@@ -10563,7 +10343,6 @@ _navigationMatchedLocation = null;
                             await prefs.setInt('voice_mode', _voiceMode);
                             if (!enabled) {
                               await _tts.stop();
-                              await _kazakhVoiceService.stopAndUnload();
                             } else if (_navigationActive) {
                               unawaited(_speakCurrentInstruction());
                             }
