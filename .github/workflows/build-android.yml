@@ -830,7 +830,7 @@ jobs:
           dart_main = Path("lib/main.dart")
           dart_content = dart_main.read_text()
           if "bake.navigator/maplibre_experiment" not in dart_content:
-              marker = "title: const Text('Экспериментальная карта Maptoolkit Street'),"
+              marker = "title: const Text('Экспериментальная карта OpenFreeMap'),"
               marker_index = dart_content.find(marker)
               if marker_index < 0:
                   raise SystemExit("Maptoolkit settings tile title was not found")
