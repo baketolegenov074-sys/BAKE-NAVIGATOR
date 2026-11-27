@@ -1710,7 +1710,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   }
 
   LatLng get _mapCameraCenter {
-    return _offlineMapReady ? _mapController.camera.center : (_currentLocation ?? _shymkent);
+    return _offlineMapReady
+        ? _mapController.camera.center
+        : (_currentLocation ?? const LatLng(0, 0));
   }
   double get _mapCameraZoom => _offlineMapReady ? _mapController.camera.zoom : 13;
   // Manual panning disables camera-follow only; GPS, route progress and voice guidance keep running.
