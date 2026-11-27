@@ -10797,17 +10797,18 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
         throw Exception('Сначала сохраните файл карты в память телефона, затем выберите его.');
       }
       final source = File(sourcePath);
+      // Validate the selected file before replacing the currently installed map.
+      final validationDatabase = MbTiles(mbtilesPath: source.path);
+      final validationFormat = validationDatabase.getMetadata().format?.toLowerCase();
+      validationDatabase.dispose();
+      if (validationFormat != 'pbf' && validationFormat != 'mvt') {
+        throw Exception('Поддерживается только векторная MBTiles-карта (PBF/MVT).');
+      }
       final directory = await getApplicationSupportDirectory();
       final destination = File('${directory.path}/bake_offline_map.mbtiles');
       if (source.absolute.path != destination.absolute.path) {
         if (await destination.exists()) await destination.delete();
         await source.copy(destination.path);
-      }
-      final validationDatabase = MbTiles(mbtilesPath: destination.path);
-      final validationFormat = validationDatabase.getMetadata().format?.toLowerCase();
-      validationDatabase.dispose();
-      if (validationFormat != 'pbf' && validationFormat != 'mvt') {
-        throw Exception('Поддерживается только векторная MBTiles-карта (PBF/MVT).');
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('offline_map_path', destination.path);
