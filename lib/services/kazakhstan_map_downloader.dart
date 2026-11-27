@@ -108,27 +108,21 @@ class KazakhstanMapDownloader {
     var completedParts = 0;
     for (final asset in release.assets) {
       boundary += asset.size;
-      if (completedBytes == boundary) {
+      if (completedBytes >= boundary) {
         completedParts++;
-      } else if (completedBytes < boundary) {
-        break;
       } else {
-        continue;
+        break;
       }
     }
-    final validBoundary = completedParts == 0
-        ? 0
-        : release.assets.take(completedParts).fold<int>(
-            0, (sum, asset) => sum + asset.size);
+    final validBoundary = release.assets.take(completedParts).fold<int>(
+      0,
+      (sum, asset) => sum + asset.size,
+    );
     if (completedBytes != validBoundary) {
-      if (await assembling.exists()) await assembling.delete();
-      completedBytes = 0;
-      completedParts = 0;
-    }
-    if (completedBytes > release.totalBytes) {
-      await assembling.delete();
-      completedBytes = 0;
-      completedParts = 0;
+      if (await assembling.exists()) {
+        await assembling.truncate(validBoundary);
+      }
+      completedBytes = validBoundary;
     }
 
     for (var index = completedParts; index < release.assets.length; index++) {
@@ -160,10 +154,10 @@ class KazakhstanMapDownloader {
         var partBytes = 0;
         var lastReported = 0;
         try {
-          await for (final data in response.stream) {
+          await for (final data in response.stream.timeout(const Duration(minutes: 5))) {
             sink.add(data);
             partBytes += data.length;
-            if (partBytes - lastReported >= 4 * 1024 * 1024) {
+            if (partBytes - lastReported >= 16 * 1024 * 1024) {
               lastReported = partBytes;
               onProgress(
                 completedBytes + partBytes,
