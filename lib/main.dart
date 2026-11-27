@@ -1767,10 +1767,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   void _updateNavigationCamera(LatLng point, double zoom, double heading) {
     if (!point.latitude.isFinite || !point.longitude.isFinite ||
         !zoom.isFinite || !heading.isFinite) return;
-    _lastCameraHeadingDegrees = _normalizeCameraHeading(heading);
+    final previousCameraHeading = _lastCameraHeadingDegrees;
+    final normalizedHeading = _normalizeCameraHeading(heading);
+    _lastCameraHeadingDegrees = normalizedHeading;
     if (!_appInForeground || !_offlineMapReady) return;
 
-    final normalizedHeading = _normalizeCameraHeading(heading);
     if (_cameraFollowCurrentCenter == null ||
         _cameraFollowCurrentZoom == null ||
         _cameraFollowCurrentHeading == null) {
@@ -1778,9 +1779,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _cameraFollowCurrentZoom = _mapController.camera.zoom;
       // The first camera transition starts from north-up unless a prior
       // camera heading is already known. GPS coordinates remain untouched.
-      _cameraFollowCurrentHeading = _lastCameraHeadingDegrees == normalizedHeading
-          ? 0.0
-          : (_lastCameraHeadingDegrees ?? 0.0);
+      _cameraFollowCurrentHeading = previousCameraHeading ?? 0.0;
       _cameraFollowLastSentCenter = _cameraFollowCurrentCenter;
       _cameraFollowLastSentZoom = _cameraFollowCurrentZoom;
       _cameraFollowLastSentHeading = _cameraFollowCurrentHeading;
@@ -1790,7 +1789,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     _cameraFollowTargetCenter = point;
     _cameraFollowTargetZoom = zoom;
     _cameraFollowTargetHeading = normalizedHeading;
-    _cameraFollowLastTickElapsed = null;
     if (!_cameraFollowTicker.isActive) {
       _cameraFollowTicker.start();
     }
