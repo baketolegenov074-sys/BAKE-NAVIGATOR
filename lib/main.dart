@@ -32,6 +32,7 @@ import 'screens/openfreemap_experiment.dart';
 import 'services/road_report_sync_service.dart';
 import 'services/valhalla_archive_validator.dart';
 import 'services/map_startup_diagnostics.dart';
+import 'services/kazakhstan_map_downloader.dart';
 
 
 bool _isExpectedVectorTileCancellation(Object error, StackTrace? stackTrace) {
@@ -10650,6 +10651,9 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
   String? _offlineMapPath;
   bool _offlineMapAutoConnected = false;
   bool _importingOfflineMap = false;
+  bool _downloadingKazakhstanMap = false;
+  double _kazakhstanMapProgress = 0;
+  String _kazakhstanMapDownloadStatus = '';
   String? _valhallaExtractPath;
   bool _importingValhallaExtract = false;
   String _valhallaStatus = 'Офлайн-граф ещё не подключён';
@@ -10711,6 +10715,93 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
     _avoidTolls = prefs.getBool('avoid_tolls') ?? false;
     _avoidUnpaved = prefs.getBool('avoid_unpaved') ?? false;
     if (mounted) setState(() => _loading = false);
+  }
+
+  String _formatMapDownloadSize(int bytes) {
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} ГБ';
+  }
+
+  Future<void> _downloadKazakhstanMap() async {
+    if (_downloadingKazakhstanMap || _importingOfflineMap) return;
+    try {
+      final downloader = KazakhstanMapDownloader();
+      final release = await downloader.fetchLatestRelease();
+      if (!mounted) return;
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Офлайн-карта Казахстана'),
+          content: Text(
+            'Размер карты: ${_formatMapDownloadSize(release.totalBytes)}. '
+            'Понадобится стабильный Wi-Fi и свободное место на телефоне. '
+            'Карта будет загружена частями, проверена и собрана автоматически.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Отмена'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Начать загрузку'),
+            ),
+          ],
+        ),
+      );
+      if (accepted != true || !mounted) return;
+
+      setState(() {
+        _downloadingKazakhstanMap = true;
+        _kazakhstanMapProgress = 0;
+        _kazakhstanMapDownloadStatus = 'Подготовка загрузки…';
+      });
+      final directory = await getApplicationSupportDirectory();
+      final path = await downloader.download(
+        release: release,
+        directory: directory,
+        onProgress: (received, total, status) {
+          if (!mounted) return;
+          setState(() {
+            _kazakhstanMapProgress =
+                total == 0 ? 0 : (received / total).clamp(0.0, 1.0);
+            _kazakhstanMapDownloadStatus =
+                '$status · ${_formatMapDownloadSize(received)} / ${_formatMapDownloadSize(total)}';
+          });
+        },
+      );
+
+      final validationDatabase = MbTiles(mbtilesPath: path);
+      final format = validationDatabase.getMetadata().format?.toLowerCase();
+      validationDatabase.dispose();
+      if (format != 'pbf' && format != 'mvt') {
+        await File(path).delete();
+        throw Exception('Загруженный файл не является векторной MBTiles-картой.');
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('offline_map_path', path);
+      await prefs.setBool('offline_map_auto_connected', true);
+      if (!mounted) return;
+      setState(() {
+        _offlineMapPath = path;
+        _offlineMapAutoConnected = true;
+        _kazakhstanMapProgress = 1;
+        _kazakhstanMapDownloadStatus = 'Карта Казахстана подключается…';
+      });
+      Navigator.of(context).pop(path);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Не удалось загрузить карту Казахстана: $error'),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _downloadingKazakhstanMap = false);
+      }
+    }
   }
 
   Future<void> _importOfflineMap() async {
@@ -10962,8 +11053,34 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
                         ),
                         SizedBox(
                           width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: (_downloadingKazakhstanMap || _importingOfflineMap)
+                                ? null
+                                : _downloadKazakhstanMap,
+                            icon: _downloadingKazakhstanMap
+                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                                : const Icon(Icons.download_for_offline_outlined),
+                            label: Text(_downloadingKazakhstanMap
+                                ? 'Загружаем карту Казахстана…'
+                                : 'Скачать карту Казахстана автоматически'),
+                          ),
+                        ),
+                        if (_downloadingKazakhstanMap) ...[
+                          const SizedBox(height: 10),
+                          LinearProgressIndicator(value: _kazakhstanMapProgress),
+                          const SizedBox(height: 6),
+                          Text(
+                            _kazakhstanMapDownloadStatus,
+                            style: const TextStyle(fontSize: 12, color: Colors.black54),
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
                           child: OutlinedButton.icon(
-                            onPressed: _importingOfflineMap ? null : _importOfflineMap,
+                            onPressed: (_importingOfflineMap || _downloadingKazakhstanMap)
+                                ? null
+                                : _importOfflineMap,
                             icon: _importingOfflineMap
                                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                                 : const Icon(Icons.file_open_outlined),
