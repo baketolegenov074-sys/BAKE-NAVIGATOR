@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Resolve the OSM administrative polygon for Shymkent (city only)."""
 import json
-import sys
-import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -30,6 +28,8 @@ for item in results:
     if item.get("osm_type") != "relation":
         continue
     if tags.get("boundary") != "administrative":
+        continue
+    if tags.get("place") not in (None, "", "city"):
         continue
     if name not in {"shymkent", "шимкент"}:
         continue
