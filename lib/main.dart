@@ -1,6 +1,4 @@
-import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -10,7 +8,6 @@ import 'package:flutter_map_mbtiles/flutter_map_mbtiles.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -69,7 +66,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   final TextEditingController _searchController = TextEditingController();
   MbTilesTileProvider? _offlineTileProvider;
 
-  LatLng? _currentLocation;
   LatLng? _destination;
   List<LatLng> _routePoints = [];
   List<RouteInstruction> _instructions = [];
@@ -77,25 +73,15 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   bool _navigationActive = false;
   double? _routeDistanceMeters;
   double? _routeDurationSeconds;
-  StreamSubscription<Position>? _positionSubscription;
-  bool _isLocating = false;
   bool _isSearching = false;
   bool _isBuildingRoute = false;
-  double? _gpsAccuracyMeters;
-  double? _gpsHeadingDegrees;
-  int _offRouteSamples = 0;
-  DateTime? _lastAutomaticReroute;
-  String _message = 'Нажмите «Моё местоположение» или удерживайте точку на карте';
+  String _message = 'Удерживайте точку на карте, чтобы выбрать пункт назначения';
 
   @override
   void initState() {
     super.initState();
     _configureVoice();
     _loadSavedOfflineMap();
-    // Ask for location after the first frame so the permission dialog has a valid context.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_locateMe());
-    });
   }
 
   Future<void> _configureVoice() async {
@@ -110,7 +96,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
 
   @override
   void dispose() {
-    _positionSubscription?.cancel();
     _offlineTileProvider?.dispose();
     _searchController.dispose();
     _tts.stop();
@@ -159,109 +144,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       setState(() => _message = 'Не удалось открыть офлайн-карту: $error');
     }
   }
-
-  Future<void> _locateMe() async {
-    if (_isLocating) return;
-
-    setState(() {
-      _isLocating = true;
-      _message = 'Определяем GPS-положение…';
-    });
-
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        throw Exception('Включите геолокацию (GPS) на телефоне.');
-      }
-
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied) {
-        throw Exception('Разрешите приложению доступ к местоположению.');
-      }
-      if (permission == LocationPermission.deniedForever) {
-        throw Exception('Доступ к GPS запрещён в настройках телефона.');
-      }
-
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          timeLimit: Duration(seconds: 20),
-        ),
-      );
-
-      final point = LatLng(position.latitude, position.longitude);
-      if (!mounted) return;
-      setState(() {
-        _currentLocation = point;
-        _gpsAccuracyMeters = position.accuracy;
-        if (position.speed >= 0.8 && position.heading.isFinite) {
-          _gpsHeadingDegrees = position.heading;
-        }
-        _message = 'GPS определён. Положение будет обновляться в реальном времени.';
-      });
-      _mapController.move(point, 15);
-      await _startLiveLocationUpdates();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _message = error.toString().replaceFirst('Exception: ', ''));
-    } finally {
-      if (mounted) setState(() => _isLocating = false);
-    }
-  }
-
-
-  Future<void> _startLiveLocationUpdates({bool backgroundNavigation = false}) async {
-    await _positionSubscription?.cancel();
-    if (!mounted) return;
-
-    final LocationSettings locationSettings;
-    if (backgroundNavigation && defaultTargetPlatform == TargetPlatform.android) {
-      locationSettings = AndroidSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 5,
-        intervalDuration: const Duration(seconds: 3),
-        foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: 'BAKE Navigator — навигация активна',
-          notificationText: 'GPS и голосовые подсказки продолжают работать в фоне.',
-          notificationChannelName: 'Фоновая навигация',
-          setOngoing: true,
-        ),
-      );
-    } else {
-      locationSettings = const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 5,
-      );
-    }
-
-    _positionSubscription = Geolocator.getPositionStream(
-      locationSettings: locationSettings,
-    ).listen(
-      (position) {
-        if (!mounted) return;
-        setState(() {
-          _currentLocation = LatLng(position.latitude, position.longitude);
-          _gpsAccuracyMeters = position.accuracy;
-          // Ignore unstable compass headings while stopped or moving very slowly.
-          if (position.speed >= 0.8 && position.heading.isFinite) {
-            _gpsHeadingDegrees = position.heading;
-          }
-        });
-        _updateNavigationProgress(_currentLocation!);
-        _checkForOffRoute(position);
-      },
-      onError: (Object error) {
-        if (!mounted) return;
-        setState(() {
-          _message = 'Потеряна связь с GPS. Проверьте геолокацию телефона.';
-        });
-      },
-    );
-  }
-
 
   Future<void> _searchAddress() async {
     final query = _searchController.text.trim();
@@ -352,7 +234,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   void _selectDestination(LatLng point) {
-    final wasNavigating = _navigationActive;
     setState(() {
       _destination = point;
       _routePoints = [];
@@ -363,9 +244,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = 'Точка назначения выбрана. Нажмите «Построить маршрут».';
     });
-    if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
-
 
   String _instructionText(Map<String, dynamic> step) {
     final maneuver = step['maneuver'] as Map<String, dynamic>? ?? {};
@@ -418,25 +297,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   Future<void> _startNavigation() async {
-    if (_instructions.isEmpty || _currentLocation == null) return;
+    if (_instructions.isEmpty) return;
     setState(() {
       _navigationActive = true;
       _instructionIndex = _instructions.length > 1 ? 1 : 0;
-      _message = 'Включаем фоновый GPS и голосовые подсказки…';
-    });
-    try {
-      await _startLiveLocationUpdates(backgroundNavigation: true);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _navigationActive = false;
-        _message = 'Не удалось включить фоновый GPS: $error';
-      });
-      return;
-    }
-    if (!mounted) return;
-    setState(() {
-      _message = 'Навигация началась. GPS продолжит работать при свёрнутом приложении.';
+      _message = 'Запущены голосовые подсказки без GPS в устаревшем Flutter-модуле.';
     });
     await _speakCurrentInstruction();
   }
@@ -444,40 +309,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   Future<void> _speakCurrentInstruction() async {
     if (!_navigationActive || _instructionIndex >= _instructions.length) return;
     final instruction = _instructions[_instructionIndex];
-    final meters = Geolocator.distanceBetween(
-      _currentLocation!.latitude,
-      _currentLocation!.longitude,
-      instruction.location.latitude,
-      instruction.location.longitude,
-    );
+    final meters = instruction.distanceMeters;
     final distanceText = meters >= 1000
         ? '${(meters / 1000).toStringAsFixed(1)} километра'
         : '${meters.round()} метров';
     await _tts.speak('${instruction.text} через $distanceText.');
-  }
-
-  void _updateNavigationProgress(LatLng position) {
-    if (!_navigationActive || _instructionIndex >= _instructions.length) return;
-    final target = _instructions[_instructionIndex];
-    final meters = Geolocator.distanceBetween(
-      position.latitude,
-      position.longitude,
-      target.location.latitude,
-      target.location.longitude,
-    );
-    if (meters <= 35) {
-      if (_instructionIndex + 1 >= _instructions.length) {
-        setState(() {
-          _navigationActive = false;
-          _message = 'Вы прибыли в пункт назначения.';
-        });
-        _tts.speak('Вы прибыли в пункт назначения.');
-        unawaited(_startLiveLocationUpdates());
-        return;
-      }
-      setState(() => _instructionIndex++);
-      _speakCurrentInstruction();
-    }
   }
 
   Future<void> _stopNavigation() async {
@@ -486,86 +322,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _message = 'Навигация остановлена.';
     });
     await _tts.stop();
-    await _startLiveLocationUpdates();
   }
 
 
-  double _distanceToRouteMeters(LatLng position) {
-    if (_routePoints.length < 2) return double.infinity;
-    const latScale = 110540.0;
-    final lonScale = 111320.0 * math.cos(position.latitude * math.pi / 180);
-    final px = position.longitude * lonScale;
-    final py = position.latitude * latScale;
-    var best = double.infinity;
-    for (var i = 0; i < _routePoints.length - 1; i++) {
-      final a = _routePoints[i];
-      final b = _routePoints[i + 1];
-      final ax = a.longitude * lonScale;
-      final ay = a.latitude * latScale;
-      final bx = b.longitude * lonScale;
-      final by = b.latitude * latScale;
-      final dx = bx - ax;
-      final dy = by - ay;
-      final lengthSquared = dx * dx + dy * dy;
-      final t = lengthSquared == 0
-          ? 0.0
-          : (((px - ax) * dx + (py - ay) * dy) / lengthSquared)
-              .clamp(0.0, 1.0);
-      final nearestX = ax + t * dx;
-      final nearestY = ay + t * dy;
-      final distance = math.sqrt(
-        (px - nearestX) * (px - nearestX) +
-            (py - nearestY) * (py - nearestY),
-      );
-      if (distance < best) best = distance;
-    }
-    return best;
-  }
-
-  void _checkForOffRoute(Position position) {
-    if (!_navigationActive || _isBuildingRoute || _destination == null) return;
-    // Ignore poor fixes; a bad GPS point must not trigger a false reroute.
-    if (position.accuracy > 45 || _routePoints.length < 2) return;
-    final now = DateTime.now();
-    if (_lastAutomaticReroute != null &&
-        now.difference(_lastAutomaticReroute!) < const Duration(seconds: 25)) {
-      return;
-    }
-    final distance = _distanceToRouteMeters(
-      LatLng(position.latitude, position.longitude),
-    );
-    final offRouteLimit = math.max(55.0, position.accuracy * 2.0);
-    if (distance > offRouteLimit) {
-      _offRouteSamples++;
-    } else {
-      _offRouteSamples = 0;
-    }
-    if (_offRouteSamples >= 3) {
-      _offRouteSamples = 0;
-      _lastAutomaticReroute = now;
-      _buildRoute(automaticReroute: true);
-    }
-  }
-
-  Future<void> _buildRoute({bool automaticReroute = false}) async {
+  Future<void> _buildRoute() async {
     if (_destination == null) {
       setState(() => _message = 'Сначала удерживайте нужное место на карте.');
       return;
     }
-
-    if (_currentLocation == null) {
-      await _locateMe();
-    }
-    if (_currentLocation == null || _destination == null) return;
-
-    final resumeNavigation = automaticReroute && _navigationActive;
     setState(() {
       _isBuildingRoute = true;
-      _message = automaticReroute ? 'Вы отклонились от маршрута. Перестраиваем…' : 'Строим маршрут…';
+      _message = 'Строим тестовый маршрут от центра Шымкента…';
     });
-
     try {
-      final start = _currentLocation!;
+      final start = _shymkent;
       final end = _destination!;
       final uri = Uri.parse(
         'https://router.project-osrm.org/route/v1/driving/'
@@ -573,61 +343,37 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
         '${end.longitude},${end.latitude}'
         '?overview=full&geometries=geojson&steps=true',
       );
-
-      // Public OSRM demo endpoint is for testing, not production traffic.
       final response = await http.get(uri).timeout(const Duration(seconds: 25));
       if (response.statusCode != 200) {
         throw Exception('Сервис маршрутов временно недоступен.');
       }
-
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       if (data['code'] != 'Ok' || (data['routes'] as List).isEmpty) {
         throw Exception('Маршрут не найден. Попробуйте другую точку.');
       }
-
       final route = (data['routes'] as List).first as Map<String, dynamic>;
       final geometry = route['geometry'] as Map<String, dynamic>;
       final coordinates = geometry['coordinates'] as List<dynamic>;
       final instructions = _readInstructions(route);
       final points = coordinates.map((coordinate) {
         final pair = coordinate as List<dynamic>;
-        return LatLng(
-          (pair[1] as num).toDouble(),
-          (pair[0] as num).toDouble(),
-        );
+        return LatLng((pair[1] as num).toDouble(), (pair[0] as num).toDouble());
       }).toList();
-
       if (!mounted) return;
       setState(() {
         _routePoints = points;
         _instructions = instructions;
-        _navigationActive = resumeNavigation;
-        _instructionIndex = resumeNavigation && instructions.length > 1 ? 1 : 0;
-        _offRouteSamples = 0;
+        _navigationActive = false;
+        _instructionIndex = 0;
         _routeDistanceMeters = (route['distance'] as num).toDouble();
         _routeDurationSeconds = (route['duration'] as num).toDouble();
-        _message = automaticReroute
-            ? 'Маршрут перестроен. Продолжаем навигацию.'
-            : 'Маршрут построен. Это предварительный расчёт для тестирования.';
+        _message = 'Маршрут построен от центра Шымкента. GPS в этом старом модуле отключён.';
       });
-
       if (points.isNotEmpty) {
-        _mapController.fitCamera(
-          CameraFit.coordinates(
-            coordinates: points,
-            padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
-          ),
-        );
-      }
-
-      if (automaticReroute && resumeNavigation) {
-        await _tts.speak('Вы отклонились от маршрута. Маршрут перестроен.');
-        await _speakCurrentInstruction();
-      } else {
-        final distanceKm = (_routeDistanceMeters! / 1000).toStringAsFixed(1);
-        final minutes = (_routeDurationSeconds! / 60).round();
-        await _tts.speak('Маршрут построен. Расстояние $distanceKm километра. '
-            'Примерное время в пути $minutes минут.');
+        _mapController.fitCamera(CameraFit.coordinates(
+          coordinates: points,
+          padding: const EdgeInsets.fromLTRB(36, 100, 36, 250),
+        ));
       }
     } catch (error) {
       if (!mounted) return;
@@ -638,7 +384,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   }
 
   void _clearDestination() {
-    final wasNavigating = _navigationActive;
     setState(() {
       _destination = null;
       _routePoints = [];
@@ -649,17 +394,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
       _routeDurationSeconds = null;
       _message = 'Маршрут очищен. Удерживайте карту, чтобы выбрать новую точку.';
     });
-    if (wasNavigating) unawaited(_startLiveLocationUpdates());
   }
 
-  String _gpsQualityLabel(double accuracyMeters) {
-    if (accuracyMeters <= 10) return 'отличный сигнал';
-    if (accuracyMeters <= 20) return 'хороший сигнал';
-    if (accuracyMeters <= 50) return 'слабый сигнал';
-    return 'неточный сигнал';
-  }
-
-  String _routeSummary() {
+  String _routeSummary() {  String _routeSummary() {
     if (_routeDistanceMeters == null || _routeDurationSeconds == null) {
       return 'Маршрут ещё не построен';
     }
@@ -671,20 +408,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
   @override
   Widget build(BuildContext context) {
     final markers = <Marker>[
-      if (_currentLocation != null)
-        Marker(
-          point: _currentLocation!,
-          width: 44,
-          height: 44,
-          child: Transform.rotate(
-            angle: (_gpsHeadingDegrees ?? 0) * math.pi / 180,
-            child: const Icon(
-              Icons.navigation,
-              color: Color(0xFF1769AA),
-              size: 36,
-            ),
-          ),
-        ),
       if (_destination != null)
         Marker(
           point: _destination!,
@@ -751,23 +474,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
             ],
           ),
           Positioned(
-            top: 12,
-            right: 12,
-            child: FloatingActionButton.small(
-              heroTag: 'locate',
-              backgroundColor: Colors.white,
-              foregroundColor: const Color(0xFF1769AA),
-              onPressed: _isLocating ? null : _locateMe,
-              child: _isLocating
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.my_location),
-            ),
-          ),
-          Positioned(
             left: 12,
             right: 12,
             bottom: 12,
@@ -821,13 +527,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> {
                         style: const TextStyle(fontSize: 13, color: Colors.black87),
                       ),
                       const SizedBox(height: 8),
-                      if (_gpsAccuracyMeters != null) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Точность GPS: ±${_gpsAccuracyMeters!.round()} м · ${_gpsQualityLabel(_gpsAccuracyMeters!)}',
-                          style: const TextStyle(fontSize: 11, color: Colors.black54),
-                        ),
-                      ],
                       Text(
                         _routeSummary(),
                         style: const TextStyle(
@@ -944,12 +643,6 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> with 
   final Map<String, List<PermissionStatus>> _statuses = {};
 
   static const _entries = <_PermissionEntry>[
-    _PermissionEntry(
-      title: 'Местоположение',
-      description: 'GPS для карты и маршрута. Во время навигации Android показывает постоянное уведомление о работе GPS в фоне.',
-      icon: Icons.location_on_outlined,
-      permissions: [Permission.locationWhenInUse],
-    ),
     _PermissionEntry(
       title: 'Микрофон',
       description: 'Для будущего голосового управления и голосового поиска.',
