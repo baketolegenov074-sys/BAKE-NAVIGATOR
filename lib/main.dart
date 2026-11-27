@@ -1753,7 +1753,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           _offlineMapReady &&
           mapCanFollowCompass &&
           (!_navigationActive || _currentSpeedKmh < 5.4)) {
-        _lastCameraHeadingDegrees = heading;
         _updateNavigationCamera(_mapCameraCenter, _mapCameraZoom, heading);
       }
       // Compass events must not rebuild FlutterMap while its first online
@@ -1769,8 +1768,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         !zoom.isFinite || !heading.isFinite) return;
     final previousCameraHeading = _lastCameraHeadingDegrees;
     final normalizedHeading = _normalizeCameraHeading(heading);
-    _lastCameraHeadingDegrees = normalizedHeading;
     if (!_appInForeground || !_offlineMapReady) return;
+    _lastCameraHeadingDegrees = normalizedHeading;
 
     if (_cameraFollowCurrentCenter == null ||
         _cameraFollowCurrentZoom == null ||
