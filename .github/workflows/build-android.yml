@@ -844,10 +844,8 @@ jobs:
                       subtitle: const Text('Отдельный экран Kotlin, без GPS и маршрутов'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () {
-                        _nativeMapLibreTestOpen = true;
                         const MethodChannel('bake.navigator/maplibre_experiment')
                             .invokeMethod<void>('openMap').catchError((Object error) {
-                          _nativeMapLibreTestOpen = false;
                         });
                       },
                     ),
