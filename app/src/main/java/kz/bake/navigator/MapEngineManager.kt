@@ -42,8 +42,10 @@ class MapEngineManager(private val context: Context, private val scope: Lifecycl
    m.setStyle(Style.Builder().fromUri(STYLE_URL)){s->addLayers(s);onReady()}
   }
  }
- fun updateRealLocation(location:android.location.Location){
-  val point=Point.fromLngLat(location.longitude,location.latitude)
+ fun updateRealLocation(location:android.location.Location,displayPosition:LatLng?=null){
+  // Display may be road-snapped; all navigation calculations keep the raw GPS fix.
+  val position=displayPosition?:LatLng(location.latitude,location.longitude)
+  val point=Point.fromLngLat(position.longitude,position.latitude)
   map?.getStyle { style ->
    style.getSourceAs<GeoJsonSource>("gps-position-source")?.setGeoJson(Feature.fromGeometry(point))
   }
