@@ -1086,7 +1086,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   StreamSubscription<CompassEvent>? _compassSubscription;
   double? _lastCameraHeadingDegrees;
   bool _northUpLocked = false;
-  bool _mapFollowEnabled = true;
+  bool _mapFollowEnabled = false;
   bool _headingUpGestureActive = false;
   Timer? _headingUpResumeTimer;
   int _announcedManeuverStage = 0;
@@ -1184,7 +1184,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     // Its archive/native initialization must not compete with first paint.
 
     // One-time startup checks; never repeated on AppLifecycleState.resumed.
-    unawaited(_runStartupDiagnosticTask('Получение первого GPS-местоположения', _locateMe));
+    unawaited(_runStartupDiagnosticTask(
+      'Получение первого GPS-местоположения',
+      () => _locateMe(recenterMap: false),
+    ));
   }
 
   Future<T> _runStartupDiagnosticTask<T>(
@@ -1966,16 +1969,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _scheduleValhallaStartupAfterMapPaint();
       });
     }
-    final point = _currentLocation;
-    if (point == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_offlineMapReady || !_isFlutterMapDisplayed) return;
-      _updateNavigationCamera(
-        point,
-        math.max(_mapCameraZoom, _navigationActive ? 16.0 : 13.0).toDouble(),
-        _gpsHeadingDegrees ?? 0.0,
-      );
-    });
+    // Do not drag the map from Shymkent's initial view to GPS when the
+    // tile provider becomes ready. GPS marker and routing stay independent.
   }
   // Diagnostic build: verify the satellite toggle and Esri raster tiles on device.
   List<LatLng> _simplifyRouteForDisplay(List<LatLng> points) {
@@ -2634,7 +2629,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (mounted) setState(() {});
   }
 
-  Future<void> _locateMe() async {
+  Future<void> _locateMe({bool recenterMap = true}) async {
     if (_isLocating) return;
     if (_gpsAcquisitionMs == null && !_gpsAcquisitionStopwatch.isRunning) {
       _gpsAcquisitionStopwatch.start();
@@ -2676,7 +2671,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       if (!mounted) return;
       _freeDriveDisplayLocation = point;
       _freeDriveFixTimestamp = position.timestamp;
-      _mapFollowEnabled = true;
+      _mapFollowEnabled = recenterMap;
       setState(() {
         _currentLocation = point;
         _gpsAvailable = true;
@@ -2694,20 +2689,25 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       // Refresh the live position without interrupting the active navigation stream.
       // In particular, keep the Android foreground GPS subscription alive while
       // navigating; replacing it with a foreground-only stream can break tracking.
+      if (recenterMap) {
+        if (_navigationActive) {
+          final heading = _gpsHeadingDegrees;
+          _updateNavigationCamera(
+            point,
+            17,
+            heading != null && _currentSpeedKmh >= 5.4 ? heading : 0.0,
+          );
+        } else {
+          _updateNavigationCamera(point, 16, _gpsHeadingDegrees ?? 0.0);
+        }
+      }
       if (_navigationActive) {
-        final heading = _gpsHeadingDegrees;
-        _updateNavigationCamera(
-          point,
-          17,
-          heading != null && _currentSpeedKmh >= 5.4 ? heading : 0.0,
-        );
         // Navigation already owns a background location stream. Do not cancel
         // and replace it just because the user tapped the GPS recenter button.
         if (_positionSubscription == null) {
           await _startLiveLocationUpdates(backgroundNavigation: true);
         }
       } else {
-        _updateNavigationCamera(point, 16, _gpsHeadingDegrees ?? 0.0);
         await _startLiveLocationUpdates();
       }
     } catch (error) {
