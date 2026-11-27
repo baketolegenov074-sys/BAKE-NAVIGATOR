@@ -41,7 +41,7 @@ class RoadSnapEngine {
         lastFetchAt = now
 
         try {
-            val query = "[out:json][timeout:8];way(around:100,${location.latitude},${location.longitude})[\\"highway\\"];out tags geom;"
+            val query = "[out:json][timeout:8];way(around:100,${location.latitude},${location.longitude})[\"highway\"];out tags geom;"
             val body = "data=" + URLEncoder.encode(query, "UTF-8")
             val loaded = http.newCall(
                 Request.Builder()
