@@ -36,7 +36,7 @@ jobs:
           gradle-version: '8.13'
 
       - name: Build native Android debug APK
-        run: gradle assembleDebug
+        run: gradle assembleDebug --stacktrace --info
 
       - name: Upload Kotlin APK
         uses: actions/upload-artifact@v4

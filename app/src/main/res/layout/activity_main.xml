@@ -1,87 +1,281 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootContainer"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
 
     <org.maplibre.android.maps.MapView
         android:id="@+id/mapView"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <TextView
-        android:id="@+id/tvDebug"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_margin="12dp"
-        android:background="#CC111111"
-        android:padding="10dp"
-        android:text="Запуск карты..."
-        android:textColor="#00FF66"
-        android:textSize="12sp"
-        android:fontFamily="monospace" />
+        android:layout_gravity="top"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginEnd="12dp"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:background="#FFFFFF"
+            android:elevation="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingEnd="6dp">
+
+            <EditText
+                android:id="@+id/searchInput"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:background="@android:color/transparent"
+                android:hint="Куда едем?"
+                android:imeOptions="actionSearch"
+                android:inputType="textCapSentences"
+                android:singleLine="true"
+                android:textColor="#171717"
+                android:textColorHint="#777777"
+                android:textSize="16sp" />
+
+            <Button
+                android:id="@+id/btnSearchClear"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:text="×"
+                android:textColor="#333333"
+                android:textSize="24sp" />
+        </LinearLayout>
+
+        <ListView
+            android:id="@+id/suggestions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#FFFFFF"
+            android:divider="#DDDDDD"
+            android:dividerHeight="1dp"
+            android:elevation="12dp"
+            android:maxHeight="300dp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnAdmin"
+        android:layout_width="wrap_content"
+        android:layout_height="42dp"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="12dp"
+        android:layout_marginTop="72dp"
+        android:minWidth="0dp"
+        android:text="АДМИН"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/tvSpeed"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="104dp"
+        android:layout_marginEnd="12dp"
+        android:background="#EFFFFFFF"
+        android:elevation="8dp"
+        android:padding="8dp"
+        android:text="0 км/ч"
+        android:textColor="#111111"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <Button
+        android:id="@+id/btnVoiceLanguage"
+        android:layout_width="48dp"
+        android:layout_height="40dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="158dp"
+        android:layout_marginEnd="12dp"
+        android:minWidth="0dp"
+        android:text="RU"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/tvDebug"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="72dp"
+        android:layout_marginEnd="12dp"
+        android:background="#CC202020"
+        android:padding="6dp"
+        android:text="Загрузка…"
+        android:textColor="#FFFFFF"
+        android:textSize="10sp" />
 
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="end|center_vertical"
-        android:layout_marginEnd="12dp"
+        android:layout_marginEnd="8dp"
         android:orientation="vertical">
 
         <Button
             android:id="@+id/btnZoomIn"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:minWidth="0dp"
             android:text="+"
-            android:textSize="20sp"
-            android:textStyle="bold" />
-
+            android:textSize="20sp" />
         <Button
             android:id="@+id/btnZoomOut"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:layout_marginTop="6dp"
-            android:text="-"
-            android:textSize="20sp"
-            android:textStyle="bold" />
-
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:minWidth="0dp"
+            android:layout_marginTop="4dp"
+            android:text="−"
+            android:textSize="20sp" />
         <Button
             android:id="@+id/btnMyLocation"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:layout_marginTop="6dp"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:minWidth="0dp"
+            android:layout_marginTop="4dp"
             android:text="GPS"
-            android:textSize="11sp" />
-
-        <Button
-            android:id="@+id/btnTilt"
-            android:layout_width="52dp"
-            android:layout_height="52dp"
-            android:layout_marginTop="6dp"
-            android:text="3D"
-            android:textSize="12sp" />
+            android:textSize="10sp" />
     </LinearLayout>
 
     <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="28dp"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="8dp"
+        android:layout_marginBottom="5dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:elevation="16dp">
+
+        <ImageView
+            android:id="@+id/maptoolkitLogo"
+            android:layout_width="96dp"
+            android:layout_height="24dp"
+            android:contentDescription="Maptoolkit"
+            android:scaleType="fitCenter"
+            android:src="@android:drawable/ic_menu_mapmode" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="24dp"
+            android:gravity="center_vertical"
+            android:text="Maptoolkit"
+            android:textColor="#202020"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="6dp"
+        android:layout_marginBottom="5dp"
+        android:background="#EFFFFFFF"
+        android:elevation="16dp"
+        android:orientation="horizontal"
+        android:paddingStart="5dp"
+        android:paddingEnd="5dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp">
+
+        <TextView
+            android:id="@+id/maptoolkitCredit"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="© Maptoolkit"
+            android:textColor="#202020"
+            android:textSize="10sp" />
+
+        <TextView
+            android:id="@+id/osmCredit"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="5dp"
+            android:text="© OpenStreetMap"
+            android:textColor="#202020"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/routeCard"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:layout_margin="12dp"
-        android:orientation="horizontal">
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="10dp"
+        android:layout_marginBottom="24dp"
+        android:background="#FFFFFF"
+        android:elevation="12dp"
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/routeInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="8dp"
+            android:text="Маршрут"
+            android:textColor="#202020"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:fillViewport="false"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/routeOptions"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnGo"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginEnd="5dp"
+                android:text="ПОЕХАЛИ"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold" />
+            <Button
+                android:id="@+id/btnReset"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_marginStart="5dp"
+                android:text="СБРОСИТЬ"
+                android:textSize="12sp" />
+        </LinearLayout>
 
         <Button
             android:id="@+id/btnSimulate"
-            android:layout_width="0dp"
-            android:layout_height="50dp"
-            android:layout_weight="1"
-            android:layout_marginEnd="6dp"
-            android:text="Тест-драйв" />
-
-        <Button
-            android:id="@+id/btnClearRoute"
-            android:layout_width="0dp"
-            android:layout_height="50dp"
-            android:layout_weight="1"
-            android:layout_marginStart="6dp"
-            android:text="Сброс (X)" />
+            android:layout_width="match_parent"
+            android:layout_height="42dp"
+            android:layout_marginTop="5dp"
+            android:text="Тест-драйв"
+            android:textSize="12sp" />
     </LinearLayout>
 </FrameLayout>

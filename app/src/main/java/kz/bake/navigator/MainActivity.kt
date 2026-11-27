@@ -1,366 +1,295 @@
 package kz.bake.navigator
 
 import android.Manifest
-import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.location.Location
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.widget.Button
-import android.widget.TextView
-import android.widget.Toast
+import android.view.View
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
+import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONObject
-import org.maplibre.android.MapLibre
-import org.maplibre.android.camera.CameraPosition
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
-import org.maplibre.android.location.LocationComponentActivationOptions
-import org.maplibre.android.location.modes.CameraMode
-import org.maplibre.android.location.modes.RenderMode
 import org.maplibre.android.maps.MapView
-import org.maplibre.android.maps.MapLibreMap
-import org.maplibre.android.maps.Style
-import org.maplibre.android.style.layers.CircleLayer
-import org.maplibre.android.style.layers.LineLayer
-import org.maplibre.android.style.layers.Property
-import org.maplibre.android.style.layers.PropertyFactory
-import org.maplibre.android.style.sources.GeoJsonSource
-import org.maplibre.geojson.Feature
-import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
-import java.util.concurrent.TimeUnit
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
+ private lateinit var mapView:MapView
+ private lateinit var searchInput:EditText
+ private lateinit var suggestions:ListView
+ private lateinit var routeCard:LinearLayout
+ private lateinit var routeInfo:TextView
+ private lateinit var goButton:Button
+ private lateinit var debugText:TextView
+ private lateinit var speedText:TextView
+ private lateinit var routeOptionsView:LinearLayout
+ private lateinit var voiceLanguageButton:Button
+ private lateinit var mapEngine:MapEngineManager
+ private lateinit var locationManager:IndependentGpsEngine
+ private lateinit var routeSimulation:RouteSimulationManager
+ private lateinit var voice:NavigationVoiceHelper
+ private val routes=RouteAndSearchManager()
+ private var alternatives:List<RouteAndSearchManager.RouteResult> = emptyList()
+ private var activeSteps:List<RouteAndSearchManager.NavigationStep> = emptyList()
+ private var selectedRouteIndex=0
+ private var nextStepIndex=0
+ private var announcedStepIndex=-1
+ private var offRouteFixes=0
+ private var lastRerouteAt=0L
+ private var destination:LatLng?=null
+ private var voiceLanguage="ru"
+ private var speedLimitKmh:Int?=null
+ private var lastSpeedLimitLookupAt=0L
+ private var lastOverspeedAnnouncementAt=0L
+ private var current=LatLng(42.3417,69.5901)
+ private var realGpsLatLng:LatLng?=null
+ private var currentLocation:Location?=null
+ private var pendingDestination:LatLng?=null
+ private var routePoints:List<Point> = emptyList()
+ private var navigating=false
+ private var loadingRoute=false
+ private var searchJob:Job?=null
+ private var lastStatus="Загрузка карты"
 
-    private lateinit var mapView: MapView
-    private var mapLibreMap: MapLibreMap? = null
-    private lateinit var tvDebug: TextView
+ private val permissionLauncher=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){ result ->
+  if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true||result[Manifest.permission.ACCESS_COARSE_LOCATION]==true) startGps()
+  else setStatus("Разрешение GPS не предоставлено")
+ }
 
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private var currentLatLng: LatLng = LatLng(42.3417, 69.5901)
-    private var gpsAccuracy: Float = 0f
+ override fun onCreate(savedInstanceState:Bundle?){
+  super.onCreate(savedInstanceState)
+  WindowCompat.setDecorFitsSystemWindows(window,true)
+  window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+  MapEngineManager.initializeSdk(this)
+  setContentView(R.layout.activity_main)
+  mapView=findViewById(R.id.mapView);searchInput=findViewById(R.id.searchInput);suggestions=findViewById(R.id.suggestions)
+  routeCard=findViewById(R.id.routeCard);routeInfo=findViewById(R.id.routeInfo);goButton=findViewById(R.id.btnGo);debugText=findViewById(R.id.tvDebug)
+  speedText=findViewById(R.id.tvSpeed);routeOptionsView=findViewById(R.id.routeOptions);voiceLanguageButton=findViewById(R.id.btnVoiceLanguage)
+  mapView.onCreate(savedInstanceState)
+  mapEngine=MapEngineManager(this,lifecycleScope);locationManager=IndependentGpsEngine(this);routeSimulation=RouteSimulationManager(lifecycleScope);voice=NavigationVoiceHelper(this)
+  mapEngine.loadLogo(findViewById(R.id.maptoolkitLogo))
+  findViewById<View>(R.id.maptoolkitLogo).setOnClickListener{openCredit("https://maptoolkit.com/copyright")}
+  findViewById<View>(R.id.maptoolkitCredit).setOnClickListener{openCredit("https://maptoolkit.com/copyright")}
+  findViewById<View>(R.id.osmCredit).setOnClickListener{openCredit("https://www.openstreetmap.org/copyright")}
+  setupSearch();setupControls()
+  mapEngine.initialize(mapView,{p->hideKeyboard();searchInput.clearFocus();requestRoute(p)},{checkLocationPermission();setStatus("Карта готова")})
+ }
+ private fun openCredit(url:String){startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse(url)))}
 
-    private var is3DMode = false
-    private var startTimeMs = 0L
-    private var loadTimeMs = 0L
-    private var lastError = "Ошибок нет"
+ private fun setupSearch(){
+  searchInput.setOnEditorActionListener{_,_,_->hideKeyboard();true}
+  searchInput.addTextChangedListener(object:android.text.TextWatcher{
+   override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int)=Unit
+   override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){
+    val q=s?.toString()?.trim().orEmpty();searchJob?.cancel()
+    if(q.length<3){suggestions.visibility=View.GONE;return}
+    searchJob=lifecycleScope.launch{delay(300);val found=withContext(Dispatchers.IO){routes.search(q)};if(searchInput.text.toString().trim()==q)showSuggestions(found)}
+   }
+   override fun afterTextChanged(s:android.text.Editable?)=Unit
+  })
+  findViewById<Button>(R.id.btnSearchClear).apply{contentDescription="Очистить поиск";setOnClickListener{searchInput.text.clear();suggestions.visibility=View.GONE}}
+  suggestions.setOnItemClickListener{_,_,index,_->
+   val place=suggestions.adapter.getItem(index) as RouteAndSearchManager.Place
+   suggestions.visibility=View.GONE;hideKeyboard();searchInput.setText(place.label);searchInput.clearFocus();requestRoute(LatLng(place.lat,place.lon))
+  }
+ }
+ private fun showSuggestions(items:List<RouteAndSearchManager.Place>){
+  if(items.isEmpty()){suggestions.visibility=View.GONE;return}
+  suggestions.adapter=object:ArrayAdapter<RouteAndSearchManager.Place>(this,android.R.layout.simple_list_item_1,items){
+   override fun getView(position:Int,convertView:View?,parent:android.view.ViewGroup):View{
+    val v=super.getView(position,convertView,parent) as TextView;v.text=getItem(position)?.label;v.setTextColor(Color.BLACK);v.textSize=14f;v.setPadding(20,16,20,16);v.maxLines=2;return v
+   }
+  };suggestions.visibility=View.VISIBLE
+ }
 
-    private val styleUrl = "https://tiles.openfreemap.org/styles/liberty"
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
+ private fun setupControls(){
+  findViewById<Button>(R.id.btnAdmin).setOnClickListener{startActivity(Intent(this,AdminActivity::class.java))}
+  findViewById<Button>(R.id.btnZoomIn).setOnClickListener{mapEngine.map?.animateCamera(CameraUpdateFactory.zoomIn())}
+  findViewById<Button>(R.id.btnZoomOut).setOnClickListener{mapEngine.map?.animateCamera(CameraUpdateFactory.zoomOut())}
+  findViewById<Button>(R.id.btnMyLocation).setOnClickListener{mapEngine.cameraTo(current,if(navigating)17.0 else 16.0)}
+  goButton.setOnClickListener{if(!loadingRoute&&routePoints.isNotEmpty()){if(navigating)stopNavigation()else startNavigation()}}
+  findViewById<Button>(R.id.btnReset).setOnClickListener{resetRoute()}
+  voiceLanguageButton.setOnClickListener{
+   val next=if(voiceLanguage=="ru")"kk" else "ru"
+   if(voice.setLanguage(next)){voiceLanguage=next;voiceLanguageButton.text=next.uppercase(Locale.ROOT);setStatus(if(next=="kk")"Голос: казахский" else "Голос: русский")}
+   else Toast.makeText(this,if(next=="kk")"Казахский голос недоступен в системном TTS" else "Русский голос недоступен",Toast.LENGTH_LONG).show()
+  }
+  findViewById<Button>(R.id.btnSimulate).setOnClickListener{
+   if(routePoints.isEmpty())Toast.makeText(this,"Сначала выберите адрес или удерживайте карту",Toast.LENGTH_LONG).show()
+   else if(navigating)stopNavigation()else{startNavigation();startSimulation()}
+  }
+ }
 
-    private var routePoints: List<Point> = emptyList()
-    private var simJob: Job? = null
-
-    private val locationPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-        if (granted) {
-            enableLocationComponent()
-            startGpsUpdates()
-        } else {
-            lastError = "Нет разрешения на GPS"
-            updateDebugHud()
-        }
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        startTimeMs = System.currentTimeMillis()
-
-        MapLibre.getInstance(this)
-        setContentView(R.layout.activity_main)
-
-        tvDebug = findViewById(R.id.tvDebug)
-        mapView = findViewById(R.id.mapView)
-        mapView.onCreate(savedInstanceState)
-
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-
-        setupMap()
-        setupButtons()
-    }
-
-    private fun setupMap() {
-        mapView.addOnDidFailLoadingMapListener { errorMessage ->
-            lastError = "Сбой карты: $errorMessage (повтор через 2с)"
-            updateDebugHud()
-            Handler(Looper.getMainLooper()).postDelayed({
-                loadMapStyle()
-            }, 2000)
-        }
-
-        mapView.addOnDidFinishRenderingMapListener { fully ->
-            if (fully && loadTimeMs == 0L) {
-                loadTimeMs = System.currentTimeMillis() - startTimeMs
-                lastError = "Карта готова"
-                updateDebugHud()
-            }
-        }
-
-        mapView.getMapAsync { map ->
-            mapLibreMap = map
-
-            val initialPosition = CameraPosition.Builder()
-                .target(currentLatLng)
-                .zoom(14.5)
-                .tilt(0.0)
-                .build()
-            map.cameraPosition = initialPosition
-
-            map.addOnMapLongClickListener { point ->
-                Toast.makeText(this, "Строим маршрут...", Toast.LENGTH_SHORT).show()
-                buildRoute(currentLatLng, point)
-                true
-            }
-
-            loadMapStyle()
-        }
-    }
-
-    private fun loadMapStyle() {
-        val map = mapLibreMap ?: return
-        map.setStyle(Style.Builder().fromUri(styleUrl)) { style ->
-            initRouteLayers(style)
-            checkPermissionsAndStartLocation()
-        }
-    }
-
-    private fun initRouteLayers(style: Style) {
-        if (style.getSource("route-source") == null) {
-            style.addSource(GeoJsonSource("route-source"))
-            val lineLayer = LineLayer("route-layer", "route-source").withProperties(
-                PropertyFactory.lineColor(Color.parseColor("#1E88E5")),
-                PropertyFactory.lineWidth(6f),
-                PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-                PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
-            )
-            style.addLayer(lineLayer)
-        }
-
-        if (style.getSource("markers-source") == null) {
-            style.addSource(GeoJsonSource("markers-source"))
-            val circleLayer = CircleLayer("markers-layer", "markers-source").withProperties(
-                PropertyFactory.circleColor(Color.parseColor("#E53935")),
-                PropertyFactory.circleRadius(8f),
-                PropertyFactory.circleStrokeColor(Color.WHITE),
-                PropertyFactory.circleStrokeWidth(2f)
-            )
-            style.addLayer(circleLayer)
-        }
-    }
-
-    private fun setupButtons() {
-        findViewById<Button>(R.id.btnZoomIn).setOnClickListener {
-            mapLibreMap?.animateCamera(CameraUpdateFactory.zoomIn())
-        }
-
-        findViewById<Button>(R.id.btnZoomOut).setOnClickListener {
-            mapLibreMap?.animateCamera(CameraUpdateFactory.zoomOut())
-        }
-
-        findViewById<Button>(R.id.btnMyLocation).setOnClickListener {
-            val map = mapLibreMap ?: return@setOnClickListener
-            val pos = CameraPosition.Builder()
-                .target(currentLatLng)
-                .zoom(16.0)
-                .tilt(if (is3DMode) 50.0 else 0.0)
-                .build()
-            map.animateCamera(CameraUpdateFactory.newCameraPosition(pos), 800)
-            if (map.locationComponent.isLocationComponentActivated) {
-                map.locationComponent.cameraMode = CameraMode.TRACKING_COMPASS
-            }
-        }
-
-        findViewById<Button>(R.id.btnTilt).setOnClickListener {
-            val map = mapLibreMap ?: return@setOnClickListener
-            is3DMode = !is3DMode
-            val targetTilt = if (is3DMode) 50.0 else 0.0
-            val pos = CameraPosition.Builder()
-                .target(map.cameraPosition.target)
-                .zoom(map.cameraPosition.zoom)
-                .tilt(targetTilt)
-                .build()
-            map.animateCamera(CameraUpdateFactory.newCameraPosition(pos), 500)
-        }
-
-        findViewById<Button>(R.id.btnClearRoute).setOnClickListener {
-            simJob?.cancel()
-            routePoints = emptyList()
-            mapLibreMap?.getStyle { style ->
-                style.getSourceAs<GeoJsonSource>("route-source")?.setGeoJson(LineString.fromLngLats(emptyList()))
-                style.getSourceAs<GeoJsonSource>("markers-source")?.setGeoJson(Feature.fromGeometry(null))
-            }
-            lastError = "Маршрут очищен"
-            updateDebugHud()
-        }
-
-        findViewById<Button>(R.id.btnSimulate).setOnClickListener {
-            if (routePoints.isEmpty()) {
-                Toast.makeText(this, "Зажмите палец на карте, чтобы задать финиш", Toast.LENGTH_LONG).show()
-                return@setOnClickListener
-            }
-            startSimulation()
-        }
-    }
-
-    private fun buildRoute(start: LatLng, end: LatLng) {
-        mapLibreMap?.getStyle { style ->
-            val destPoint = Point.fromLngLat(end.longitude, end.latitude)
-            style.getSourceAs<GeoJsonSource>("markers-source")?.setGeoJson(Feature.fromGeometry(destPoint))
-        }
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val url = "https://router.project-osrm.org/route/v1/driving/" +
-                        "${start.longitude},${start.latitude};${end.longitude},${end.latitude}" +
-                        "?overview=full&geometries=geojson"
-
-                val request = Request.Builder().url(url).build()
-                val response = httpClient.newCall(request).execute()
-                val body = response.body?.string() ?: throw Exception("Пустой ответ OSRM")
-
-                if (!response.isSuccessful) {
-                    throw Exception("Ошибка OSRM: ${response.code}")
-                }
-
-                val json = JSONObject(body)
-                val routes = json.getJSONArray("routes")
-                if (routes.length() == 0) throw Exception("Маршрут не найден")
-
-                val coords = routes.getJSONObject(0)
-                    .getJSONObject("geometry")
-                    .getJSONArray("coordinates")
-
-                val points = ArrayList<Point>()
-                for (i in 0 until coords.length()) {
-                    val pair = coords.getJSONArray(i)
-                    points.add(Point.fromLngLat(pair.getDouble(0), pair.getDouble(1)))
-                }
-
-                routePoints = points
-
-                withContext(Dispatchers.Main) {
-                    mapLibreMap?.getStyle { style ->
-                        val lineString = LineString.fromLngLats(points)
-                        style.getSourceAs<GeoJsonSource>("route-source")?.setGeoJson(lineString)
-                    }
-                    lastError = "Маршрут готов (${points.size} точек)"
-                    updateDebugHud()
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    lastError = "Ошибка маршрута: ${e.message}"
-                    updateDebugHud()
-                }
-            }
-        }
-    }
-
-    private fun startSimulation() {
-        simJob?.cancel()
-        is3DMode = true
-        simJob = lifecycleScope.launch {
-            lastError = "Тест-драйв запущен"
-            updateDebugHud()
-            for (i in routePoints.indices) {
-                if (!isActive) break
-                val pt = routePoints[i]
-                val nextLatLng = LatLng(pt.latitude(), pt.longitude())
-                currentLatLng = nextLatLng
-
-                mapLibreMap?.getStyle { style ->
-                    style.getSourceAs<GeoJsonSource>("markers-source")?.setGeoJson(Feature.fromGeometry(pt))
-                }
-
-                val cam = CameraPosition.Builder()
-                    .target(nextLatLng)
-                    .zoom(16.5)
-                    .tilt(50.0)
-                    .build()
-                mapLibreMap?.animateCamera(CameraUpdateFactory.newCameraPosition(cam), 450)
-                delay(500)
-            }
-            lastError = "Тест-драйв завершен"
-            updateDebugHud()
-        }
-    }
-
-    private fun checkPermissionsAndStartLocation() {
-        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (fine == PackageManager.PERMISSION_GRANTED || coarse == PackageManager.PERMISSION_GRANTED) {
-            enableLocationComponent()
-            startGpsUpdates()
-        } else {
-            locationPermissionLauncher.launch(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
-            )
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun enableLocationComponent() {
-        val map = mapLibreMap ?: return
-        val style = map.style ?: return
-        val locationComponent = map.locationComponent
-        locationComponent.activateLocationComponent(
-            LocationComponentActivationOptions.builder(this, style).build()
-        )
-        locationComponent.isLocationComponentEnabled = true
-        locationComponent.cameraMode = CameraMode.NONE
-        locationComponent.renderMode = RenderMode.COMPASS
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun startGpsUpdates() {
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000L)
-            .setMinUpdateIntervalMillis(1000L)
-            .build()
-
-        fusedLocationClient.requestLocationUpdates(request, object : LocationCallback() {
-            override fun onLocationResult(result: LocationResult) {
-                val loc = result.lastLocation ?: return
-                currentLatLng = LatLng(loc.latitude, loc.longitude)
-                gpsAccuracy = loc.accuracy
-                updateDebugHud()
-            }
-        }, Looper.getMainLooper())
-    }
-
-    private fun updateDebugHud() {
-        val loadText = if (loadTimeMs > 0) "${loadTimeMs} мс" else "загрузка..."
-        tvDebug.text = "Старт карты: $loadText | GPS: ±${gpsAccuracy.toInt()}м\nСтатус: $lastError"
-    }
-
-    override fun onStart() { super.onStart(); mapView.onStart() }
-    override fun onResume() { super.onResume(); mapView.onResume() }
-    override fun onPause() { super.onPause(); mapView.onPause() }
-    override fun onStop() { super.onStop(); mapView.onStop() }
-    override fun onLowMemory() { super.onLowMemory(); mapView.onLowMemory() }
-    override fun onDestroy() { super.onDestroy(); simJob?.cancel(); mapView.onDestroy() }
-    override fun onSaveInstanceState(outState: Bundle) { super.onSaveInstanceState(outState); mapView.onSaveInstanceState(outState) }
+ private fun requestRoute(end:LatLng){
+  if(loadingRoute)return
+  destination=end;mapEngine.setDestination(end)
+  if(currentLocation==null){pendingDestination=end;setStatus("Ждём GPS для построения маршрута…");return}
+  pendingDestination=null;loadingRoute=true;setStatus("Ищем варианты маршрута…")
+  lifecycleScope.launch{
+   try{
+    val routeStart=realGpsLatLng?:current
+    val found=withContext(Dispatchers.IO){routes.buildRoutes(routeStart,end)}
+    if(found.isEmpty())error("Маршрут не найден")
+    alternatives=found;selectedRouteIndex=0;applyRoute(0,false)
+    mapEngine.cameraTo(end,14.5);setStatus(if(found.size>1)"Доступно маршрутов: ${found.size}" else "Маршрут построен")
+   }catch(e:Exception){setStatus("Ошибка маршрута: ${e.message?:"нет ответа"}");Toast.makeText(this@MainActivity,lastStatus,Toast.LENGTH_LONG).show()}
+   finally{loadingRoute=false}
+  }
+ }
+ private fun applyRoute(index:Int,keepNavigation:Boolean){
+  val result=alternatives.getOrNull(index)?:return
+  selectedRouteIndex=index;routePoints=result.points;activeSteps=result.steps
+  nextStepIndex=if(activeSteps.firstOrNull()?.maneuverType=="depart")1 else 0
+  announcedStepIndex=-1;offRouteFixes=0
+  mapEngine.setRoute(routePoints)
+  routeInfo.text=String.format(Locale.getDefault(),"%.1f км  ·  %d мин",result.distanceMeters/1000.0,(result.durationSeconds/60.0).toInt().coerceAtLeast(1))
+  renderRouteOptions()
+  routeCard.visibility=View.VISIBLE
+  if(!keepNavigation){navigating=false;routeSimulation.stopSimulation();restoreRealGpsPosition();goButton.text="ПОЕХАЛИ";goButton.setBackgroundColor(Color.rgb(46,125,50))}
+  else{navigating=true;goButton.text="ЗАВЕРШИТЬ";goButton.setBackgroundColor(Color.rgb(239,124,0))}
+ }
+ private fun renderRouteOptions(){
+  routeOptionsView.removeAllViews()
+  for(i in alternatives.indices){
+   val item=alternatives[i]
+   val button=Button(this)
+   button.text=String.format(Locale.getDefault(),"Вариант %d\n%.1f км · %d мин",i+1,item.distanceMeters/1000.0,(item.durationSeconds/60.0).toInt().coerceAtLeast(1))
+   button.isAllCaps=false;button.textSize=11f;button.minWidth=0;button.setPadding(12,4,12,4)
+   button.setBackgroundColor(if(i==selectedRouteIndex)Color.rgb(25,118,210)else Color.LTGRAY)
+   button.setTextColor(if(i==selectedRouteIndex)Color.WHITE else Color.DKGRAY)
+   button.setOnClickListener{if(!navigating&&!loadingRoute)applyRoute(i,false)}
+   val params=LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT,LinearLayout.LayoutParams.WRAP_CONTENT)
+   params.marginEnd=8;routeOptionsView.addView(button,params)
+  }
+  routeOptionsView.visibility=if(alternatives.size>1)View.VISIBLE else View.GONE
+ }
+ private fun maybeReroute(location:Location,point:LatLng){
+  val end=destination?:return
+  if(!navigating||loadingRoute||routePoints.size<2)return
+  if(location.accuracy>20f){offRouteFixes=0;return}
+  val deviation=routeSimulation.distanceToRouteMeters(point,routePoints)
+  if(deviation>40.0)offRouteFixes++ else{offRouteFixes=0;return}
+  val now=System.currentTimeMillis()
+  if(offRouteFixes<3||now-lastRerouteAt<15000L)return
+  offRouteFixes=0;lastRerouteAt=now;loadingRoute=true
+  setStatus("Отклонение от маршрута: ${deviation.toInt()} м. Перестраиваем…")
+  lifecycleScope.launch{
+   try{
+    val found=withContext(Dispatchers.IO){routes.buildRoutes(point,end)}
+    if(found.isEmpty())error("Новый маршрут не найден")
+    alternatives=found;applyRoute(0,true);setStatus("Маршрут перестроен")
+   }catch(e:Exception){setStatus("Перестроение не удалось; старый маршрут сохранён")}
+   finally{loadingRoute=false}
+  }
+ }
+ private fun refreshSpeedLimit(location:Location){
+  val now=System.currentTimeMillis()
+  if(location.accuracy>15f||now-lastSpeedLimitLookupAt<30000L)return
+  lastSpeedLimitLookupAt=now
+  speedLimitKmh=null
+  lifecycleScope.launch{
+   val limit=withContext(Dispatchers.IO){routes.fetchSpeedLimit(location.latitude,location.longitude)}
+   speedLimitKmh=limit
+  }
+ }
+ private fun updateVoiceGuidance(point:LatLng){
+  while(nextStepIndex<activeSteps.size){
+   val step=activeSteps[nextStepIndex]
+   val results=FloatArray(1)
+   Location.distanceBetween(point.latitude,point.longitude,step.latitude,step.longitude,results)
+   val distance=results[0]
+   if(distance<=300f&&announcedStepIndex!=nextStepIndex){
+    val rounded=(distance/50f).toInt()*50
+    val instruction=if(voiceLanguage=="kk")step.instructionKazakh else step.instruction
+    voice.speak(if(rounded>0)"Через $rounded метров: $instruction" else instruction)
+    announcedStepIndex=nextStepIndex
+   }
+   if(distance<=35f){nextStepIndex++;continue}
+   break
+  }
+ }
+ private fun startNavigation(){
+  if(routePoints.isEmpty())return
+  navigating=true;goButton.text="ЗАВЕРШИТЬ";goButton.setBackgroundColor(Color.rgb(239,124,0))
+  mapEngine.follow(current,currentLocation?.bearing?.toDouble()?:mapEngine.map?.cameraPosition?.bearing?:0.0);setStatus("Ведение маршрута включено")
+ }
+ private fun stopNavigation(){
+  navigating=false;routeSimulation.stopSimulation();goButton.text="ПОЕХАЛИ";goButton.setBackgroundColor(Color.rgb(46,125,50));restoreRealGpsPosition();setStatus("Ведение остановлено; маршрут сохранён")
+ }
+ private fun resetRoute(){
+  navigating=false;routeSimulation.stopSimulation();restoreRealGpsPosition();loadingRoute=false;pendingDestination=null;destination=null
+  routePoints=emptyList();alternatives=emptyList();activeSteps=emptyList();routeOptionsView.removeAllViews();offRouteFixes=0
+  routeCard.visibility=View.GONE
+  goButton.text="ПОЕХАЛИ";goButton.setBackgroundColor(Color.rgb(46,125,50));mapEngine.setRoute(emptyList());mapEngine.setDestination(null);mapEngine.cameraTo(current);setStatus("Маршрут и финиш удалены")
+ }
+ private fun startSimulation(){
+  setStatus("Тест-драйв")
+  routeSimulation.startSimulation(routePoints,{p,b->mapEngine.setSimulationMarker(p);current=p;mapEngine.follow(p,b)},{restoreRealGpsPosition();if(navigating)setStatus("Тест-драйв завершён")})
+ }
+ private fun checkLocationPermission(){
+  val fine=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)
+  val coarse=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_COARSE_LOCATION)
+  if(fine==PackageManager.PERMISSION_GRANTED||coarse==PackageManager.PERMISSION_GRANTED)startGps()
+  else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
+ }
+ private fun restoreRealGpsPosition(){
+  mapEngine.clearSimulationMarker()
+  val real=realGpsLatLng?:currentLocation?.let{LatLng(it.latitude,it.longitude)}?:return
+  current=real
+  mapEngine.cameraTo(real,if(navigating)17.0 else 16.0)
+ }
+ private fun startGps(){
+  locationManager.start({loc,p->
+   mapEngine.updateRealLocation(loc)
+   realGpsLatLng=p
+   currentLocation=loc
+   val simulationActive=routeSimulation.isSimulationActive
+   val activeNavigation=navigating&&!simulationActive
+   // The real GPS puck, camera and navigation state use the same raw Android fix.
+   if(!simulationActive)current=p
+   if(!simulationActive)pendingDestination?.let{pending->pendingDestination=null;requestRoute(pending)}
+   if(activeNavigation){
+    maybeReroute(loc,p)
+    updateVoiceGuidance(p)
+    val b=if(loc.hasBearing())loc.bearing.toDouble()else mapEngine.map?.cameraPosition?.bearing?:0.0
+    mapEngine.follow(p,b)
+   }
+   refreshSpeedLimit(loc)
+   val speed=locationManager.speedKmh.coerceAtLeast(0f).toInt()
+   val limit=speedLimitKmh
+   speedText.text=if(limit!=null)"$speed км/ч\nЛимит $limit" else "$speed км/ч\nЛимит —"
+   speedText.setTextColor(if(limit!=null&&speed>limit+5)Color.RED else Color.BLACK)
+   if(navigating&&limit!=null&&speed>limit+5&&System.currentTimeMillis()-lastOverspeedAnnouncementAt>30000L){
+    lastOverspeedAnnouncementAt=System.currentTimeMillis()
+    voice.speak(if(voiceLanguage=="kk")"Назар аударыңыз. Жылдамдық шегі сағатына $limit километр" else "Внимание. Ограничение скорости $limit километров в час")
+   }
+   debugText.text="GPS ±${loc.accuracy.toInt()} м  ·  ${if(navigating)"Ведение" else "Ожидание"}"
+  },::setStatus)
+ }
+ private fun hideKeyboard(){(getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(searchInput.windowToken,0)}
+ private fun setStatus(message:String){lastStatus=message;if(::debugText.isInitialized)debugText.text=message}
+ override fun onStart(){super.onStart();mapView.onStart()}
+ override fun onResume(){super.onResume();mapView.onResume();if(::locationManager.isInitialized&&hasLocationPermission())startGps()}
+ private fun hasLocationPermission():Boolean {
+  return ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
+ }
+ override fun onPause(){super.onPause();mapView.onPause()}
+ override fun onStop(){locationManager.stopGps();super.onStop();mapView.onStop()}
+ override fun onLowMemory(){super.onLowMemory();mapView.onLowMemory()}
+ override fun onDestroy(){searchJob?.cancel();locationManager.release();routeSimulation.release();voice.release();mapView.onDestroy();super.onDestroy()}
+ override fun onSaveInstanceState(outState:Bundle){super.onSaveInstanceState(outState);mapView.onSaveInstanceState(outState)}
 }
