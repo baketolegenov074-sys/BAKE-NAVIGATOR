@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <org.maplibre.android.maps.MapView
+        android:id="@+id/mapView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <TextView
+        android:id="@+id/tvDebug"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="12dp"
+        android:background="#CC111111"
+        android:padding="10dp"
+        android:text="Запуск карты..."
+        android:textColor="#00FF66"
+        android:textSize="12sp"
+        android:fontFamily="monospace" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="12dp"
+        android:orientation="vertical">
+
+        <Button
+            android:id="@+id/btnZoomIn"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:text="+"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnZoomOut"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_marginTop="6dp"
+            android:text="-"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnMyLocation"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_marginTop="6dp"
+            android:text="GPS"
+            android:textSize="11sp" />
+
+        <Button
+            android:id="@+id/btnTilt"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_marginTop="6dp"
+            android:text="3D"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_margin="12dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnSimulate"
+            android:layout_width="0dp"
+            android:layout_height="50dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:text="Тест-драйв" />
+
+        <Button
+            android:id="@+id/btnClearRoute"
+            android:layout_width="0dp"
+            android:layout_height="50dp"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:text="Сброс (X)" />
+    </LinearLayout>
+</FrameLayout>

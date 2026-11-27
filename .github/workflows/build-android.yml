@@ -1,80 +1,46 @@
-name: Build BAKE Navigator APK
+name: Build BAKE Navigator Kotlin APK
 
 on:
+  push:
+    branches:
+      - experiment/maplibre-kotlin
+    paths:
+      - 'app/**'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - '.github/workflows/build-android.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build-android:
+  build-kotlin-apk:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout experiment branch
         uses: actions/checkout@v4
+        with:
+          ref: experiment/maplibre-kotlin
 
-      - name: Set up Java
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
         with:
-          flutter-version: '3.27.4'
-          channel: stable
-          cache: true
+          gradle-version: '8.13'
 
-      - name: Generate Android platform files
-        run: |
-          cp pubspec.yaml /tmp/bake-pubspec.yaml
-          cp lib/main.dart /tmp/bake-main.dart
-          flutter create --platforms=android --org kz.bake --project-name bake_navigator --no-pub .
-          # Remove the generated sample test: this app uses BakeNavigatorApp.
-          rm -f test/widget_test.dart
-          cp /tmp/bake-pubspec.yaml pubspec.yaml
-          cp /tmp/bake-main.dart lib/main.dart
+      - name: Build native Android debug APK
+        run: gradle assembleDebug
 
-      - name: Add required Android permissions and app label
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path("android/app/src/main/AndroidManifest.xml")
-          manifest = path.read_text()
-          permissions = (
-              '    <uses-permission android:name="android.permission.INTERNET" />\n'
-              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n'
-              '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n'
-              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n'
-              '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n'
-              '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n'
-          )
-          if 'android.permission.ACCESS_FINE_LOCATION' not in manifest:
-              manifest = manifest.replace("    <application", permissions + "    <application", 1)
-          manifest = manifest.replace('android:label="bake_navigator"', 'android:label="BAKE Navigator"')
-          path.write_text(manifest)
-          PY
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Save resolved dependency versions
+      - name: Upload Kotlin APK
         uses: actions/upload-artifact@v4
         with:
-          name: BAKE-NAVIGATOR-pubspec-lock
-          path: pubspec.lock
-          if-no-files-found: error
-
-      - name: Analyze Flutter code
-        run: flutter analyze
-
-      - name: Build release APK
-        run: flutter build apk --release
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: BAKE-NAVIGATOR-APK
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: BAKE-Navigator-Kotlin-debug-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
