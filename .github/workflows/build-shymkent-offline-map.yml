@@ -36,7 +36,6 @@ jobs:
           done
           sudo apt-get update -o Acquire::Retries=3
           sudo apt-get install -y build-essential cmake git curl jq sqlite3 libboost-all-dev liblua5.3-dev lua5.3 libshp-dev libsqlite3-dev rapidjson-dev
-          sudo update-alternatives --install /usr/bin/lua lua /usr/bin/lua5.3 50
 
       - name: Download Kazakhstan OSM extract with mirrors
         shell: bash
