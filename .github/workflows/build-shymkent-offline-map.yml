@@ -27,17 +27,42 @@ jobs:
 
       - name: Install map build dependencies
         run: |
-          sudo apt-get update
+          set -euo pipefail
+          # GitHub runner image may contain a broken Microsoft feed; it is not needed here.
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+            if [ -f "$source" ] && grep -q 'packages.microsoft.com' "$source"; then
+              sudo rm -f "$source"
+            fi
+          done
+          sudo apt-get update -o Acquire::Retries=3
           sudo apt-get install -y build-essential cmake git curl jq sqlite3 osmium-tool libboost-all-dev liblua5.3-dev libshp-dev libsqlite3-dev rapidjson-dev
 
-      - name: Download current Kazakhstan OSM extract
+      - name: Download Kazakhstan OSM extract with mirrors
         shell: bash
         run: |
           set -euo pipefail
-          URL="https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf"
-          curl --fail --location --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 "$URL" -o kazakhstan-latest.osm.pbf
-          test -s kazakhstan-latest.osm.pbf
-          osmium fileinfo kazakhstan-latest.osm.pbf
+          OUTPUT="kazakhstan-latest.osm.pbf"
+          SOURCES=(
+            "https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf"
+            "https://download-ext2.geofabrik.de/asia/kazakhstan-latest.osm.pbf"
+            "https://data.bbbike.org/osm/pbf/region/asia/kazakhstan.osm.pbf"
+          )
+          downloaded=0
+          for URL in "${SOURCES[@]}"; do
+            echo "Trying OSM source: $URL"
+            if curl --fail --location --retry 2 --retry-all-errors --retry-delay 8 --connect-timeout 30 --max-time 1800 "$URL" -o "$OUTPUT.tmp"; then
+              if [ -s "$OUTPUT.tmp" ]; then
+                mv "$OUTPUT.tmp" "$OUTPUT"
+                echo "Downloaded from: $URL"
+                downloaded=1
+                break
+              fi
+            fi
+            rm -f "$OUTPUT.tmp"
+          done
+          test "$downloaded" -eq 1 || { echo "All Kazakhstan OSM sources failed"; exit 1; }
+          test -s "$OUTPUT"
+          osmium fileinfo "$OUTPUT"
 
       - name: Resolve OSM administrative boundary of Shymkent city
         run: |
