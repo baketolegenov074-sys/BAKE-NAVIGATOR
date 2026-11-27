@@ -1131,6 +1131,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       return const SizedBox.shrink();
     };
 
+    // Restore the bundled Shymkent vector map automatically after the first frame.
+    // Keep disk extraction/provider initialization out of the cold first paint.
+    unawaited(_runStartupDiagnosticTask('Подключение встроенной офлайн-карты', _loadSavedOfflineMap));
+
     unawaited(_runStartupDiagnosticTask('Загрузка камер и дорожных данных', _loadBundledRoadAlerts));
     unawaited(_runStartupDiagnosticTask('Восстановление точек маршрута', _loadSavedRoutePoints));
     unawaited(_runStartupDiagnosticTask('Настройки дорожных слоёв', _loadTrafficLayerPreference));
