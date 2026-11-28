@@ -63,15 +63,18 @@ jobs:
           osmium tags-filter \
             --output shymkent-search-features.osm.pbf \
             shymkent-search.osm.pbf \
-            nwr/name nwr/name:ru nwr/name:kk nwr/name:en \
-            nwr/official_name nwr/short_name nwr/alt_name nwr/brand \
-            nwr/operator nwr/ref \
+            nwr/name nwr/name:ru nwr/name:kk nwr/name:en nwr/name:latin \
+            nwr/official_name nwr/official_name:ru nwr/official_name:kk \
+            nwr/short_name nwr/alt_name nwr/alt_name:ru nwr/alt_name:kk \
+            nwr/loc_name nwr/old_name nwr/int_name nwr/brand nwr/brand:ru \
+            nwr/operator nwr/ref nwr/highway \
             nwr/amenity nwr/shop nwr/healthcare nwr/healthcare:speciality \
             nwr/speciality nwr/tourism nwr/leisure nwr/office \
             nwr/landuse=retail nwr/building=retail nwr/building=school \
             nwr/public_transport nwr/railway nwr/natural nwr/historic \
             nwr/addr:housenumber nwr/addr:street nwr/addr:place \
-            nwr/addr:suburb nwr/addr:district nwr/addr:city nwr/addr:postcode
+            nwr/addr:suburb nwr/addr:district nwr/addr:city \
+            nwr/addr:postcode nwr/addr:full
           osmium export \
             --output-format=geojsonseq \
             --format-option=print_record_separator=false \
@@ -82,6 +85,27 @@ jobs:
             --output assets/data/shymkent_search.json.gz
           test -s assets/data/shymkent_search.json.gz
           gzip -t assets/data/shymkent_search.json.gz
+          python3 - <<'PY'
+          import gzip
+          import json
+          from pathlib import Path
+
+          path = Path("assets/data/shymkent_search.json.gz")
+          with gzip.open(path, "rt", encoding="utf-8") as source:
+              index = json.load(source)
+          items = index.get("items", [])
+          streets = sum(item.get("kind") == "street" for item in items)
+          addresses = sum(item.get("kind") in ("address", "entrance") for item in items)
+          if not items or streets == 0:
+              raise SystemExit(
+                  f"Offline search index is incomplete: {len(items)} records, "
+                  f"{streets} named streets, {addresses} addresses"
+              )
+          print(
+              f"Offline search validated: {len(items)} records; "
+              f"{streets} named streets; {addresses} addresses"
+          )
+          PY
           ls -lh assets/data/shymkent_search.json.gz
 
       - name: Validate OpenMapTiles source schema and Cyrillic glyphs
