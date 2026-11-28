@@ -962,17 +962,21 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _offlineMapLoadInProgress = false;
   MbTiles? _offlineVectorMbtiles;
   MbTilesVectorTileProvider? _offlineVectorTileProvider;
+  bool _offlineMapSelected = false;
   final vtr.Theme _offlineVectorTheme = _buildBakeOfflineVectorTheme();
 
-  bool get _isOfflineMapActive => _offlineVectorTileProvider != null;
+  // Keep the offline provider mounted underneath the online layer.
+  bool get _isOfflineMapActive =>
+      _offlineMapSelected && _offlineVectorTileProvider != null;
 
-  void _disposeOfflineMap() {
+  void _disposeOfflineMap() {  void _disposeOfflineMap() {
     // Detach the provider first. The VectorTileLayer is replaced on the next
     // frame; closing its SQLite database before that frame can leave the
     // mounted tile loader holding a disposed provider.
     final previousDatabase = _offlineVectorMbtiles;
     _offlineVectorMbtiles = null;
     _offlineVectorTileProvider = null;
+    _offlineMapSelected = false;
     if (previousDatabase != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         previousDatabase.dispose();
@@ -2131,7 +2135,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         path = await _ensureBundledShymkentMap(prefs);
       }
       if (!mounted) return;
-      if (_activeOfflineMapPath == path && _isOfflineMapActive) return;
+      if (_activeOfflineMapPath == path && _offlineVectorTileProvider != null) {
+        if (!_offlineMapSelected) setState(() => _offlineMapSelected = true);
+        return;
+      }
 
       try {
         final database = MbTiles(mbtilesPath: path);
@@ -2152,6 +2159,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           _activeOfflineMapPath = path;
           _offlineVectorMbtiles = database;
           _offlineVectorTileProvider = vectorProvider;
+          _offlineMapSelected = true;
         });
       } catch (error) {
         debugPrint('BAKE MBTiles load failed: $error');
@@ -2436,8 +2444,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     );
     if (!mounted || selectedPath == null) return;
     if (selectedPath == '__use_online_map__') {
-      _disposeOfflineMap();
-      setState(() => _message = '');
+      // Keep the offline MBTiles layer alive as a fallback under Liberty.
+      setState(() {
+        _offlineMapSelected = false;
+        _message = '';
+      });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(AppLocale.pick('Включена онлайн-карта.', 'Онлайн карта қосылды.', 'Online map enabled.')),
         duration: const Duration(seconds: 2),
@@ -2457,6 +2468,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       setState(() {
         _offlineVectorMbtiles = database;
         _offlineVectorTileProvider = vectorProvider;
+        _offlineMapSelected = true;
         _message = '';
       });
     } catch (error) {
@@ -5575,27 +5587,36 @@ _navigationMatchedLocation = null;
   String _normalizedRoadReportType(Map<String, dynamic> report) =>
       (report['type'] ?? '').toString().trim().toLowerCase();
 
+  String _roadReportClassificationText(Map<String, dynamic> report) =>
+      [report['type'], report['title'], report['comment'], report['address']]
+          .whereType<Object>()
+          .map((value) => value.toString().trim().toLowerCase())
+          .where((value) => value.isNotEmpty)
+          .join(' ')
+          .replaceAll('ё', 'е');
+
   bool _isNoUTurnRoadSign(Map<String, dynamic> report) {
-    final type = _normalizedRoadReportType(report).replaceAll(
-      RegExp(r'[\s-]+'),
+    final text = _roadReportClassificationText(report).replaceAll(
+      RegExp(r'[\\s-]+'),
       '_',
     );
-    return type.contains('no_u_turn') ||
-        type.contains('no_uturn') ||
-        type.contains('разворот запрещ') ||
-        type.contains('разворот_запрещ');
+    return text.contains('no_u_turn') ||
+        text.contains('no_uturn') ||
+        text.contains('разворот запрещ') ||
+        text.contains('разворот_запрещ');
   }
 
   bool _isAdminRoadSign(Map<String, dynamic> report) {
-    final type = _normalizedRoadReportType(report);
-    return type.contains('знак') ||
-        type.contains('no_u_turn') ||
-        type.contains('no-uturn') ||
-        type.contains('no u turn') ||
-        type.contains('разворот запрещ');
+    final text = _roadReportClassificationText(report);
+    return text.contains('знак') ||
+        text.contains('no_u_turn') ||
+        text.contains('no-uturn') ||
+        text.contains('no u turn') ||
+        text.contains('разворот запрещ');
   }
 
   bool _isRoadWarningReport(Map<String, dynamic> report) {
+    final type = _roadReportClassificationText(report);  bool _isRoadWarningReport(Map<String, dynamic> report) {
     final type = _normalizedRoadReportType(report);
     return type.contains('камера') || type.contains('светофор') ||
         type.contains('лежач') || type.contains('полиц') ||
@@ -9935,7 +9956,8 @@ _navigationMatchedLocation = null;
               children: [
                 if (_offlineVectorTileProvider != null)
                   Visibility(
-                    visible: _isOfflineMapActive,
+                    // Permanent bottom layer; Liberty overlays it in online mode.
+                    visible: true,
                     maintainState: true,
                     child: VectorTileLayer(
                       key: const ValueKey<String>('bake-offline-vector-layer'),
