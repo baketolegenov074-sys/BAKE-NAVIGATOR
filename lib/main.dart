@@ -965,11 +965,17 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool get _isOfflineMapActive => _offlineVectorTileProvider != null;
 
   void _disposeOfflineMap() {
-    // The FlutterMap widget remains mounted when its tile source changes.
-    // Keep controller readiness; onMapReady will not fire again for provider swaps.
-    _offlineVectorMbtiles?.dispose();
+    // Detach the provider first. The VectorTileLayer is replaced on the next
+    // frame; closing its SQLite database before that frame can leave the
+    // mounted tile loader holding a disposed provider.
+    final previousDatabase = _offlineVectorMbtiles;
     _offlineVectorMbtiles = null;
     _offlineVectorTileProvider = null;
+    if (previousDatabase != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        previousDatabase.dispose();
+      });
+    }
   }
 
   LatLng? _currentLocation;
@@ -2366,6 +2372,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       _disposeOfflineMap();
       if (mounted) {
         setState(() => _message = '');
+        if (_flutterMapOnlineStyle == null) {
+          await _loadFlutterMapOnlineStyle();
+        }
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(AppLocale.pick(
             'Включена онлайн-карта.',
@@ -9851,6 +9860,7 @@ _navigationMatchedLocation = null;
               children: [
                 if (_isOfflineMapActive && _offlineVectorTileProvider != null)
                   VectorTileLayer(
+                    key: const ValueKey<String>('bake-offline-vector-layer'),
                     theme: _offlineVectorTheme,
                     tileProviders: TileProviders({
                       'openmaptiles': _offlineVectorTileProvider!,
@@ -9859,6 +9869,7 @@ _navigationMatchedLocation = null;
                   )
                 else if (_flutterMapOnlineStyle != null)
                   VectorTileLayer(
+                    key: const ValueKey<String>('bake-online-liberty-layer'),
                     theme: _flutterMapOnlineTheme ?? _flutterMapOnlineStyle!.theme,
                     sprites: _flutterMapOnlineStyle!.sprites,
                     tileProviders: _flutterMapOnlineTileProviders ??
