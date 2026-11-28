@@ -68,6 +68,7 @@ class MapEngineManager(private val context: Context, private val scope: Lifecycl
  private fun addLayers(s:Style){
   s.addSource(GeoJsonSource("route-source"));s.addLayer(LineLayer("route-layer","route-source").withProperties(lineColor(Color.parseColor("#1976D2")),lineWidth(7f),lineCap(Property.LINE_CAP_ROUND),lineJoin(Property.LINE_JOIN_ROUND)))
   s.addSource(GeoJsonSource("destination-source"));s.addLayer(CircleLayer("destination-layer","destination-source").withProperties(circleColor(Color.parseColor("#E53935")),circleRadius(9f),circleStrokeColor(Color.WHITE),circleStrokeWidth(2.5f)))
+  s.addSource(GeoJsonSource("gps-position-source"));s.addLayer(CircleLayer("gps-position-layer","gps-position-source").withProperties(circleColor(Color.parseColor("#1976D2")),circleRadius(6f),circleStrokeColor(Color.WHITE),circleStrokeWidth(2.5f)))
   s.addSource(GeoJsonSource("sim-marker-source"));s.addLayer(CircleLayer("sim-marker-layer","sim-marker-source").withProperties(circleColor(Color.parseColor("#FF9800")),circleRadius(8f),circleStrokeColor(Color.WHITE),circleStrokeWidth(2.5f)))
   s.addSource(GeoJsonSource("osm-parking-source"));s.addSource(GeoJsonSource("osm-signals-source"))
   val p=CircleLayer("osm-parking-circles","osm-parking-source").withProperties(circleColor(Color.parseColor("#1565C0")),circleRadius(7f),circleStrokeColor(Color.WHITE),circleStrokeWidth(1.5f));p.setMinZoom(14f);s.addLayer(p)
