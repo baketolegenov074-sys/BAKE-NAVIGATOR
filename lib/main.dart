@@ -1126,7 +1126,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           'Стиль карты',
           _loadFlutterMapOnlineStyle,
         ));
-      }());
+      }
       unawaited(_initializeStartupServices());
     });
   }
@@ -5577,7 +5577,7 @@ _navigationMatchedLocation = null;
 
   bool _isNoUTurnRoadSign(Map<String, dynamic> report) {
     final type = _normalizedRoadReportType(report).replaceAll(
-      RegExp(r'[\\s-]+'),
+      RegExp(r'[\s-]+'),
       '_',
     );
     return type.contains('no_u_turn') ||
@@ -5644,7 +5644,7 @@ _navigationMatchedLocation = null;
     final date = report['createdAt']?.toString() ?? '';
     if (_isNoUTurnRoadSign(report)) {
       return Tooltip(
-        message: '$type\\nПодтверждено${date.isNotEmpty ? '\\n$date' : ''}',
+        message: '$type\nПодтверждено${date.isNotEmpty ? '\n$date' : ''}',
         child: SizedBox(
           width: 28,
           height: 28,
@@ -5679,7 +5679,7 @@ _navigationMatchedLocation = null;
       );
     }
     return Tooltip(
-      message: '$type\\nПодтверждено${date.isNotEmpty ? '\\n$date' : ''}',
+      message: '$type\nПодтверждено${date.isNotEmpty ? '\n$date' : ''}',
       child: Container(
         decoration: BoxDecoration(
           color: const Color(0xFFFFD54F),
@@ -7422,10 +7422,10 @@ _navigationMatchedLocation = null;
       return;
     }
     final origin = _routeOrigin ?? _currentLocation;
-    final value = 'Маршрут BAKE Navigator\\n'
-        'Откуда: ${origin == null ? 'текущее местоположение' : '${origin.latitude}, ${origin.longitude}'}\\n'
-        'Куда: ${_destination!.latitude}, ${_destination!.longitude}\\n'
-        '${_routeSummary()}\\n'
+    final value = 'Маршрут BAKE Navigator\n'
+        'Откуда: ${origin == null ? 'текущее местоположение' : '${origin.latitude}, ${origin.longitude}'}\n'
+        'Куда: ${_destination!.latitude}, ${_destination!.longitude}\n'
+        '${_routeSummary()}\n'
         'https://www.openstreetmap.org/directions?engine=fossgis_osrm_car&route=${origin?.latitude}%2C${origin?.longitude}%3B${_destination!.latitude}%2C${_destination!.longitude}';
     await Clipboard.setData(ClipboardData(text: value));
     if (mounted) setState(() => _message = AppLocale.pick('Описание маршрута скопировано для отправки.', 'Маршрут сипаттамасы жіберу үшін көшірілді.', 'Route description copied for sharing.'));
@@ -7449,7 +7449,7 @@ _navigationMatchedLocation = null;
       ),
     );
     if (accepted != true || !mounted) { controller.dispose(); return; }
-    final report = 'Ошибка маршрута BAKE Navigator\\n${controller.text.trim()}\\n${_routeSummary()}';
+    final report = 'Ошибка маршрута BAKE Navigator\n${controller.text.trim()}\n${_routeSummary()}';
     await Clipboard.setData(ClipboardData(text: report));
     controller.dispose();
     if (mounted) setState(() => _message = AppLocale.pick(AppLocale.pick(AppLocale.pick('Отчёт скопирован. Отправка на сервер пока не подключена.', 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'), 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'), 'Есеп көшірілді. Серверге жіберу әлі қосылмаған.', 'Report copied. Server submission is not connected yet.'));
@@ -8499,7 +8499,7 @@ _navigationMatchedLocation = null;
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: Text(AppLocale.tr('Что здесь')),
-          content: Text('$address\\n\\n${AppLocale.tr('Координаты: ')}${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
+          content: Text('$address\n\n${AppLocale.tr('Координаты: ')}${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
           actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(AppLocale.tr('Закрыть')))],
         ),
       );
