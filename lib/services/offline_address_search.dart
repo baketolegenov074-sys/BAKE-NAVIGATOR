@@ -37,15 +37,17 @@ List<Map<String, dynamic>> _decodeOfflineAddressSearchIndex(Uint8List bytes) {
       .whereType<Map>()
       .map((item) {
         final record = Map<String, dynamic>.from(item);
-        record['_searchFolded'] =
+        // New index builds contain pre-folded fields. Keep the fallback for
+        // older packaged indexes so app upgrades remain backward-compatible.
+        record['_searchFolded'] = record['search_folded'] ??
             _foldOfflineAddressText(record['search']?.toString() ?? '');
-        record['_nameFolded'] =
+        record['_nameFolded'] = record['name_folded'] ??
             _foldOfflineAddressText(record['name']?.toString() ?? '');
-        record['_streetFolded'] =
+        record['_streetFolded'] = record['street_folded'] ??
             _foldOfflineAddressText(record['street']?.toString() ?? '');
-        record['_houseFolded'] =
+        record['_houseFolded'] = record['house_folded'] ??
             _foldOfflineAddressText(record['house']?.toString() ?? '');
-        record['_districtFolded'] =
+        record['_districtFolded'] = record['district_folded'] ??
             _foldOfflineAddressText(record['district']?.toString() ?? '');
         return record;
       })

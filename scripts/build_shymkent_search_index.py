@@ -233,6 +233,35 @@ def values_for(properties: dict[str, Any], keys: tuple[str, ...]) -> list[str]:
     return values
 
 
+def fold_search_text(value: str) -> str:
+    """Mirror _foldOfflineAddressText in Dart; precompute once at build time."""
+    text = value.lower().replace("ё", "е")
+    for source, target in {
+        "ә": "а", "ғ": "г", "қ": "к", "ң": "н",
+        "ө": "о", "ұ": "у", "ү": "у", "һ": "х", "і": "и",
+    }.items():
+        text = text.replace(source, target)
+    for source, target in {
+        "shch": "щ", "zh": "ж", "ch": "ч", "sh": "ш",
+        "kh": "х", "gh": "г", "ng": "н", "yo": "е",
+        "yu": "ю", "ya": "я", "ts": "ц",
+    }.items():
+        text = text.replace(source, target)
+    latin = {
+        "a": "а", "b": "б", "c": "к", "d": "д", "e": "е",
+        "f": "ф", "g": "г", "h": "х", "i": "и", "j": "ж",
+        "k": "к", "l": "л", "m": "м", "n": "н", "o": "о",
+        "p": "п", "q": "к", "r": "р", "s": "с", "t": "т",
+        "u": "у", "v": "в", "w": "в", "x": "кс", "y": "ы",
+        "z": "з",
+    }
+    text = "".join(latin.get(char, char) for char in text)
+    text = text.replace("малл", "молл")
+    import re
+    text = re.sub(r"[^0-9а-я]+", " ", text)
+    return re.sub(r"\\s+", " ", text).strip()
+
+
 def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
     properties = feature.get("properties") or {}
     if not isinstance(properties, dict):
@@ -349,6 +378,11 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
         "lat": round(lat, 7),
         "lon": round(lon, 7),
         "search": search_text,
+        "search_folded": fold_search_text(search_text),
+        "name_folded": fold_search_text(primary_name),
+        "street_folded": fold_search_text(street),
+        "house_folded": fold_search_text(house),
+        "district_folded": fold_search_text(district),
     }
 
 
