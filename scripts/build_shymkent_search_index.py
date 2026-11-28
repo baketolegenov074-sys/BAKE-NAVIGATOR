@@ -259,7 +259,7 @@ def fold_search_text(value: str) -> str:
     text = text.replace("малл", "молл")
     import re
     text = re.sub(r"[^0-9а-я]+", " ", text)
-    return re.sub(r"\\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
