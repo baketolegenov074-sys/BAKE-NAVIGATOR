@@ -8163,7 +8163,7 @@ _navigationMatchedLocation = null;
       if (!mounted ||
           generation != _mapPreviewGeneration ||
           _mapPreviewPoint != point) return;
-      setState(() => _mapPreviewAddress = address);
+      setState(() => _mapPreviewAddress = address ?? 'Адрес не найден.');
     } catch (error) {
       debugPrint('BAKE selected point address lookup failed: $error');
       await OfflineSearchDiagnostics.instance.record('map_address_lookup_failed', details: {
