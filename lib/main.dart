@@ -927,6 +927,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool _flutterMapExperimentEnabled = true;
   bool _flutterMapExperimentLoading = false;
   bool _firstOnlineVectorTileLoaded = false;
+  bool _onlineLayerVisible = false;
   double _mapZoom = 13;
   Style? _flutterMapOnlineStyle;
   vtr.Theme? _flutterMapOnlineTheme;
@@ -1120,6 +1121,8 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
     }());
     WidgetsBinding.instance.addObserver(this);
+    // Open the bundled/local Shymkent MBTiles independently of GPS and network.
+    unawaited(_loadSavedOfflineMap());
     unawaited(_startCompassUpdates());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -2358,6 +2361,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         );
         _flutterMapExperimentEnabled = true;
       });
+      // Let FlutterMap attach the style and create its first render pass first.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      if (mounted) setState(() => _onlineLayerVisible = true);
     } catch (error) {
       MapStartupDiagnostics.instance.recordError('Загрузка стиля Liberty', error);
       debugPrint('BAKE FlutterMap Liberty style failed to load: $error');
@@ -2376,7 +2382,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _toggleOfflineMapFromMap() async {
     if (_isOfflineMapActive) {
-      _disposeOfflineMap();
+      setState(() => _offlineMapSelected = false);
       if (mounted) {
         setState(() => _message = '');
         if (_flutterMapOnlineStyle == null) {
@@ -9851,16 +9857,10 @@ _navigationMatchedLocation = null;
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF5F7FA),
       body: Stack(
         children: [
-          if (_currentLocation == null)
-            const ColoredBox(
-              color: Color(0xFFF5F7FA),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else
-            Listener(
+          Listener(
               onPointerDown: (event) {
                 _mapPointerDownAt = DateTime.now();
                 _mapPointerDownPosition = event.localPosition;
@@ -9909,9 +9909,8 @@ _navigationMatchedLocation = null;
               options: MapOptions(
                 backgroundColor: const Color(0xFFF5F7FA),
                 onMapReady: _onOfflineMapReady,
-                // FlutterMap is created only after the first GPS fix.
-                // Its initial camera therefore starts at the device position.
-                initialCenter: _currentLocation!,
+                // Render the local Shymkent map immediately; GPS recenters later.
+                initialCenter: _currentLocation ?? const LatLng(42.3417, 69.5901),
                 initialZoom: 16,
                 // Offline MBTiles contain tiles only from zoom 7.
                 // Online Liberty keeps a wider overview range.
@@ -9975,7 +9974,11 @@ _navigationMatchedLocation = null;
                   Visibility(
                     visible: !_isOfflineMapActive,
                     maintainState: true,
-                    child: VectorTileLayer(
+                    child: AnimatedOpacity(
+                      opacity: _onlineLayerVisible && !_isOfflineMapActive ? 1 : 0,
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeInOut,
+                      child: VectorTileLayer(
                       key: const ValueKey<String>('bake-online-liberty-layer'),
                       theme: _flutterMapOnlineTheme ?? _flutterMapOnlineStyle!.theme,
                       sprites: _flutterMapOnlineStyle!.sprites,
@@ -10001,6 +10004,7 @@ _navigationMatchedLocation = null;
                       fileCacheMaximumSizeInBytes: 256 * 1024 * 1024,
                       fileCacheTtl: const Duration(days: 30),
                       logCacheStats: true,
+                      ),
                     ),
                   ),
                 if (!_isOfflineMapActive &&
