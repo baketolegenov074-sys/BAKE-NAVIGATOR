@@ -190,7 +190,7 @@ jobs:
           cp /tmp/bake-pubspec.yaml pubspec.yaml
           cp /tmp/bake-main.dart lib/main.dart
 
-      - name: Configure Android SDK and NDK for MapLibre
+      - name: Configure Android SDK and NDK
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -414,9 +414,6 @@ jobs:
           )
           if 'android:name=".ScreenRecordingService"' not in manifest:
               manifest = manifest.replace("    </application>", service + "    </application>", 1)
-          map_activity = '        <activity android:name=".MapLibreExperimentActivity" android:exported="false" />\n'
-          if 'android:name=".MapLibreExperimentActivity"' not in manifest:
-              manifest = manifest.replace("    </application>", map_activity + "    </application>", 1)
           path.write_text(manifest)
           PY
 
@@ -460,7 +457,6 @@ jobs:
               "io.github.rallista:valhalla-models:0.6.0",
               "io.github.rallista:valhalla-models-config:0.6.0",
               "com.stadiamaps:osrm-openapi:0.0.10",
-              "org.maplibre.gl:android-sdk:13.7.1",
               "androidx.appcompat:appcompat:1.7.0",
               "com.google.android.material:material:1.12.0",
               "androidx.lifecycle:lifecycle-runtime-ktx:2.8.7",
@@ -498,7 +494,6 @@ jobs:
           class MainActivity : FlutterActivity() {
               private var valhallaBridge: ValhallaRoutingBridge? = null
               private var screenRecordingBridge: ScreenRecordingBridge? = null
-              private var mapLibreChannel: MethodChannel? = null
 
               override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
                   super.configureFlutterEngine(flutterEngine)
@@ -511,38 +506,7 @@ jobs:
                       flutterEngine.dartExecutor.binaryMessenger,
                       applicationContext
                   )
-                  mapLibreChannel = MethodChannel(
-                      flutterEngine.dartExecutor.binaryMessenger,
-                      "bake.navigator/maplibre_experiment"
-                  ).also { channel ->
-                      channel.setMethodCallHandler { call, result ->
-                          when (call.method) {
-                              "openMap" -> try {
-                                  val latitude = call.argument<Double>("latitude")
-                                  val longitude = call.argument<Double>("longitude")
-                                  val heading = call.argument<Double>("heading") ?: 0.0
-                                  if (latitude != null && longitude != null) {
-                                      MapLibreExperimentActivity.updateLocation(latitude, longitude, heading)
-                                  }
-                                  startActivity(Intent(this, MapLibreExperimentActivity::class.java))
-                                  result.success(true)
-                              } catch (error: Exception) {
-                                  result.error("MAPLIBRE_OPEN_FAILED", error.message, null)
-                              }
-                              "updateLocation" -> {
-                                  val latitude = call.argument<Double>("latitude")
-                                  val longitude = call.argument<Double>("longitude")
-                                  val heading = call.argument<Double>("heading") ?: 0.0
-                                  if (latitude != null && longitude != null) {
-                                      MapLibreExperimentActivity.updateLocation(latitude, longitude, heading)
-                                  }
-                                  result.success(null)
-                              }
-                              else -> result.notImplemented()
-                          }
-                      }
                   }
-              }
 
               @Deprecated("Deprecated in Java")
               override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -556,330 +520,10 @@ jobs:
                   valhallaBridge = null
                   screenRecordingBridge?.close()
                   screenRecordingBridge = null
-                  mapLibreChannel?.setMethodCallHandler(null)
-                  mapLibreChannel = null
                   super.cleanUpFlutterEngine(flutterEngine)
               }
           }
           """)
-          map_activity = package_dir / "MapLibreExperimentActivity.kt"
-          map_activity.write_text("""package kz.bake.bake_navigator
-
-          import android.app.Activity
-          import android.content.Intent
-          import android.graphics.BitmapFactory
-          import android.net.Uri
-          import android.os.Bundle
-          import android.view.Gravity
-          import android.view.View
-          import android.view.ViewGroup
-          import android.widget.FrameLayout
-          import android.widget.ImageView
-          import android.widget.LinearLayout
-          import android.widget.TextView
-          import org.maplibre.android.MapLibre
-          import org.maplibre.android.camera.CameraPosition
-          import org.maplibre.android.geometry.LatLng
-          import org.maplibre.android.maps.MapView
-          import org.maplibre.android.maps.MapLibreMap
-          import org.maplibre.android.maps.Style
-          import org.maplibre.android.camera.CameraUpdateFactory
-          import org.maplibre.android.style.layers.CircleLayer
-          import org.maplibre.android.style.layers.PropertyFactory.circleColor
-          import org.maplibre.android.style.layers.PropertyFactory.circleRadius
-          import org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor
-          import org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth
-          import org.maplibre.android.style.sources.GeoJsonSource
-          import org.maplibre.geojson.Feature
-          import org.maplibre.geojson.Point
-          import java.net.URL
-
-          class MapLibreExperimentActivity : Activity() {
-              companion object {
-                  @Volatile private var activeInstance: MapLibreExperimentActivity? = null
-                  @Volatile private var pendingGps: Triple<Double, Double, Double>? = null
-
-                  fun updateLocation(latitude: Double, longitude: Double, heading: Double) {
-                      val fix = Triple(latitude, longitude, heading)
-                      pendingGps = fix
-                      activeInstance?.runOnUiThread {
-                          activeInstance?.showGpsLocation(fix.first, fix.second, fix.third)
-                      }
-                  }
-
-                  private const val STYLE_URL = "https://styles.maptoolkit.org/street.json"
-                  private const val LOGO_URL = "https://www.maptoolkit.org/assets/maptoolkit-attribution.png"
-                  private val SHYMKENT = LatLng(42.3417, 69.5901)
-              }
-
-              private lateinit var mapView: MapView
-              private var nativeMap: MapLibreMap? = null
-              private var gpsSource: GeoJsonSource? = null
-              private var latestGps: Triple<Double, Double, Double>? = null
-              private var firstGpsCameraMove = true
-              private var recenterButton: TextView? = null
-
-              private fun showGpsLocation(latitude: Double, longitude: Double, heading: Double) {
-                  if (!latitude.isFinite() || !longitude.isFinite() ||
-                      latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return
-                  latestGps = Triple(latitude, longitude, heading)
-                  val feature = Feature.fromGeometry(Point.fromLngLat(longitude, latitude))
-                  val source = gpsSource ?: return
-                  source.setGeoJson(feature)
-                  if (firstGpsCameraMove) {
-                      firstGpsCameraMove = false
-                      nativeMap?.animateCamera(
-                          CameraUpdateFactory.newLatLngZoom(LatLng(latitude, longitude), 16.5),
-                          500
-                      )
-                  }
-              }
-
-              private fun recenterOnGps() {
-                  val fix = latestGps ?: return
-                  nativeMap?.animateCamera(
-                      CameraUpdateFactory.newLatLngZoom(LatLng(fix.first, fix.second), 16.5),
-                      350
-                  )
-              }
-
-              private fun dp(value: Int): Int =
-                  (value * resources.displayMetrics.density).toInt()
-
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-                  activeInstance = this
-                  MapLibre.getInstance(applicationContext)
-
-                  val root = FrameLayout(this).apply {
-                      setBackgroundColor(0xFFFFFFFF.toInt())
-                  }
-                  val content = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      setBackgroundColor(0xFFFFFFFF.toInt())
-                  }
-                  val header = LinearLayout(this).apply {
-                      orientation = LinearLayout.HORIZONTAL
-                      gravity = Gravity.CENTER_VERTICAL
-                      setPadding(dp(12), 0, dp(12), 0)
-                  }
-                  val back = TextView(this).apply {
-                      text = "‹ Назад"
-                      textSize = 16f
-                      setTextColor(0xFF202124.toInt())
-                      setPadding(0, dp(8), dp(16), dp(8))
-                      setOnClickListener { finish() }
-                  }
-                  val title = TextView(this).apply {
-                      text = "MapLibre"
-                      textSize = 17f
-                      setTextColor(0xFF202124.toInt())
-                      setTypeface(null, android.graphics.Typeface.BOLD)
-                  }
-                  header.addView(back)
-                  header.addView(title)
-                  content.addView(header, LinearLayout.LayoutParams(
-                      ViewGroup.LayoutParams.MATCH_PARENT, dp(52)
-                  ))
-
-                  mapView = MapView(this)
-                  mapView.onCreate(savedInstanceState)
-                  content.addView(mapView, LinearLayout.LayoutParams(
-                      ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-                  ))
-
-                  val footer = LinearLayout(this).apply {
-                      orientation = LinearLayout.HORIZONTAL
-                      gravity = Gravity.CENTER_VERTICAL
-                      setPadding(dp(10), dp(4), dp(10), dp(4))
-                  }
-                  val logoFallback = TextView(this).apply {
-                      text = "Maptoolkit"
-                      textSize = 16f
-                      setTextColor(0xFF202124.toInt())
-                      setTypeface(null, android.graphics.Typeface.BOLD)
-                      setOnClickListener {
-                          startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.maptoolkit.org/")))
-                      }
-                  }
-                  val logo = ImageView(this).apply {
-                      adjustViewBounds = true
-                      scaleType = ImageView.ScaleType.FIT_CENTER
-                      minimumWidth = dp(90)
-                      minimumHeight = dp(24)
-                      visibility = View.GONE
-                      setOnClickListener {
-                          startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.maptoolkit.org/")))
-                      }
-                  }
-                  val copyright = TextView(this).apply {
-                      text = "© Maptoolkit © OpenStreetMap"
-                      textSize = 11f
-                      setTextColor(0xFF303030.toInt())
-                      gravity = Gravity.CENTER_VERTICAL or Gravity.END
-                      setOnClickListener {
-                          startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.openstreetmap.org/copyright")))
-                      }
-                  }
-                  footer.addView(logoFallback, LinearLayout.LayoutParams(dp(100), dp(30)))
-                  footer.addView(logo, LinearLayout.LayoutParams(dp(100), dp(30)))
-                  footer.addView(copyright, LinearLayout.LayoutParams(
-                      0, dp(30), 1f
-                  ))
-                  content.addView(footer)
-                  root.addView(content, FrameLayout.LayoutParams(
-                      ViewGroup.LayoutParams.MATCH_PARENT,
-                      ViewGroup.LayoutParams.MATCH_PARENT
-                  ))
-
-                  val mapControls = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      gravity = Gravity.CENTER
-                      setPadding(dp(5), dp(5), dp(5), dp(5))
-                      background = android.graphics.drawable.GradientDrawable().apply {
-                          setColor(0xFFFFFFFF.toInt())
-                          cornerRadius = dp(12).toFloat()
-                      }
-                      elevation = dp(5).toFloat()
-                  }
-                  fun control(label: String, action: () -> Unit): TextView =
-                      TextView(this).apply {
-                          text = label
-                          textSize = 23f
-                          gravity = Gravity.CENTER
-                          setTextColor(0xFF202124.toInt())
-                          setBackgroundResource(android.R.drawable.list_selector_background)
-                          setOnClickListener { action() }
-                          layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
-                      }
-                  mapControls.addView(control("+") {
-                      nativeMap?.animateCamera(CameraUpdateFactory.zoomIn())
-                  })
-                  mapControls.addView(control("−") {
-                      nativeMap?.animateCamera(CameraUpdateFactory.zoomOut())
-                  })
-                  recenterButton = control("◎") { recenterOnGps() }
-                  mapControls.addView(recenterButton)
-                  val controlsParams = FrameLayout.LayoutParams(
-                      ViewGroup.LayoutParams.WRAP_CONTENT,
-                      ViewGroup.LayoutParams.WRAP_CONTENT,
-                      Gravity.END or Gravity.CENTER_VERTICAL
-                  ).apply { setMargins(0, 0, dp(14), 0) }
-                  root.addView(mapControls, controlsParams)
-                  setContentView(root)
-
-                  Thread {
-                      val bitmap = runCatching {
-                          URL(LOGO_URL).openStream().use { BitmapFactory.decodeStream(it) }
-                      }.getOrNull()
-                      runOnUiThread {
-                          if (bitmap != null) {
-                              logo.setImageBitmap(bitmap)
-                              logo.visibility = View.VISIBLE
-                              logoFallback.visibility = View.GONE
-                          }
-                      }
-                  }.start()
-
-                  mapView.getMapAsync { map ->
-                      nativeMap = map
-                      map.cameraPosition = CameraPosition.Builder()
-                          .target(SHYMKENT)
-                          .zoom(12.0)
-                          .build()
-                      map.setStyle(Style.Builder().fromUri(STYLE_URL)) { style ->
-                          val source = GeoJsonSource(
-                              "bake-gps-source",
-                              Feature.fromGeometry(Point.fromLngLat(SHYMKENT.longitude, SHYMKENT.latitude))
-                          )
-                          style.addSource(source)
-                          gpsSource = source
-                          val gpsLayer = CircleLayer("bake-gps-layer", "bake-gps-source").withProperties(
-                              circleColor(0xFF1677FF.toInt()),
-                              circleRadius(8f),
-                              circleStrokeColor(0xFFFFFFFF.toInt()),
-                              circleStrokeWidth(3f)
-                          )
-                          style.addLayer(gpsLayer)
-                          (pendingGps ?: latestGps)?.let { fix ->
-                              latestGps = fix
-                              showGpsLocation(fix.first, fix.second, fix.third)
-                          }
-                      }
-                  }
-              }
-
-              override fun onStart() {
-                  super.onStart()
-                  mapView.onStart()
-              }
-
-              override fun onResume() {
-                  super.onResume()
-                  mapView.onResume()
-              }
-
-              override fun onPause() {
-                  mapView.onPause()
-                  super.onPause()
-              }
-
-              override fun onStop() {
-                  mapView.onStop()
-                  super.onStop()
-              }
-
-              override fun onLowMemory() {
-                  super.onLowMemory()
-                  mapView.onLowMemory()
-              }
-
-              override fun onSaveInstanceState(outState: Bundle) {
-                  super.onSaveInstanceState(outState)
-                  mapView.onSaveInstanceState(outState)
-              }
-
-              override fun onDestroy() {
-                  if (activeInstance === this) activeInstance = null
-                  gpsSource = null
-                  nativeMap = null
-                  mapView.onDestroy()
-                  super.onDestroy()
-              }
-          }
-          """)
-          print("MapLibre Native experiment Activity generated")
-
-          # Add one isolated entry to Settings; the main map widget is untouched.
-          dart_main = Path("lib/main.dart")
-          dart_content = dart_main.read_text()
-          if "bake.navigator/maplibre_experiment" not in dart_content:
-              marker = "title: const Text('Экспериментальная карта OpenFreeMap'),"
-              marker_index = dart_content.find(marker)
-              if marker_index < 0:
-                  raise SystemExit("Maptoolkit settings tile title was not found")
-              card_start = dart_content.rfind("                Card(", 0, marker_index)
-              if card_start < 0:
-                  raise SystemExit("Maptoolkit settings Card start was not found")
-              native_tile = """                Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.speed_outlined),
-                      title: const Text('Нативная карта MapLibre (Android) — тест'),
-                      subtitle: const Text('Отдельный экран Kotlin, без GPS и маршрутов'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        const MethodChannel('bake.navigator/maplibre_experiment')
-                            .invokeMethod<void>('openMap').catchError((Object error) {
-                        });
-                      },
-                    ),
-                  ),
-          """
-              dart_content = dart_content[:card_start] + native_tile + dart_content[card_start:]
-              dart_main.write_text(dart_content)
-          print("Native MapLibre experiment entry added to Settings")
-          print("Valhalla, screen-recording and MapLibre bridges configured")
-          PY
       - name: Build embedded Shymkent offline vector map
         shell: bash
         run: |
