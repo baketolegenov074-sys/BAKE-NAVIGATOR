@@ -802,6 +802,35 @@ class OfflineAddressSearch {
     }).toList(growable: false);
   }
 
+  double _distanceToRoadPathsMeters(LatLng point, dynamic rawPaths) {
+    if (rawPaths is! List) return double.infinity;
+    final cosLat = math.cos(point.latitude * math.pi / 180);
+    var minimum = double.infinity;
+    for (final rawPath in rawPaths) {
+      if (rawPath is! List) continue;
+      final points = rawPath.whereType<List>().where((p) => p.length >= 2)
+          .map((p) => (
+            x: (((p[0] as num).toDouble() - point.longitude) * cosLat) * 111320,
+            y: (((p[1] as num).toDouble() - point.latitude) * 111320),
+          )).toList(growable: false);
+      if (points.length == 1) {
+        minimum = math.min(minimum, math.sqrt(points.first.x * points.first.x + points.first.y * points.first.y));
+      }
+      for (var i = 1; i < points.length; i++) {
+        final a = points[i - 1];
+        final b = points[i];
+        final dx = b.x - a.x;
+        final dy = b.y - a.y;
+        final lengthSquared = dx * dx + dy * dy;
+        final t = lengthSquared == 0 ? 0.0 : (-(a.x * dx + a.y * dy) / lengthSquared).clamp(0.0, 1.0);
+        final x = a.x + t * dx;
+        final y = a.y + t * dy;
+        minimum = math.min(minimum, math.sqrt(x * x + y * y));
+      }
+    }
+    return minimum;
+  }
+
   List<Map<String, dynamic>> _nearestOsmAddress(LatLng point, {int limit = 1}) {
     final matches = <({double distance, Map<String, dynamic> item})>[];
     for (final item in _items) {
@@ -819,7 +848,10 @@ class OfflineAddressSearch {
       final isAddress = street.isNotEmpty &&
           (kind == 'address' || kind == 'entrance' || house.isNotEmpty || label.isNotEmpty);
       if (!isStreet && !isAddress) continue;
-      final distance = _distanceKm(point, LatLng(lat, lon)) * 1000;
+      final roadPaths = item['road_paths'];
+      final distance = isStreet && roadPaths is List && roadPaths.isNotEmpty
+          ? _distanceToRoadPathsMeters(point, roadPaths)
+          : _distanceKm(point, LatLng(lat, lon)) * 1000;
       if (distance > 120) continue;
       matches.add((distance: distance, item: item));
     }
