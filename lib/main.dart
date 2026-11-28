@@ -5602,8 +5602,7 @@ _navigationMatchedLocation = null;
     );
     return text.contains('no_u_turn') ||
         text.contains('no_uturn') ||
-        text.contains('разворот запрещ') ||
-        text.contains('разворот_запрещ');
+        (text.contains('разворот') && text.contains('запрещ'));
   }
 
   bool _isAdminRoadSign(Map<String, dynamic> report) {
@@ -5612,7 +5611,7 @@ _navigationMatchedLocation = null;
         text.contains('no_u_turn') ||
         text.contains('no-uturn') ||
         text.contains('no u turn') ||
-        text.contains('разворот запрещ');
+        (text.contains('разворот') && text.contains('запрещ'));
   }
 
   bool _isRoadWarningReport(Map<String, dynamic> report) {
@@ -5624,7 +5623,7 @@ _navigationMatchedLocation = null;
         text.contains('знак') || text.contains('опасн') ||
         text.contains('переезд') || text.contains('поворот') ||
         text.contains('no_u_turn') || text.contains('no-uturn') ||
-        text.contains('разворот запрещ') ||
+        (text.contains('разворот') && text.contains('запрещ')) ||
         text.contains('односторон') || text.contains('ремонт');
   }
 
