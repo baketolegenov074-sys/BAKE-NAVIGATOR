@@ -46,17 +46,19 @@ class _ResilientVectorTileProvider implements VectorTileProvider {
   _ResilientVectorTileProvider(
     this._delegate, {
     required this.sourceId,
+    this.maximumZoomOverride,
     this.onFirstTileLoaded,
     this.swallowProviderExceptions = false,
   });
 
   final VectorTileProvider _delegate;
   final String sourceId;
+  final int? maximumZoomOverride;
   final VoidCallback? onFirstTileLoaded;
   final bool swallowProviderExceptions;
 
   @override
-  int get maximumZoom => _delegate.maximumZoom;
+  int get maximumZoom => maximumZoomOverride ?? _delegate.maximumZoom;
 
   @override
   int get minimumZoom => _delegate.minimumZoom;
@@ -962,8 +964,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   String? _activeOfflineMapPath;
   bool _offlineMapLoadInProgress = false;
   MbTiles? _offlineVectorMbtiles;
-  MbTilesVectorTileProvider? _offlineVectorTileProvider;
+  VectorTileProvider? _offlineVectorTileProvider;
   bool _offlineMapSelected = false;
+  // A successful Liberty style load may switch startup to online, unless
+  // the user has explicitly selected offline mode in this session.
+  bool _manualOfflineMapSelection = false;
   final vtr.Theme _offlineVectorTheme = _buildBakeOfflineVectorTheme();
 
   // Keep the offline provider mounted underneath the online layer.
@@ -1128,12 +1133,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       if (!mounted) return;
       MapStartupDiagnostics.instance.markFirstFrame();
       // Start loading the online vector style immediately after the first frame.
-      if (!_isOfflineMapActive) {
-        unawaited(_runStartupDiagnosticTask(
-          'Стиль карты',
-          _loadFlutterMapOnlineStyle,
-        ));
-      }
+      // Load Liberty in the background even while the bundled offline map
+      // is already visible; a successful style load enables online mode.
+      unawaited(_runStartupDiagnosticTask(
+        'Стиль карты',
+        _loadFlutterMapOnlineStyle,
+      ));
       unawaited(_initializeStartupServices());
     });
   }
@@ -2152,7 +2157,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           debugPrint('BAKE MBTiles ignored: raster format is no longer supported');
           return;
         }
-        final vectorProvider = MbTilesVectorTileProvider(mbtiles: database);
+        final vectorProvider = _ResilientVectorTileProvider(
+        MbTilesVectorTileProvider(mbtiles: database),
+        sourceId: 'offline-openmaptiles',
+        maximumZoomOverride: 17,
+      );
         if (!mounted) {
           database.dispose();
           return;
@@ -2360,6 +2369,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           },
         );
         _flutterMapExperimentEnabled = true;
+        if (!_manualOfflineMapSelection) {
+          _offlineMapSelected = false;
+        }
       });
       // Let FlutterMap attach the style and create its first render pass first.
       await Future<void>.delayed(const Duration(milliseconds: 200));
@@ -2382,6 +2394,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _toggleOfflineMapFromMap() async {
     if (_isOfflineMapActive) {
+      _manualOfflineMapSelection = false;
       setState(() => _offlineMapSelected = false);
       if (mounted) {
         setState(() => _message = '');
@@ -2401,9 +2414,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       return;
     }
 
+    // Preserve the explicit user choice if Liberty finishes loading while
+    // the offline provider is being attached.
+    _manualOfflineMapSelection = true;
     // Shymkent MBTiles has no useful coverage at world/country overview
-    // zooms. Recenter before enabling the offline layer when the camera is
-    // outside the city bounds or zoomed out beyond its minimum useful scale.
+    // zooms. Return to a valid live GPS fix when it is inside Shymkent.
     if (_offlineMapReady) {
       final camera = _mapController.camera;
       final center = camera.center;
@@ -2413,12 +2428,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           center.longitude < 69.40 ||
           center.longitude > 69.85;
       if (camera.zoom < 10.5 || outsideShymkent) {
-        _mapController.move(const LatLng(42.3417, 69.5901), 11.5);
+        final gps = _currentLocation;
+        final gpsInsideShymkent = gps != null &&
+            gps.latitude >= 42.15 && gps.latitude <= 42.50 &&
+            gps.longitude >= 69.40 && gps.longitude <= 69.85;
+        _mapController.move(
+          gpsInsideShymkent ? gps : const LatLng(42.3417, 69.5901),
+          14.5,
+        );
       }
     }
 
     await _loadSavedOfflineMap();
     if (!mounted) return;
+    if (!_isOfflineMapActive) _manualOfflineMapSelection = false;
     final notice = _isOfflineMapActive
         ? AppLocale.pick(
             'Включена офлайн-карта Шымкента.',
@@ -2468,6 +2491,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     if (selectedPath == '__use_online_map__') {
       // Keep the offline MBTiles layer alive as a fallback under Liberty.
       setState(() {
+        _manualOfflineMapSelection = false;
         _offlineMapSelected = false;
         _message = '';
       });
@@ -2485,7 +2509,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         database.dispose();
         throw Exception('Поддерживается только векторная MBTiles-карта (PBF/MVT).');
       }
-      final vectorProvider = MbTilesVectorTileProvider(mbtiles: database);
+      final vectorProvider = _ResilientVectorTileProvider(
+        MbTilesVectorTileProvider(mbtiles: database),
+        sourceId: 'offline-openmaptiles',
+        maximumZoomOverride: 17,
+      );
+      _manualOfflineMapSelection = true;
       _disposeOfflineMap();
       setState(() {
         _offlineVectorMbtiles = database;
@@ -9939,7 +9968,7 @@ _navigationMatchedLocation = null;
                         ),
                       )
                     : const CameraConstraint.unconstrained(),
-                maxZoom: 20,
+                maxZoom: 18.5,
                 onTap: (_, point) {
                   // A short tap may select only an alternative route line.
                   // New map destinations require the deliberate one-second hold.
@@ -9978,7 +10007,9 @@ _navigationMatchedLocation = null;
                       tileProviders: TileProviders({
                         'openmaptiles': _offlineVectorTileProvider!,
                       }),
-                      maximumZoom: 18,
+                      // MBTiles contains data through z17; the provider's
+                      // maximumZoom makes the renderer reuse z17 tiles above it.
+                      maximumZoom: 17,
                       layerMode: VectorTileLayerMode.raster,
                       memoryTileCacheMaxSize: 128 * 1024 * 1024,
                       memoryTileDataCacheMaxSize: 512,
