@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity() {
  private lateinit var routeOptionsView:LinearLayout
  private lateinit var voiceLanguageButton:Button
  private lateinit var mapEngine:MapEngineManager
+ private lateinit var locationManager:IndependentGpsEngine
  private lateinit var routeSimulation:RouteSimulationManager
  private lateinit var voice:NavigationVoiceHelper
  private val routes=RouteAndSearchManager()
@@ -82,7 +83,7 @@ class MainActivity : AppCompatActivity() {
   routeCard=findViewById(R.id.routeCard);routeInfo=findViewById(R.id.routeInfo);goButton=findViewById(R.id.btnGo);debugText=findViewById(R.id.tvDebug)
   speedText=findViewById(R.id.tvSpeed);routeOptionsView=findViewById(R.id.routeOptions);voiceLanguageButton=findViewById(R.id.btnVoiceLanguage)
   mapView.onCreate(savedInstanceState)
-  mapEngine=MapEngineManager(this,lifecycleScope);routeSimulation=RouteSimulationManager(lifecycleScope);voice=NavigationVoiceHelper(this)
+  mapEngine=MapEngineManager(this,lifecycleScope);locationManager=IndependentGpsEngine(this);routeSimulation=RouteSimulationManager(lifecycleScope);voice=NavigationVoiceHelper(this)
   mapEngine.loadLogo(findViewById(R.id.maptoolkitLogo))
   findViewById<View>(R.id.maptoolkitLogo).setOnClickListener{openCredit("https://maptoolkit.com/copyright")}
   findViewById<View>(R.id.maptoolkitCredit).setOnClickListener{openCredit("https://maptoolkit.com/copyright")}
@@ -304,6 +305,6 @@ class MainActivity : AppCompatActivity() {
  override fun onPause(){super.onPause();mapView.onPause()}
  override fun onStop(){super.onStop();mapView.onStop()}
  override fun onLowMemory(){super.onLowMemory();mapView.onLowMemory()}
- override fun onDestroy(){searchJob?.cancel();roadRefreshJob?.cancel();routeSimulation.release();voice.release();mapView.onDestroy();super.onDestroy()}
+ override fun onDestroy(){searchJob?.cancel();roadRefreshJob?.cancel();locationManager.release();routeSimulation.release();voice.release();mapView.onDestroy();super.onDestroy()}
  override fun onSaveInstanceState(outState:Bundle){super.onSaveInstanceState(outState);mapView.onSaveInstanceState(outState)}
 }
