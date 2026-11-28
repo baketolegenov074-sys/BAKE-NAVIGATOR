@@ -1120,11 +1120,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       MapStartupDiagnostics.instance.markFirstFrame();
-      // Let the first map frame render before starting Liberty style requests.
-      unawaited(() async {
-        await Future<void>.delayed(const Duration(milliseconds: 400));
-        if (!mounted || _isOfflineMapActive) return;
-        await _runStartupDiagnosticTask('Стиль карты', _loadFlutterMapOnlineStyle);
+      // Start loading the online vector style immediately after the first frame.
+      if (!_isOfflineMapActive) {
+        unawaited(_runStartupDiagnosticTask(
+          'Стиль карты',
+          _loadFlutterMapOnlineStyle,
+        ));
       }());
       unawaited(_initializeStartupServices());
     });
@@ -5571,14 +5572,39 @@ _navigationMatchedLocation = null;
     }
   }
 
+  String _normalizedRoadReportType(Map<String, dynamic> report) =>
+      (report['type'] ?? '').toString().trim().toLowerCase();
+
+  bool _isNoUTurnRoadSign(Map<String, dynamic> report) {
+    final type = _normalizedRoadReportType(report).replaceAll(
+      RegExp(r'[\\s-]+'),
+      '_',
+    );
+    return type.contains('no_u_turn') ||
+        type.contains('no_uturn') ||
+        type.contains('разворот запрещ') ||
+        type.contains('разворот_запрещ');
+  }
+
+  bool _isAdminRoadSign(Map<String, dynamic> report) {
+    final type = _normalizedRoadReportType(report);
+    return type.contains('знак') ||
+        type.contains('no_u_turn') ||
+        type.contains('no-uturn') ||
+        type.contains('no u turn') ||
+        type.contains('разворот запрещ');
+  }
+
   bool _isRoadWarningReport(Map<String, dynamic> report) {
-    final type = (report['type'] ?? '').toString().trim().toLowerCase();
+    final type = _normalizedRoadReportType(report);
     return type.contains('камера') || type.contains('светофор') ||
         type.contains('лежач') || type.contains('полиц') ||
         type.contains('перекрыт') || type.contains('яма') ||
         type.contains('переход') || type.contains('скорост') ||
         type.contains('знак') || type.contains('опасн') ||
         type.contains('переезд') || type.contains('поворот') ||
+        type.contains('no_u_turn') || type.contains('no-uturn') ||
+        type.contains('разворот запрещ') ||
         type.contains('односторон') || type.contains('ремонт');
   }
 
@@ -5599,6 +5625,7 @@ _navigationMatchedLocation = null;
 
   String _roadReportGlyph(Map<String, dynamic> report) {
     final type = report['type']?.toString() ?? '';
+    if (_isNoUTurnRoadSign(report)) return '↶';
     if (type.contains('Камера')) return '📷';
     if (type.contains('знак')) return '🚸';
     if (type.contains('Светофор')) return '🚦';
@@ -5615,8 +5642,44 @@ _navigationMatchedLocation = null;
   Widget _buildConfirmedRoadReportMarker(Map<String, dynamic> report) {
     final type = report['type']?.toString() ?? 'Дорожный объект';
     final date = report['createdAt']?.toString() ?? '';
+    if (_isNoUTurnRoadSign(report)) {
+      return Tooltip(
+        message: '$type\\nПодтверждено${date.isNotEmpty ? '\\n$date' : ''}',
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFFE53935), width: 2.5),
+              boxShadow: const [
+                BoxShadow(color: Color(0x44000000), blurRadius: 5, offset: Offset(0, 2)),
+              ],
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                const Icon(Icons.u_turn_left, color: Color(0xFF202020), size: 18),
+                Transform.rotate(
+                  angle: -math.pi / 4,
+                  child: Container(
+                    width: 3,
+                    height: 25,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE53935),
+                      borderRadius: BorderRadius.all(Radius.circular(2)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return Tooltip(
-      message: '$type\nПодтверждено${date.isNotEmpty ? '\n$date' : ''}',
+      message: '$type\\nПодтверждено${date.isNotEmpty ? '\\n$date' : ''}',
       child: Container(
         decoration: BoxDecoration(
           color: const Color(0xFFFFD54F),
@@ -9668,7 +9731,11 @@ _navigationMatchedLocation = null;
         child: _buildRoadAlertMapMarker(alert),
       )),
       if (_isOfflineMapActive || _roadEventsLayerEnabled)
-        ..._confirmedRoadReports.where(_isRoadWarningReport).map((report) => Marker(
+        ..._confirmedRoadReports
+            .where(_isRoadWarningReport)
+            .where((report) =>
+                _mapCameraZoom >= 14.5 || !_isAdminRoadSign(report))
+            .map((report) => Marker(
         point: LatLng((report['latitude'] as num).toDouble(), (report['longitude'] as num).toDouble()),
         width: 28,
         height: 28,
