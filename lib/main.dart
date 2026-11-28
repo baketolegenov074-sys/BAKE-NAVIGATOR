@@ -48,7 +48,7 @@ class _ResilientVectorTileProvider implements VectorTileProvider {
     this._delegate, {
     required this.sourceId,
     this.onFirstTileLoaded,
-    this.swallowProviderExceptions = true,
+    this.swallowProviderExceptions = false,
   });
 
   final VectorTileProvider _delegate;
@@ -2326,7 +2326,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _flutterMapOnlineTileProviders =
             _resilientOnlineTileProviders(
           selectedProviders,
-          swallowProviderExceptions: true,
+          swallowProviderExceptions: false,
           onFirstTileLoaded: () {
             if (_firstOnlineVectorTileLoaded) return;
             // Let the first tile finish rasterization before compass-driven
