@@ -2144,7 +2144,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       }
       if (!mounted) return;
       if (_activeOfflineMapPath == path && _offlineVectorTileProvider != null) {
-        if (!_offlineMapSelected) setState(() => _offlineMapSelected = true);
+        final shouldSelectOffline =
+            _manualOfflineMapSelection || _flutterMapOnlineStyle == null;
+        if (_offlineMapSelected != shouldSelectOffline) {
+          setState(() => _offlineMapSelected = shouldSelectOffline);
+        }
         return;
       }
 
@@ -2171,7 +2175,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           _activeOfflineMapPath = path;
           _offlineVectorMbtiles = database;
           _offlineVectorTileProvider = vectorProvider;
-          _offlineMapSelected = true;
+          // Resolve the startup race: if Liberty already loaded, keep online
+          // mode unless the user explicitly selected offline.
+          _offlineMapSelected =
+              _manualOfflineMapSelection || _flutterMapOnlineStyle == null;
         });
       } catch (error) {
         debugPrint('BAKE MBTiles load failed: $error');
