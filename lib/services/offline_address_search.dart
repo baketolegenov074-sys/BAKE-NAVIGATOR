@@ -9,6 +9,24 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'offline_search_diagnostics.dart';
+
+
+Map<String, int> _offlineAddressIndexStats(List<Map<String, dynamic>> items) {
+  var streets = 0;
+  var addresses = 0;
+  for (final item in items) {
+    final kind = item['kind']?.toString().toLowerCase() ?? '';
+    if (kind == 'street' || item['highway'] != null) streets++;
+    if (kind == 'address' || kind == 'entrance' ||
+        (item['house']?.toString().isNotEmpty ?? false)) addresses++;
+  }
+  return <String, int>{
+    'items': items.length,
+    'streets': streets,
+    'addresses': addresses,
+  };
+}
 
 List<Map<String, dynamic>> _decodeOfflineAddressSearchIndex(Uint8List bytes) {
   final decoded = jsonDecode(utf8.decode(gzip.decode(bytes)));
@@ -264,6 +282,7 @@ class OfflineAddressSearch {
   SendPort? _searchSendPort;
   int _nextSearchId = 0;
   bool _disposed = false;
+  int _loadedAssetBytes = 0;
   final Map<int, Completer<List<Map<String, dynamic>>>> _pendingSearches =
       <int, Completer<List<Map<String, dynamic>>>>{};
 
@@ -271,13 +290,17 @@ class OfflineAddressSearch {
 
   Future<void> _load() async {
     Uint8List bytes = Uint8List(0);
+    await OfflineSearchDiagnostics.instance.record('index_load_started', details: {'asset': _assetPath});
     try {
       final data = await rootBundle.load(_assetPath);
       bytes = Uint8List.fromList(data.buffer.asUint8List(
         data.offsetInBytes,
         data.lengthInBytes,
       ));
+      _loadedAssetBytes = bytes.length;
+      await OfflineSearchDiagnostics.instance.record('index_asset_loaded', details: {'bytes': bytes.length});
     } catch (error) {
+      await OfflineSearchDiagnostics.instance.record('index_asset_load_failed', details: {'error': error.toString()});
       // The curated directory remains available when the generated OSM index
       // is missing. The persistent worker still handles its small directory.
       // ignore: avoid_print
@@ -303,6 +326,7 @@ class OfflineAddressSearch {
       });
       await _searchInitCompleter!.future.timeout(const Duration(seconds: 60));
     } catch (error) {
+      await OfflineSearchDiagnostics.instance.record('index_worker_failed', details: {'error': error.toString(), 'assetBytes': bytes.length});
       _searchIsolate?.kill(priority: Isolate.immediate);
       _searchIsolate = null;
       _searchSendPort = null;
@@ -313,7 +337,12 @@ class OfflineAddressSearch {
       if (bytes.isNotEmpty) {
         try {
           _items = await compute(_decodeOfflineAddressSearchIndex, bytes);
+          await OfflineSearchDiagnostics.instance.record('index_fallback_loaded', details: {
+            'assetBytes': bytes.length,
+            ..._offlineAddressIndexStats(_items),
+          });
         } catch (decodeError) {
+          await OfflineSearchDiagnostics.instance.record('index_decode_failed', details: {'error': decodeError.toString(), 'assetBytes': bytes.length});
           // ignore: avoid_print
           print('BAKE offline address fallback decode failed: $decodeError');
         }
@@ -340,6 +369,12 @@ class OfflineAddressSearch {
         initialization.completeError(StateError(error));
       } else {
         initialization.complete();
+        unawaited(OfflineSearchDiagnostics.instance.record('index_worker_ready', details: {
+          'assetBytes': _loadedAssetBytes,
+          'items': (message['items'] as num?)?.toInt() ?? 0,
+          'streets': (message['streets'] as num?)?.toInt() ?? 0,
+          'addresses': (message['addresses'] as num?)?.toInt() ?? 0,
+        }));
       }
       return;
     }
@@ -365,32 +400,63 @@ class OfflineAddressSearch {
     LatLng? near,
     int limit = 10,
   }) async {
-    await initialize();
-    final sendPort = _searchSendPort;
-    if (sendPort == null || _disposed) {
-      return compute<Map<String, Object?>, List<Map<String, dynamic>>>(
-        _searchOfflineAddressInIsolate,
-        <String, Object?>{
-          'items': _items,
+    final stopwatch = Stopwatch()..start();
+    await OfflineSearchDiagnostics.instance.record('search_started', details: {
+      'query': query,
+      'limit': limit,
+      'nearAvailable': near != null,
+    });
+    try {
+      await initialize();
+      final sendPort = _searchSendPort;
+      final List<Map<String, dynamic>> results;
+      if (sendPort == null || _disposed) {
+        results = await compute<Map<String, Object?>, List<Map<String, dynamic>>>(
+          _searchOfflineAddressInIsolate,
+          <String, Object?>{
+            'items': _items,
+            'query': query,
+            'nearLatitude': near?.latitude,
+            'nearLongitude': near?.longitude,
+            'limit': limit,
+          },
+        );
+      } else {
+        final id = ++_nextSearchId;
+        final completer = Completer<List<Map<String, dynamic>>>();
+        _pendingSearches[id] = completer;
+        sendPort.send(<String, Object?>{
+          'type': 'search',
+          'id': id,
           'query': query,
           'nearLatitude': near?.latitude,
           'nearLongitude': near?.longitude,
           'limit': limit,
-        },
-      );
+        });
+        results = await completer.future;
+      }
+      stopwatch.stop();
+      await OfflineSearchDiagnostics.instance.record('search_completed', details: {
+        'query': query,
+        'results': results.length,
+        'elapsedMs': stopwatch.elapsedMilliseconds,
+        'backend': _searchSendPort == null || _disposed ? 'compute_fallback' : 'worker',
+        'indexItemsInMainIsolate': _items.length,
+        'resultKinds': results.map((feature) {
+          final properties = feature['properties'];
+          return properties is Map ? (properties['type'] ?? properties['kind'] ?? 'unknown').toString() : 'unknown';
+        }).toList(),
+      });
+      return results;
+    } catch (error) {
+      stopwatch.stop();
+      await OfflineSearchDiagnostics.instance.record('search_failed', details: {
+        'query': query,
+        'elapsedMs': stopwatch.elapsedMilliseconds,
+        'error': error.toString(),
+      });
+      rethrow;
     }
-    final id = ++_nextSearchId;
-    final completer = Completer<List<Map<String, dynamic>>>();
-    _pendingSearches[id] = completer;
-    sendPort.send(<String, Object?>{
-      'type': 'search',
-      'id': id,
-      'query': query,
-      'nearLatitude': near?.latitude,
-      'nearLongitude': near?.longitude,
-      'limit': limit,
-    });
-    return completer.future;
   }
 
   void dispose() {
@@ -793,7 +859,11 @@ void _offlineAddressSearchWorker(SendPort mainSendPort) {
         service._items = bytes is Uint8List && bytes.isNotEmpty
             ? _decodeOfflineAddressSearchIndex(bytes)
             : <Map<String, dynamic>>[];
-        mainSendPort.send(<String, Object?>{'id': 0, 'ok': true});
+        mainSendPort.send(<String, Object?>{
+          'id': 0,
+          'ok': true,
+          ..._offlineAddressIndexStats(service._items),
+        });
         return;
       }
       if (type != 'search') return;
