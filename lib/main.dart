@@ -29,7 +29,6 @@ import 'services/offline_address_search.dart';
 import 'services/offline_search_diagnostics.dart';
 import 'screens/road_report_center.dart';
 import 'screens/app_diagnostics_screen.dart';
-import 'screens/openfreemap_experiment.dart';
 import 'services/road_report_sync_service.dart';
 import 'services/valhalla_archive_validator.dart';
 import 'services/map_startup_diagnostics.dart';
@@ -11014,22 +11013,6 @@ class _NavigatorSettingsScreenState extends State<NavigatorSettingsScreen> {
               child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
               children: [
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.public),
-                    title: const Text('Экспериментальная карта OpenFreeMap'),
-                    subtitle: const Text('Отдельная карта Liberty на движке FlutterMap'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const OpenFreeMapExperimentScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 4),
                 Text(AppLocale.tr('Автомобиль'), style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
                 Text(AppLocale.tr('Эти сведения сохраняются только на этом телефоне.')),
