@@ -2401,6 +2401,22 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       return;
     }
 
+    // Shymkent MBTiles has no useful coverage at world/country overview
+    // zooms. Recenter before enabling the offline layer when the camera is
+    // outside the city bounds or zoomed out beyond its minimum useful scale.
+    if (_offlineMapReady) {
+      final camera = _mapController.camera;
+      final center = camera.center;
+      final outsideShymkent =
+          center.latitude < 42.15 ||
+          center.latitude > 42.50 ||
+          center.longitude < 69.40 ||
+          center.longitude > 69.85;
+      if (camera.zoom < 10.5 || outsideShymkent) {
+        _mapController.move(const LatLng(42.3417, 69.5901), 11.5);
+      }
+    }
+
     await _loadSavedOfflineMap();
     if (!mounted) return;
     final notice = _isOfflineMapActive
