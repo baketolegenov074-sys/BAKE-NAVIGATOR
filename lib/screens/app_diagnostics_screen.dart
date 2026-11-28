@@ -954,6 +954,22 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
                         ],
                       ),
                       const SizedBox(height: 10),
+                      FilledButton.icon(
+                        onPressed: () async {
+                          await diagnostics.record('manual_diagnostics_test', details: {
+                            'source': 'offline_search_diagnostics_screen',
+                            'message': 'Проверочная запись создана кнопкой на телефоне',
+                          });
+                          if (!context.mounted) return;
+                          diagnostics.revision.value++;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Тестовая запись сохранена локально')),
+                          );
+                        },
+                        icon: const Icon(Icons.edit_note),
+                        label: const Text('Проверить запись'),
+                      ),
+                      const SizedBox(height: 6),
                       OutlinedButton.icon(
                         onPressed: () => diagnostics.revision.value++,
                         icon: const Icon(Icons.refresh),
@@ -961,7 +977,14 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
                       ),
                       const SizedBox(height: 6),
                       FilledButton.icon(
-                        onPressed: reports.isEmpty ? null : () async {
+                        onPressed: () async {
+                          if (reports.isEmpty) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Журнал пуст. Сначала выполните поиск улицы или проверку записи.')),
+                            );
+                            return;
+                          }
                           try {
                             final file = await diagnostics.exportReport();
                             if (file == null || !await file.exists()) {
@@ -983,7 +1006,11 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
                       ),
                       const SizedBox(height: 6),
                       OutlinedButton.icon(
-                        onPressed: reports.isEmpty ? null : () async {
+                        onPressed: reports.isEmpty ? () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Удалять нечего: журнал пуст.')),
+                          );
+                        } : () async {
                           final confirmed = await showDialog<bool>(
                             context: context,
                             builder: (dialogContext) => AlertDialog(
