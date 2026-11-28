@@ -941,39 +941,54 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(12),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Icon(Icons.phone_android),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text('Файлы на телефоне: ${reports.length} · максимум около 4 МБ'),
+                      Row(
+                        children: [
+                          const Icon(Icons.phone_android),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text('Файлы на телефоне: ${reports.length} · максимум около 4 МБ'),
+                          ),
+                        ],
                       ),
-                      IconButton(
-                        tooltip: 'Обновить',
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
                         onPressed: () => diagnostics.revision.value++,
                         icon: const Icon(Icons.refresh),
+                        label: const Text('Обновить журнал'),
                       ),
-                      IconButton(
-                        tooltip: 'Экспортировать журнал',
+                      const SizedBox(height: 6),
+                      FilledButton.icon(
                         onPressed: reports.isEmpty ? null : () async {
-                          final file = await diagnostics.exportReport();
-                          if (file != null) {
+                          try {
+                            final file = await diagnostics.exportReport();
+                            if (file == null || !await file.exists()) {
+                              throw StateError('Файл журнала не создан');
+                            }
                             await Share.shareXFiles(
                               [XFile(file.path)],
                               text: 'BAKE Navigator — диагностика офлайн-поиска улиц',
                             );
+                          } catch (error) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Не удалось отправить журнал: $error')),
+                            );
                           }
                         },
                         icon: const Icon(Icons.ios_share),
+                        label: const Text('Отправить журнал'),
                       ),
-                      IconButton(
-                        tooltip: 'Очистить журнал',
+                      const SizedBox(height: 6),
+                      OutlinedButton.icon(
                         onPressed: reports.isEmpty ? null : () async {
                           final confirmed = await showDialog<bool>(
                             context: context,
                             builder: (dialogContext) => AlertDialog(
-                              title: const Text('Очистить диагностику офлайн-поиска?'),
-                              content: const Text('Будут удалены только локальные журналы поиска улиц на этом телефоне.'),
+                              title: const Text('Удалить журнал офлайн-поиска?'),
+                              content: const Text('Будут удалены только локальные записи поиска улиц на этом телефоне.'),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(dialogContext, false),
@@ -986,9 +1001,22 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
                               ],
                             ),
                           );
-                          if (confirmed == true) await diagnostics.clear();
+                          if (confirmed != true) return;
+                          try {
+                            await diagnostics.clear();
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Локальный журнал удалён')),
+                            );
+                          } catch (error) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Не удалось удалить журнал: $error')),
+                            );
+                          }
                         },
                         icon: const Icon(Icons.delete_sweep_outlined),
+                        label: const Text('Удалить журнал'),
                       ),
                     ],
                   ),
