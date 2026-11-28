@@ -9883,7 +9883,7 @@ _navigationMatchedLocation = null;
                       textCacheMaxSize: 4096,
                       concurrency: 2,
                     ),
-                  )
+                  ),
                 if (_flutterMapOnlineStyle != null)
                   Visibility(
                     visible: !_isOfflineMapActive,
