@@ -7776,6 +7776,13 @@ _navigationMatchedLocation = null;
   );
 
   void _captureMapLongPressPoint(LatLng point) {
+    unawaited(OfflineSearchDiagnostics.instance.record('map_long_press_received', details: {
+      'latitude': point.latitude,
+      'longitude': point.longitude,
+      'offlineMapActive': _isOfflineMapActive,
+      'holdMs': _lastMapPointerHoldDuration.inMilliseconds,
+      'pointerMoved': _mapPointerMoved,
+    }));
     _pendingMapLongPressPoint = point;
     // Native FlutterMap long-press callbacks can arrive just after
     // the pointer-up event. Preserve a completed one-second hold in that case.
@@ -7788,6 +7795,14 @@ _navigationMatchedLocation = null;
   }
 
   Future<void> _handleMapTap(LatLng point) async {
+    await OfflineSearchDiagnostics.instance.record('map_address_gesture_checked', details: {
+      'latitude': point.latitude,
+      'longitude': point.longitude,
+      'offlineMapActive': _isOfflineMapActive,
+      'holdMs': _lastMapPointerHoldDuration.inMilliseconds,
+      'pointerMoved': _mapPointerMoved,
+      'accepted': _lastMapPointerHoldDuration >= const Duration(seconds: 1),
+    });
     // Address selection requires a deliberate one-second hold.
     if (_lastMapPointerHoldDuration < const Duration(seconds: 1)) return;
     await _selectMapDestination(point);
@@ -8095,6 +8110,11 @@ _navigationMatchedLocation = null;
   }
 
   Future<void> _selectMapDestination(LatLng point) async {
+    await OfflineSearchDiagnostics.instance.record('map_address_lookup_started', details: {
+      'latitude': point.latitude,
+      'longitude': point.longitude,
+      'offlineMapActive': _isOfflineMapActive,
+    });
     if (point.latitude < 40 || point.latitude > 56 ||
         point.longitude < 46 || point.longitude > 88) {
       if (mounted) {
@@ -8113,6 +8133,13 @@ _navigationMatchedLocation = null;
 
     try {
       final address = await _lookupPhotonReverseAddress(point);
+      await OfflineSearchDiagnostics.instance.record('map_address_lookup_completed', details: {
+        'latitude': point.latitude,
+        'longitude': point.longitude,
+        'address': address,
+        'found': address.isNotEmpty && address != 'Адрес не найден.',
+        'offlineMapActive': _isOfflineMapActive,
+      });
       await _rememberMapAddress(address, point);
       if (!mounted ||
           generation != _mapPreviewGeneration ||
@@ -8120,6 +8147,11 @@ _navigationMatchedLocation = null;
       setState(() => _mapPreviewAddress = address);
     } catch (error) {
       debugPrint('BAKE selected point address lookup failed: $error');
+      await OfflineSearchDiagnostics.instance.record('map_address_lookup_failed', details: {
+        'latitude': point.latitude,
+        'longitude': point.longitude,
+        'error': error.toString(),
+      });
       if (!mounted ||
           generation != _mapPreviewGeneration ||
           _mapPreviewPoint != point) return;
@@ -8242,6 +8274,11 @@ _navigationMatchedLocation = null;
   }
 
   Future<String> _lookupPhotonReverseAddress(LatLng point) async {
+    await OfflineSearchDiagnostics.instance.record('map_reverse_photon_started', details: {
+      'latitude': point.latitude,
+      'longitude': point.longitude,
+      'offlineMapActive': _isOfflineMapActive,
+    });
     // Photon is the primary geocoder. Its reverse endpoint can return an
     // empty feature list for mapped streets, so fall back to OSM Nominatim.
     try {
@@ -8286,7 +8323,13 @@ _navigationMatchedLocation = null;
               district: (properties['district'] ?? properties['suburb'] ?? '')
                   .toString(),
             );
-            if (address.isNotEmpty) return address;
+            if (address.isNotEmpty) {
+              await OfflineSearchDiagnostics.instance.record('map_reverse_photon_result', details: {
+                'address': address,
+                'featureCount': rawFeatures.length,
+              });
+              return address;
+            }
           }
         }
       } else {
@@ -8296,7 +8339,15 @@ _navigationMatchedLocation = null;
       debugPrint('BAKE Photon reverse failed: $error');
     }
 
+    await OfflineSearchDiagnostics.instance.record('map_reverse_photon_empty_or_failed', details: {
+      'latitude': point.latitude,
+      'longitude': point.longitude,
+    });
     final fallback = await _lookupNominatimReverseAddress(point);
+    await OfflineSearchDiagnostics.instance.record('map_reverse_nominatim_result', details: {
+      'address': fallback,
+      'found': fallback.isNotEmpty,
+    });
     return fallback.isEmpty ? 'Адрес не найден.' : fallback;
   }
 
@@ -9736,6 +9787,13 @@ _navigationMatchedLocation = null;
                     : DateTime.now().difference(startedAt);
                 _mapPointerDownAt = null;
                 _mapPointerDownPosition = null;
+                if (!_mapPointerMoved) {
+                  unawaited(OfflineSearchDiagnostics.instance.record('map_pointer_released', details: {
+                    'holdMs': _lastMapPointerHoldDuration.inMilliseconds,
+                    'longPressPointCaptured': _pendingMapLongPressPoint != null,
+                    'offlineMapActive': _isOfflineMapActive,
+                  }));
+                }
                 final heldPoint = _pendingMapLongPressPoint;
                 _pendingMapLongPressPoint = null;
                 if (heldPoint != null && !_mapPointerMoved &&
