@@ -26,6 +26,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import 'services/road_alert_service.dart';
 import 'services/offline_address_search.dart';
+import 'services/offline_search_diagnostics.dart';
 import 'screens/road_report_center.dart';
 import 'screens/app_diagnostics_screen.dart';
 import 'screens/openfreemap_experiment.dart';
@@ -4222,7 +4223,20 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     }
 
     final localResults = await _offlineAddressSearch.search(query, near: near ?? _currentLocation ?? _shymkent);
+    await OfflineSearchDiagnostics.instance.record('address_search_pipeline', details: {
+      'query': query,
+      'localResults': localResults.length,
+      'approvedLocalReports': reportFeatures.length,
+      'savedPlaces': savedPlaceFeatures.length,
+      'offlineMapActive': _isOfflineMapActive,
+      'includePhoton': includePhoton,
+      'includeCloudReports': includeCloudReports,
+    });
     if (!includePhoton) {
+      await OfflineSearchDiagnostics.instance.record('address_search_local_only', details: {
+        'query': query,
+        'totalResults': reportFeatures.length + savedPlaceFeatures.length + localResults.length,
+      });
       final localOnly = _keepExactHouseNumber(
         <Map<String, dynamic>>[...reportFeatures, ...savedPlaceFeatures, ...localResults],
         query,
@@ -4235,6 +4249,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     // the Shymkent-only local index has partial matches. Keep the offline-only
     // search path unchanged when the experimental online map is not active.
     if (!_isOfflineMapActive) {
+      await OfflineSearchDiagnostics.instance.record('photon_search_path', details: {
+        'query': query,
+        'reason': 'offline_vector_map_inactive',
+      });
       try {
         final onlineResults = await _fetchPhotonFeatures(
           query,
@@ -4280,6 +4298,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     // index first and contact Photon only when the local index has no match.
     var otherResults = localResults;
     if (otherResults.isEmpty) {
+      await OfflineSearchDiagnostics.instance.record('photon_fallback_attempted', details: {
+        'query': query,
+        'reason': 'offline_local_search_returned_zero_results',
+      });
       try {
         otherResults = await _fetchPhotonFeatures(
           query,
@@ -4287,14 +4309,26 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           includeNominatimAddressFallback: includeNominatimAddressFallback,
         ).timeout(const Duration(seconds: 18));
       } catch (error) {
+        await OfflineSearchDiagnostics.instance.record('photon_fallback_failed', details: {
+          'query': query,
+          'error': error.toString(),
+        });
         debugPrint('BAKE Photon address search unavailable: $error');
         otherResults = <Map<String, dynamic>>[];
       }
     }
-    return _keepExactHouseNumber(
+    final finalResults = _keepExactHouseNumber(
       <Map<String, dynamic>>[...reportFeatures, ...savedPlaceFeatures, ...otherResults],
       query,
     );
+    await OfflineSearchDiagnostics.instance.record('address_search_finished', details: {
+      'query': query,
+      'finalResults': finalResults.length,
+      'localIndexResults': localResults.length,
+      'photonResults': otherResults.length - localResults.length < 0 ? 0 : otherResults.length - localResults.length,
+      'offlineMapActive': _isOfflineMapActive,
+    });
+    return finalResults;
   }
 
   Future<void> _searchAddress({bool selectAsOrigin = false}) async {
