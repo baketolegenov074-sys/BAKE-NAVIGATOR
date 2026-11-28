@@ -7005,8 +7005,16 @@ _navigationMatchedLocation = null;
                                   ).timeout(const Duration(seconds: 8));
                                   if (!searchContext.mounted || requestVersion != photonRequestVersion) return;
                                   photonOnlySuggestions..clear()..addAll(found);
+                                  await OfflineSearchDiagnostics.instance.record('autocomplete_photon_completed', details: {
+                                    'query': value,
+                                    'results': found.length,
+                                  });
                                   publishSuggestions();
                                 } catch (error) {
+                                  await OfflineSearchDiagnostics.instance.record('autocomplete_photon_failed', details: {
+                                    'query': value,
+                                    'error': error.toString(),
+                                  });
                                   debugPrint('BAKE Photon autocomplete failed: $error');
                                 } finally {
                                   if (identical(autocompleteClient, requestClient)) {
@@ -7032,8 +7040,16 @@ _navigationMatchedLocation = null;
                                   ).timeout(const Duration(seconds: 12));
                                   if (!searchContext.mounted || requestVersion != photonRequestVersion) return;
                                   localOnlySuggestions..clear()..addAll(found);
+                                  await OfflineSearchDiagnostics.instance.record('autocomplete_local_completed', details: {
+                                    'query': value,
+                                    'results': found.length,
+                                  });
                                   publishSuggestions();
                                 } catch (error) {
+                                  await OfflineSearchDiagnostics.instance.record('autocomplete_local_failed', details: {
+                                    'query': value,
+                                    'error': error.toString(),
+                                  });
                                   debugPrint('BAKE local address suggestions failed: $error');
                                 } finally {
                                   if (searchContext.mounted && requestVersion == photonRequestVersion) {
