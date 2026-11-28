@@ -39,7 +39,6 @@ class MainActivity : AppCompatActivity() {
  private lateinit var routeOptionsView:LinearLayout
  private lateinit var voiceLanguageButton:Button
  private lateinit var mapEngine:MapEngineManager
- private lateinit var locationManager:IndependentGpsEngine
  private lateinit var routeSimulation:RouteSimulationManager
  private lateinit var voice:NavigationVoiceHelper
  private val routes=RouteAndSearchManager()
@@ -70,8 +69,7 @@ class MainActivity : AppCompatActivity() {
  private var lastStatus="Загрузка карты"
 
  private val permissionLauncher=registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()){ result ->
-  if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true||result[Manifest.permission.ACCESS_COARSE_LOCATION]==true) startGps()
-  else setStatus("Разрешение GPS не предоставлено")
+  setStatus("GPS отключён в тестовой карте")
  }
 
  override fun onCreate(savedInstanceState:Bundle?){
@@ -84,13 +82,13 @@ class MainActivity : AppCompatActivity() {
   routeCard=findViewById(R.id.routeCard);routeInfo=findViewById(R.id.routeInfo);goButton=findViewById(R.id.btnGo);debugText=findViewById(R.id.tvDebug)
   speedText=findViewById(R.id.tvSpeed);routeOptionsView=findViewById(R.id.routeOptions);voiceLanguageButton=findViewById(R.id.btnVoiceLanguage)
   mapView.onCreate(savedInstanceState)
-  mapEngine=MapEngineManager(this,lifecycleScope);locationManager=IndependentGpsEngine(this);routeSimulation=RouteSimulationManager(lifecycleScope);voice=NavigationVoiceHelper(this)
+  mapEngine=MapEngineManager(this,lifecycleScope);routeSimulation=RouteSimulationManager(lifecycleScope);voice=NavigationVoiceHelper(this)
   mapEngine.loadLogo(findViewById(R.id.maptoolkitLogo))
   findViewById<View>(R.id.maptoolkitLogo).setOnClickListener{openCredit("https://maptoolkit.com/copyright")}
   findViewById<View>(R.id.maptoolkitCredit).setOnClickListener{openCredit("https://maptoolkit.com/copyright")}
   findViewById<View>(R.id.osmCredit).setOnClickListener{openCredit("https://www.openstreetmap.org/copyright")}
   setupSearch();setupControls()
-  mapEngine.initialize(mapView,{p->hideKeyboard();searchInput.clearFocus();requestRoute(p)},{checkLocationPermission();setStatus("Карта готова")})
+  mapEngine.initialize(mapView,{p->hideKeyboard();searchInput.clearFocus();requestRoute(p)},{setStatus("Карта готова · GPS отключён")})
  }
  private fun openCredit(url:String){startActivity(Intent(Intent.ACTION_VIEW,android.net.Uri.parse(url)))}
 
@@ -124,11 +122,7 @@ class MainActivity : AppCompatActivity() {
   findViewById<Button>(R.id.btnAdmin).setOnClickListener{startActivity(Intent(this,AdminActivity::class.java))}
   findViewById<Button>(R.id.btnZoomIn).setOnClickListener{mapEngine.map?.animateCamera(CameraUpdateFactory.zoomIn())}
   findViewById<Button>(R.id.btnZoomOut).setOnClickListener{mapEngine.map?.animateCamera(CameraUpdateFactory.zoomOut())}
-  findViewById<Button>(R.id.btnMyLocation).setOnClickListener{
-   val position=realGpsLatLng
-   if(position!=null)mapEngine.cameraTo(position,if(navigating)17.0 else 16.0)
-   else setStatus("Ожидаем актуальную позицию GPS…")
-  }
+  findViewById<Button>(R.id.btnMyLocation).visibility=View.GONE
   goButton.setOnClickListener{if(!loadingRoute&&routePoints.isNotEmpty()){if(navigating)stopNavigation()else startNavigation()}}
   findViewById<Button>(R.id.btnReset).setOnClickListener{resetRoute()}
   voiceLanguageButton.setOnClickListener{
@@ -145,11 +139,10 @@ class MainActivity : AppCompatActivity() {
  private fun requestRoute(end:LatLng){
   if(loadingRoute)return
   destination=end;mapEngine.setDestination(end)
-  if(currentLocation==null){pendingDestination=end;setStatus("Ждём GPS для построения маршрута…");return}
   pendingDestination=null;loadingRoute=true;setStatus("Ищем варианты маршрута…")
   lifecycleScope.launch{
    try{
-    val routeStart=realGpsLatLng?:current
+    val routeStart=mapEngine.map?.cameraPosition?.target?:current
     val found=withContext(Dispatchers.IO){routes.buildRoutes(routeStart,end)}
     if(found.isEmpty())error("Маршрут не найден")
     alternatives=found;selectedRouteIndex=0;applyRoute(0,false)
@@ -248,12 +241,6 @@ class MainActivity : AppCompatActivity() {
   setStatus("Тест-драйв")
   routeSimulation.startSimulation(routePoints,{p,b->mapEngine.setSimulationMarker(p);current=p;mapEngine.follow(p,b)},{restoreRealGpsPosition();if(navigating)setStatus("Тест-драйв завершён")})
  }
- private fun checkLocationPermission(){
-  val fine=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)
-  val coarse=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_COARSE_LOCATION)
-  if(fine==PackageManager.PERMISSION_GRANTED||coarse==PackageManager.PERMISSION_GRANTED)startGps()
-  else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
- }
  private fun restoreRealGpsPosition(){
   mapEngine.clearSimulationMarker()
   val real=realGpsLatLng?:currentLocation?.let{LatLng(it.latitude,it.longitude)}?:return
@@ -310,13 +297,13 @@ class MainActivity : AppCompatActivity() {
  private fun hideKeyboard(){(getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(searchInput.windowToken,0)}
  private fun setStatus(message:String){lastStatus=message;if(::debugText.isInitialized)debugText.text=message}
  override fun onStart(){super.onStart();mapView.onStart()}
- override fun onResume(){super.onResume();mapView.onResume();if(::locationManager.isInitialized&&hasLocationPermission())startGps()}
+ override fun onResume(){super.onResume();mapView.onResume()}
  private fun hasLocationPermission():Boolean {
   return ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
  }
  override fun onPause(){super.onPause();mapView.onPause()}
- override fun onStop(){locationManager.stopGps();super.onStop();mapView.onStop()}
+ override fun onStop(){super.onStop();mapView.onStop()}
  override fun onLowMemory(){super.onLowMemory();mapView.onLowMemory()}
- override fun onDestroy(){searchJob?.cancel();roadRefreshJob?.cancel();locationManager.release();routeSimulation.release();voice.release();mapView.onDestroy();super.onDestroy()}
+ override fun onDestroy(){searchJob?.cancel();roadRefreshJob?.cancel();routeSimulation.release();voice.release();mapView.onDestroy();super.onDestroy()}
  override fun onSaveInstanceState(outState:Bundle){super.onSaveInstanceState(outState);mapView.onSaveInstanceState(outState)}
 }
