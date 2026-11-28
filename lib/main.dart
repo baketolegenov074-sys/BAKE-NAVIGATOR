@@ -9824,7 +9824,9 @@ _navigationMatchedLocation = null;
                 // Its initial camera therefore starts at the device position.
                 initialCenter: _currentLocation!,
                 initialZoom: 16,
-                minZoom: 0,
+                // Offline MBTiles contain tiles only from zoom 7.
+                // Online Liberty keeps a wider overview range.
+                minZoom: _isOfflineMapActive ? 7.0 : 4.0,
                 maxZoom: 20,
                 onTap: (_, point) {
                   // A short tap may select only an alternative route line.
@@ -9853,39 +9855,53 @@ _navigationMatchedLocation = null;
                 },
               ),
               children: [
-                if (_isOfflineMapActive && _offlineVectorTileProvider != null)
-                  VectorTileLayer(
-                    key: const ValueKey<String>('bake-offline-vector-layer'),
-                    theme: _offlineVectorTheme,
-                    tileProviders: TileProviders({
-                      'openmaptiles': _offlineVectorTileProvider!,
-                    }),
-                    maximumZoom: 18,
+                if (_offlineVectorTileProvider != null)
+                  Visibility(
+                    visible: _isOfflineMapActive,
+                    maintainState: true,
+                    child: VectorTileLayer(
+                      key: const ValueKey<String>('bake-offline-vector-layer'),
+                      theme: _offlineVectorTheme,
+                      tileProviders: TileProviders({
+                        'openmaptiles': _offlineVectorTileProvider!,
+                      }),
+                      maximumZoom: 18,
+                      layerMode: VectorTileLayerMode.raster,
+                      memoryTileCacheMaxSize: 128 * 1024 * 1024,
+                      memoryTileDataCacheMaxSize: 256,
+                      concurrency: 2,
+                    ),
                   )
-                else if (_flutterMapOnlineStyle != null)
-                  VectorTileLayer(
-                    key: const ValueKey<String>('bake-online-liberty-layer'),
-                    theme: _flutterMapOnlineTheme ?? _flutterMapOnlineStyle!.theme,
-                    sprites: _flutterMapOnlineStyle!.sprites,
-                    tileProviders: _flutterMapOnlineTileProviders ??
-                        _flutterMapOnlineStyle!.providers,
-                    // Keep Liberty active through the full map zoom range.
-                    // Vector providers overzoom their last available tile.
-                    maximumZoom: 20,
-                    concurrency: 2,
-                    layerMode: VectorTileLayerMode.vector,
-                    cacheFolder: () async {
-                      final supportDirectory =
-                          await getApplicationSupportDirectory();
-                      final cacheDirectory = Directory(
-                        '${supportDirectory.path}/LibertyCache',
-                      );
-                      await cacheDirectory.create(recursive: true);
-                      return cacheDirectory;
-                    },
-                    fileCacheMaximumSizeInBytes: 256 * 1024 * 1024,
-                    fileCacheTtl: const Duration(days: 30),
-                    logCacheStats: true,
+                if (_flutterMapOnlineStyle != null)
+                  Visibility(
+                    visible: !_isOfflineMapActive,
+                    maintainState: true,
+                    child: VectorTileLayer(
+                      key: const ValueKey<String>('bake-online-liberty-layer'),
+                      theme: _flutterMapOnlineTheme ?? _flutterMapOnlineStyle!.theme,
+                      sprites: _flutterMapOnlineStyle!.sprites,
+                      tileProviders: _flutterMapOnlineTileProviders ??
+                          _flutterMapOnlineStyle!.providers,
+                      // Keep Liberty active through the full map zoom range.
+                      // Vector providers overzoom their last available tile.
+                      maximumZoom: 20,
+                      concurrency: 2,
+                      layerMode: VectorTileLayerMode.raster,
+                      memoryTileCacheMaxSize: 128 * 1024 * 1024,
+                      memoryTileDataCacheMaxSize: 256,
+                      cacheFolder: () async {
+                        final supportDirectory =
+                            await getApplicationSupportDirectory();
+                        final cacheDirectory = Directory(
+                          '${supportDirectory.path}/LibertyCache',
+                        );
+                        await cacheDirectory.create(recursive: true);
+                        return cacheDirectory;
+                      },
+                      fileCacheMaximumSizeInBytes: 256 * 1024 * 1024,
+                      fileCacheTtl: const Duration(days: 30),
+                      logCacheStats: true,
+                    ),
                   ),
                 if (!_isOfflineMapActive &&
                     _trafficLayerEnabled &&
