@@ -459,6 +459,49 @@ class OfflineAddressSearch {
     }
   }
 
+  Future<Map<String, dynamic>?> nearestAddress(LatLng point) async {
+    final stopwatch = Stopwatch()..start();
+    await OfflineSearchDiagnostics.instance.record('map_offline_reverse_started', details: {
+      'latitude': point.latitude,
+      'longitude': point.longitude,
+    });
+    try {
+      await initialize();
+      final sendPort = _searchSendPort;
+      final List<Map<String, dynamic>> results;
+      if (sendPort == null || _disposed) {
+        results = _nearestOsmAddress(point);
+      } else {
+        final id = ++_nextSearchId;
+        final completer = Completer<List<Map<String, dynamic>>>();
+        _pendingSearches[id] = completer;
+        sendPort.send(<String, Object?>{
+          'type': 'nearest',
+          'id': id,
+          'nearLatitude': point.latitude,
+          'nearLongitude': point.longitude,
+        });
+        results = await completer.future;
+      }
+      stopwatch.stop();
+      final result = results.isEmpty ? null : results.first;
+      await OfflineSearchDiagnostics.instance.record('map_offline_reverse_completed', details: {
+        'found': result != null,
+        'distanceMeters': result?['distance_m'],
+        'elapsedMs': stopwatch.elapsedMilliseconds,
+        'backend': _searchSendPort == null || _disposed ? 'compute_fallback' : 'worker',
+      });
+      return result;
+    } catch (error) {
+      stopwatch.stop();
+      await OfflineSearchDiagnostics.instance.record('map_offline_reverse_failed', details: {
+        'elapsedMs': stopwatch.elapsedMilliseconds,
+        'error': error.toString(),
+      });
+      rethrow;
+    }
+  }
+
   void dispose() {
     if (_disposed) return;
     _disposed = true;
@@ -757,6 +800,55 @@ class OfflineAddressSearch {
     }).toList(growable: false);
   }
 
+  List<Map<String, dynamic>> _nearestOsmAddress(LatLng point, {int limit = 1}) {
+    final matches = <({double distance, Map<String, dynamic> item})>[];
+    for (final item in _items) {
+      final lat = (item['lat'] as num?)?.toDouble();
+      final lon = (item['lon'] as num?)?.toDouble();
+      if (lat == null || lon == null) continue;
+      final kind = item['kind']?.toString().toLowerCase() ?? '';
+      final street = item['street']?.toString().trim() ?? '';
+      final name = item['name']?.toString().trim() ?? '';
+      final house = item['house']?.toString().trim() ?? '';
+      final label = item['label']?.toString().trim() ?? '';
+      // Ignore arbitrary POIs and neighbourhood landmarks: only address
+      // records with a street or explicitly tagged street records qualify.
+      final isStreet = kind == 'street' || item['highway'] != null;
+      final isAddress = street.isNotEmpty &&
+          (kind == 'address' || kind == 'entrance' || house.isNotEmpty || label.isNotEmpty);
+      if (!isStreet && !isAddress) continue;
+      final distance = _distanceKm(point, LatLng(lat, lon)) * 1000;
+      if (distance > 120) continue;
+      matches.add((distance: distance, item: item));
+    }
+    matches.sort((a, b) => a.distance.compareTo(b.distance));
+    return matches.take(limit).map((match) {
+      final item = match.item;
+      final street = item['street']?.toString().trim() ?? '';
+      final house = item['house']?.toString().trim() ?? '';
+      final name = item['name']?.toString().trim() ?? '';
+      final label = item['label']?.toString().trim() ?? '';
+      final display = label.isNotEmpty
+          ? label
+          : street.isNotEmpty
+              ? (house.isNotEmpty ? '$street $house' : street)
+              : name;
+      return <String, dynamic>{
+        '_offline': true,
+        'distance_m': match.distance,
+        'properties': <String, dynamic>{
+          'name': name,
+          'street': street,
+          'housenumber': house,
+          'district': item['district']?.toString() ?? '',
+          'label': display,
+          'type': item['kind']?.toString() ?? 'street',
+          'source': 'OpenStreetMap offline index',
+        },
+      };
+    }).toList(growable: false);
+  }
+
   double _distanceKm(LatLng a, LatLng b) {
     const earthRadiusKm = 6371.0088;
     final lat1 = a.latitude * math.pi / 180;
@@ -866,12 +958,18 @@ void _offlineAddressSearchWorker(SendPort mainSendPort) {
         });
         return;
       }
-      if (type != 'search') return;
       final latitude = (message['nearLatitude'] as num?)?.toDouble();
       final longitude = (message['nearLongitude'] as num?)?.toDouble();
       final near = latitude == null || longitude == null
           ? null
           : LatLng(latitude, longitude);
+      if (type == 'nearest') {
+        if (near == null) throw const FormatException('Coordinates are required');
+        final results = service._nearestOsmAddress(near);
+        mainSendPort.send(<String, Object?>{'id': id, 'results': results});
+        return;
+      }
+      if (type != 'search') return;
       final results = service._searchSync(
         message['query']?.toString() ?? '',
         near: near,
