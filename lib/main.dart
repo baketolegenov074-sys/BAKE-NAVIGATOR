@@ -4242,6 +4242,12 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         query,
       );
       _sortSearchFeatures(localOnly, query);
+      await OfflineSearchDiagnostics.instance.record('address_search_finished', details: {
+        'query': query,
+        'finalResults': localOnly.length,
+        'offlineMapActive': _isOfflineMapActive,
+        'mode': 'local_only',
+      });
       return localOnly;
     }
 
@@ -4260,6 +4266,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           includeNominatimCitySearch: includeNominatimCitySearch,
           includeNominatimAddressFallback: includeNominatimAddressFallback,
         ).timeout(const Duration(seconds: 18));
+        await OfflineSearchDiagnostics.instance.record('photon_search_completed', details: {
+          'query': query,
+          'results': onlineResults.length,
+        });
         final merged = <Map<String, dynamic>>[];
         final seen = <String>{};
         // Keep exact city matches ahead of the Shymkent local index so a
@@ -4286,6 +4296,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         _sortSearchFeatures(exactAddressResults, query);
         return exactAddressResults;
       } catch (error) {
+        await OfflineSearchDiagnostics.instance.record('photon_search_failed', details: {
+          'query': query,
+          'error': error.toString(),
+        });
         debugPrint('BAKE Photon address search unavailable: $error');
         return _keepExactHouseNumber(
           <Map<String, dynamic>>[...reportFeatures, ...savedPlaceFeatures, ...localResults],
