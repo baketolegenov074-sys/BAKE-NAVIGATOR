@@ -144,7 +144,7 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         'type': 'symbol',
         'source': 'openmaptiles',
         'source-layer': 'transportation_name',
-        'minzoom': 10,
+        'minzoom': 13,
         'layout': {
           'symbol-placement': 'line',
           'text-anchor': 'center',
@@ -179,7 +179,7 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         // Some regional OpenMapTiles exports keep road names directly in
         // transportation instead of transportation_name.
         'source-layer': 'transportation',
-        'minzoom': 12,
+        'minzoom': 13,
         'layout': {
           'symbol-placement': 'line',
           'text-anchor': 'center',
@@ -240,7 +240,7 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         'type': 'symbol',
         'source': 'openmaptiles',
         'source-layer': 'boundary',
-        'minzoom': 7,
+        'minzoom': 10.5,
         'layout': {
           'symbol-placement': 'line',
           'text-anchor': 'center',
@@ -272,7 +272,7 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
         // The inspected BBBike MBTiles schema exposes street names as
         // "name:latin" in transportation_name (not as plain "name").
         // Read that exact field directly as a fallback label layer.
-        'minzoom': 8,
+        'minzoom': 14,
         'filter': ['has', 'name:latin'],
         'layout': {
           'symbol-placement': 'line',
@@ -9826,7 +9826,15 @@ _navigationMatchedLocation = null;
                 initialZoom: 16,
                 // Offline MBTiles contain tiles only from zoom 7.
                 // Online Liberty keeps a wider overview range.
-                minZoom: _isOfflineMapActive ? 7.0 : 4.0,
+                minZoom: _isOfflineMapActive ? 10.5 : 3.0,
+                cameraConstraint: _isOfflineMapActive
+                    ? CameraConstraint.containCenter(
+                        bounds: LatLngBounds(
+                          const LatLng(42.15, 69.40),
+                          const LatLng(42.50, 69.85),
+                        ),
+                      )
+                    : const CameraConstraint.unconstrained(),
                 maxZoom: 20,
                 onTap: (_, point) {
                   // A short tap may select only an alternative route line.
@@ -9868,7 +9876,8 @@ _navigationMatchedLocation = null;
                       maximumZoom: 18,
                       layerMode: VectorTileLayerMode.raster,
                       memoryTileCacheMaxSize: 128 * 1024 * 1024,
-                      memoryTileDataCacheMaxSize: 256,
+                      memoryTileDataCacheMaxSize: 512,
+                      textCacheMaxSize: 4096,
                       concurrency: 2,
                     ),
                   )
@@ -9888,7 +9897,8 @@ _navigationMatchedLocation = null;
                       concurrency: 2,
                       layerMode: VectorTileLayerMode.raster,
                       memoryTileCacheMaxSize: 128 * 1024 * 1024,
-                      memoryTileDataCacheMaxSize: 256,
+                      memoryTileDataCacheMaxSize: 512,
+                      textCacheMaxSize: 4096,
                       cacheFolder: () async {
                         final supportDirectory =
                             await getApplicationSupportDirectory();
