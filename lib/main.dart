@@ -2158,10 +2158,10 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
           return;
         }
         final vectorProvider = _ResilientVectorTileProvider(
-        MbTilesVectorTileProvider(mbtiles: database),
-        sourceId: 'offline-openmaptiles',
-        maximumZoomOverride: 17,
-      );
+          MbTilesVectorTileProvider(mbtiles: database),
+          sourceId: 'offline-openmaptiles',
+          maximumZoomOverride: 17,
+        );
         if (!mounted) {
           database.dispose();
           return;
