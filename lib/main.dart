@@ -9975,7 +9975,11 @@ _navigationMatchedLocation = null;
                     visible: !_isOfflineMapActive,
                     maintainState: true,
                     child: AnimatedOpacity(
-                      opacity: _onlineLayerVisible && !_isOfflineMapActive ? 1 : 0,
+                      opacity: _onlineLayerVisible &&
+                          !_isOfflineMapActive &&
+                          _offlineVectorTileProvider != null
+                      ? 1
+                      : 0,
                       duration: const Duration(milliseconds: 250),
                       curve: Curves.easeInOut,
                       child: VectorTileLayer(
