@@ -8132,7 +8132,26 @@ _navigationMatchedLocation = null;
     _moveMapCamera(point, 15);
 
     try {
-      final address = await _lookupPhotonReverseAddress(point);
+      String? address;
+      if (_isOfflineMapActive &&
+          point.latitude >= 42.15 && point.latitude <= 42.50 &&
+          point.longitude >= 69.40 && point.longitude <= 69.85) {
+        final local = await _offlineAddressSearch.nearestAddress(point);
+        final properties = local?['properties'];
+        if (properties is Map) {
+          final street = properties['street']?.toString() ?? '';
+          final house = properties['housenumber']?.toString() ?? '';
+          final name = properties['name']?.toString() ?? '';
+          final label = properties['label']?.toString() ?? '';
+          final resolved = label.isNotEmpty
+              ? label
+              : _formatShymkentMapAddress(name: name, street: street, house: house);
+          if (resolved.trim().isNotEmpty) address = resolved;
+        }
+      }
+      // Online reverse geocoders remain a fallback when the local index has
+      // no street/address record near the selected point.
+      address ??= await _lookupPhotonReverseAddress(point);
       await OfflineSearchDiagnostics.instance.record('map_address_lookup_completed', details: {
         'latitude': point.latitude,
         'longitude': point.longitude,
