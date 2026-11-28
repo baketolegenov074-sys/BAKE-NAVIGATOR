@@ -2381,7 +2381,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         }
       });
       // Let FlutterMap attach the style and create its first render pass first.
-      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await Future<void>.delayed(const Duration(milliseconds: 400));
       if (mounted) setState(() => _onlineLayerVisible = true);
     } catch (error) {
       MapStartupDiagnostics.instance.recordError('Загрузка стиля Liberty', error);
@@ -9975,7 +9975,7 @@ _navigationMatchedLocation = null;
                         ),
                       )
                     : const CameraConstraint.unconstrained(),
-                maxZoom: 18.5,
+                maxZoom: _isOfflineMapActive ? 17.0 : 18.5,
                 onTap: (_, point) {
                   // A short tap may select only an alternative route line.
                   // New map destinations require the deliberate one-second hold.
