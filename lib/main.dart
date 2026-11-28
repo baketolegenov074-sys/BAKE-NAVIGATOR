@@ -4347,6 +4347,11 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
   Future<void> _searchAddress({bool selectAsOrigin = false}) async {
     final query = _searchController.text.trim();
+    await OfflineSearchDiagnostics.instance.record('search_submit_received', details: {
+      'query': query,
+      'selectAsOrigin': selectAsOrigin,
+      'offlineMapActive': _isOfflineMapActive,
+    });
     if (query.isEmpty || _isSearching) return;    final prefs = await SharedPreferences.getInstance();
     final history = prefs.getStringList('search_history') ?? <String>[];
     history.remove(query);
@@ -4362,7 +4367,9 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
     try {
       final anchor = selectAsOrigin
           ? (_currentLocation ?? _routeOrigin ?? _shymkent)
-          : (_routeOrigin ?? _currentLocation ?? _shymkent);      final results = await _fetchAddressFeatures(query, near: anchor);
+          : (_routeOrigin ?? _currentLocation ?? _shymkent);      await OfflineSearchDiagnostics.instance.record('search_submit_pipeline_started', details: {'query': query});
+      final results = await _fetchAddressFeatures(query, near: anchor);
+      await OfflineSearchDiagnostics.instance.record('search_submit_pipeline_completed', details: {'query': query, 'results': results.length});
       if (!_isOfflineMapActive) {
         _sortSearchFeatures(results, query);
       }
@@ -6942,6 +6949,11 @@ _navigationMatchedLocation = null;
                           autofocus: true,
                           textInputAction: TextInputAction.search,
                           onChanged: (value) {
+                            unawaited(OfflineSearchDiagnostics.instance.record('search_field_changed', details: {
+                              'query': value,
+                              'length': value.trim().length,
+                              'offlineMapActive': _isOfflineMapActive,
+                            }));
                             photonDebounce?.cancel();
                             autocompleteClient?.close();
                             autocompleteClient = null;
@@ -7042,6 +7054,10 @@ _navigationMatchedLocation = null;
                               }());
                               // Local and cloud sources run independently and only add matches.
                               unawaited(() async {
+                                await OfflineSearchDiagnostics.instance.record('autocomplete_local_started', details: {
+                                  'query': value,
+                                  'offlineMapActive': _isOfflineMapActive,
+                                });
                                 try {
                                   final found = await _fetchAddressFeatures(
                                     value,
