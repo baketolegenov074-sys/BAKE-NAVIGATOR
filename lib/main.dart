@@ -316,12 +316,15 @@ vtr.Theme _buildBakeOfflineVectorTheme() {
   // Preserve the native light-theme geometry and colors (yellow/orange roads,
   // green landuse and parks). Only append BAKE's local-font labels on top.
   final orderedLayers = <vtr.ThemeLayer>[
-    ...base.layers,
+    // The stock OSM Liberty road_label has no minzoom and can draw a
+    // single road name across the whole tile at city overview zooms.
+    // BAKE's localized road labels below replace it from zoom 13.
+    ...base.layers.where((layer) => layer.id != 'road_label'),
     ...labels.layers,
   ];
   return vtr.Theme(
     id: 'bake-shymkent-offline',
-    version: '5',
+    version: '6',
     layers: orderedLayers,
   );
 }
