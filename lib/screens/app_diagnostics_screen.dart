@@ -566,7 +566,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
               Tab(icon: Icon(Icons.speed_outlined), text: 'Запуск карты'),
               Tab(icon: Icon(Icons.route_outlined), text: 'Поездка'),
               Tab(icon: Icon(Icons.error_outline), text: 'Ошибки'),
-              Tab(icon: Icon(Icons.search_off_outlined), text: 'Офлайн-поиск'),
+              Tab(icon: Icon(Icons.search), text: 'Офлайн-поиск'),
               Tab(icon: Icon(Icons.cloud_outlined), text: 'Облако'),
             ],
           ),
