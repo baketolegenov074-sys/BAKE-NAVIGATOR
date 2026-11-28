@@ -15,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/road_report_sync_service.dart';
 import '../services/map_startup_diagnostics.dart';
+import '../services/offline_search_diagnostics.dart';
 
 enum _CheckState { ok, warning, error, notChecked }
 
@@ -554,7 +555,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Кабинет диагностики'),
@@ -565,6 +566,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
               Tab(icon: Icon(Icons.speed_outlined), text: 'Запуск карты'),
               Tab(icon: Icon(Icons.route_outlined), text: 'Поездка'),
               Tab(icon: Icon(Icons.error_outline), text: 'Ошибки'),
+              Tab(icon: Icon(Icons.search_off_outlined), text: 'Офлайн-поиск'),
               Tab(icon: Icon(Icons.cloud_outlined), text: 'Облако'),
             ],
           ),
@@ -575,6 +577,7 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
             _buildMapStartupTab(),
             _buildGpsTab(),
             _buildErrorsTab(),
+            _buildOfflineSearchTab(),
             _buildCloudTab(),
           ],
         ),
@@ -917,6 +920,143 @@ class _AppDiagnosticsScreenState extends State<AppDiagnosticsScreen> with Widget
             ),
           )),
       ],
+    );
+  }
+
+  Widget _buildOfflineSearchTab() {
+    final diagnostics = OfflineSearchDiagnostics.instance;
+    return ValueListenableBuilder<int>(
+      valueListenable: diagnostics.revision,
+      builder: (context, revision, _) => FutureBuilder<List<File>>(
+        future: diagnostics.listReports(),
+        builder: (context, snapshot) {
+          final reports = snapshot.data ?? const <File>[];
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              const Text(
+                'Автоматическая локальная запись офлайн-поиска. Работает без интернета и не зависит от Supabase. Сохраняются поисковый запрос, загрузка индекса, число улиц/адресов, результаты поиска и причины обращения к Photon.',
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.phone_android),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text('Файлы на телефоне: ${reports.length} · максимум около 4 МБ'),
+                      ),
+                      IconButton(
+                        tooltip: 'Обновить',
+                        onPressed: () => diagnostics.revision.value++,
+                        icon: const Icon(Icons.refresh),
+                      ),
+                      IconButton(
+                        tooltip: 'Экспортировать журнал',
+                        onPressed: reports.isEmpty ? null : () async {
+                          final file = await diagnostics.exportReport();
+                          if (file != null) {
+                            await Share.shareXFiles(
+                              [XFile(file.path)],
+                              text: 'BAKE Navigator — диагностика офлайн-поиска улиц',
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.ios_share),
+                      ),
+                      IconButton(
+                        tooltip: 'Очистить журнал',
+                        onPressed: reports.isEmpty ? null : () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (dialogContext) => AlertDialog(
+                              title: const Text('Очистить диагностику офлайн-поиска?'),
+                              content: const Text('Будут удалены только локальные журналы поиска улиц на этом телефоне.'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(dialogContext, false),
+                                  child: const Text('Отмена'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(dialogContext, true),
+                                  child: const Text('Удалить'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed == true) await diagnostics.clear();
+                        },
+                        icon: const Icon(Icons.delete_sweep_outlined),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (snapshot.connectionState == ConnectionState.waiting && reports.isEmpty)
+                const Center(child: CircularProgressIndicator())
+              else if (reports.isEmpty)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('Записей пока нет. Выполните поиск улицы, в том числе при выключенном интернете. События сохраняются автоматически.'),
+                  ),
+                )
+              else
+                ...reports.map((file) {
+                  final isPrevious = file.path.endsWith('offline_search.previous.jsonl');
+                  return Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.description_outlined),
+                      title: Text(isPrevious ? 'Предыдущий журнал' : 'Текущий журнал'),
+                      subtitle: FutureBuilder<int>(
+                        future: file.length(),
+                        builder: (context, sizeSnapshot) {
+                          final bytes = sizeSnapshot.data ?? 0;
+                          return Text('${(bytes / 1024).toStringAsFixed(1)} КБ · локальный JSONL');
+                        },
+                      ),
+                      onTap: () async {
+                        final content = await diagnostics.readReport(file);
+                        if (!context.mounted) return;
+                        await showDialog<void>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('Диагностика офлайн-поиска'),
+                            content: SizedBox(
+                              width: double.maxFinite,
+                              child: SingleChildScrollView(
+                                child: SelectableText(content),
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(dialogContext),
+                                child: const Text('Закрыть'),
+                              ),
+                              TextButton.icon(
+                                onPressed: () async {
+                                  Navigator.pop(dialogContext);
+                                  await Share.shareXFiles(
+                                    [XFile(file.path)],
+                                    text: 'BAKE Navigator — диагностика офлайн-поиска улиц',
+                                  );
+                                },
+                                icon: const Icon(Icons.ios_share),
+                                label: const Text('Отправить'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                }),
+            ],
+          );
+        },
+      ),
     );
   }
 
