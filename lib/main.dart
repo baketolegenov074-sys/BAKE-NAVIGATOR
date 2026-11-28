@@ -969,7 +969,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
   bool get _isOfflineMapActive =>
       _offlineMapSelected && _offlineVectorTileProvider != null;
 
-  void _disposeOfflineMap() {  void _disposeOfflineMap() {
+  void _disposeOfflineMap() {
     // Detach the provider first. The VectorTileLayer is replaced on the next
     // frame; closing its SQLite database before that frame can leave the
     // mounted tile loader holding a disposed provider.
@@ -5597,7 +5597,7 @@ _navigationMatchedLocation = null;
 
   bool _isNoUTurnRoadSign(Map<String, dynamic> report) {
     final text = _roadReportClassificationText(report).replaceAll(
-      RegExp(r'[\\s-]+'),
+      RegExp(r'[\s-]+'),
       '_',
     );
     return text.contains('no_u_turn') ||
@@ -5616,17 +5616,16 @@ _navigationMatchedLocation = null;
   }
 
   bool _isRoadWarningReport(Map<String, dynamic> report) {
-    final type = _roadReportClassificationText(report);  bool _isRoadWarningReport(Map<String, dynamic> report) {
-    final type = _normalizedRoadReportType(report);
-    return type.contains('камера') || type.contains('светофор') ||
-        type.contains('лежач') || type.contains('полиц') ||
-        type.contains('перекрыт') || type.contains('яма') ||
-        type.contains('переход') || type.contains('скорост') ||
-        type.contains('знак') || type.contains('опасн') ||
-        type.contains('переезд') || type.contains('поворот') ||
-        type.contains('no_u_turn') || type.contains('no-uturn') ||
-        type.contains('разворот запрещ') ||
-        type.contains('односторон') || type.contains('ремонт');
+    final text = _roadReportClassificationText(report);
+    return text.contains('камера') || text.contains('светофор') ||
+        text.contains('лежач') || text.contains('полиц') ||
+        text.contains('перекрыт') || text.contains('яма') ||
+        text.contains('переход') || text.contains('скорост') ||
+        text.contains('знак') || text.contains('опасн') ||
+        text.contains('переезд') || text.contains('поворот') ||
+        text.contains('no_u_turn') || text.contains('no-uturn') ||
+        text.contains('разворот запрещ') ||
+        text.contains('односторон') || text.contains('ремонт');
   }
 
   bool _isStreetNameReport(Map<String, dynamic> report) {
