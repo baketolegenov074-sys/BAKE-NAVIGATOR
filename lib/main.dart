@@ -1121,7 +1121,7 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       // Let the first map frame render before starting Liberty style requests.
       unawaited(() async {
         await Future<void>.delayed(const Duration(milliseconds: 400));
-        if (!mounted) return;
+        if (!mounted || _isOfflineMapActive) return;
         await _runStartupDiagnosticTask('Стиль карты', _loadFlutterMapOnlineStyle);
       }());
       unawaited(_initializeStartupServices());
@@ -1137,10 +1137,6 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
       // Keep the failing subtree invisible; diagnostics remain recorded above.
       return const SizedBox.shrink();
     };
-
-    // Restore the bundled Shymkent vector map automatically after the first frame.
-    // Keep disk extraction/provider initialization out of the cold first paint.
-    unawaited(_runStartupDiagnosticTask('Подключение встроенной офлайн-карты', _loadSavedOfflineMap));
 
     unawaited(_runStartupDiagnosticTask('Загрузка камер и дорожных данных', _loadBundledRoadAlerts));
     unawaited(_runStartupDiagnosticTask('Восстановление точек маршрута', _loadSavedRoutePoints));
@@ -9890,6 +9886,7 @@ _navigationMatchedLocation = null;
                     },
                     fileCacheMaximumSizeInBytes: 256 * 1024 * 1024,
                     fileCacheTtl: const Duration(days: 30),
+                    logCacheStats: true,
                   ),
                 if (!_isOfflineMapActive &&
                     _trafficLayerEnabled &&
