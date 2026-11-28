@@ -220,6 +220,31 @@ def feature_point(feature: dict[str, Any]) -> tuple[float, float] | None:
     return None
 
 
+def road_paths(feature: dict[str, Any]) -> list[list[list[float]]]:
+    """Keep real street geometry so reverse lookup measures to the road, not its midpoint."""
+    geometry = feature.get("geometry") or {}
+    if not isinstance(geometry, dict):
+        return []
+    kind = geometry.get("type")
+    coordinates = geometry.get("coordinates")
+    raw_paths = [coordinates] if kind == "LineString" else (
+        coordinates if kind == "MultiLineString" else []
+    )
+    result: list[list[list[float]]] = []
+    for raw_path in raw_paths:
+        if not isinstance(raw_path, (list, tuple)):
+            continue
+        path = [
+            [round(lon, 7), round(lat, 7)]
+            for value in raw_path
+            if (point := _valid_point(value)) is not None
+            for lon, lat in [point]
+        ]
+        if len(path) >= 2:
+            result.append(path)
+    return result
+
+
 def values_for(properties: dict[str, Any], keys: tuple[str, ...]) -> list[str]:
     values: list[str] = []
     for key in keys:
@@ -296,12 +321,21 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
     if house and not street and not district:
         return None
 
+    paths = road_paths(feature) if properties.get("highway") else []
     point = feature_point(feature)
     if point is None:
         return None
     lon, lat = point
     if not (WEST <= lon <= EAST and SOUTH <= lat <= NORTH):
-        return None
+        # Long roads can cross Shymkent while their geometric midpoint lies
+        # outside the city. Keep them when any part of the road enters coverage.
+        in_bounds = [
+            (p[0], p[1]) for path in paths for p in path
+            if WEST <= p[0] <= EAST and SOUTH <= p[1] <= NORTH
+        ]
+        if not in_bounds:
+            return None
+        lon, lat = in_bounds[0]
     if not (math.isfinite(lat) and math.isfinite(lon)):
         return None
 
@@ -383,6 +417,7 @@ def make_record(feature: dict[str, Any]) -> dict[str, Any] | None:
         "street_folded": fold_search_text(street),
         "house_folded": fold_search_text(house),
         "district_folded": fold_search_text(district),
+        **({"road_paths": paths} if paths else {}),
     }
 
 
