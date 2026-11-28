@@ -2232,8 +2232,14 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
         }
       }
 
+      final validationTimer = Stopwatch()..start();
       final archiveValid = await hasValidShymkentValhallaSha256(archiveFile)
           .timeout(const Duration(seconds: 2), onTimeout: () => false);
+      validationTimer.stop();
+      MapStartupDiagnostics.instance.recordStage(
+        'ПРОВЕРКА АРХИВА VALHALLA',
+        'Время: ${validationTimer.elapsedMilliseconds} мс; файл: ${archiveFile.path}; контрольная сумма: ${archiveValid ? "совпадает" : "не совпадает"}.',
+      );
       if (!archiveValid) {
         throw Exception(
           'Контрольная сумма дорожного графа Шымкента не совпадает. Архив отклонён.',
@@ -2242,45 +2248,23 @@ class _NavigatorScreenState extends State<NavigatorScreen> with WidgetsBindingOb
 
       if (mounted) {
         setState(() => _valhallaStatus = 'Подключаем офлайн-маршрутизатор…');
-      }      final initialized = await _valhallaChannel.invokeMapMethod<String, dynamic>(
+      }
+      final initializeTimer = Stopwatch()..start();
+      final initialized = await _valhallaChannel.invokeMapMethod<String, dynamic>(
         'initialize',
         <String, dynamic>{'tileExtractPath': archiveFile.path},
+      );
+      initializeTimer.stop();
+      MapStartupDiagnostics.instance.recordStage(
+        'СОЗДАНИЕ ДВИЖКА VALHALLA',
+        'Время: ${initializeTimer.elapsedMilliseconds} мс; готовность: ${initialized?['ready'] == true}.',
       );
       if (initialized?['ready'] != true) {
         throw Exception('Valhalla не подтвердила готовность дорожного графа.');
       }
 
-      final diagnosticRaw = await _valhallaChannel.invokeMethod<String>(
-        'route',
-        <String, dynamic>{
-          'startLat': 42.3640,
-          'startLon': 69.4780,
-          'endLat': 42.3154,
-          'endLon': 69.5869,
-        },
-      );
-      if (diagnosticRaw == null || diagnosticRaw.isEmpty) {
-        throw Exception('Пустой ответ на контрольный офлайн-маршрут.');
-      }
-      final diagnosticData = await compute(
-        _decodeValhallaRouteResponseInBackground,
-        diagnosticRaw,
-      );
-      final routes = (diagnosticData['routes'] as List?) ?? const [];
-      final route = routes.isNotEmpty ? routes.first : null;
-      final geometry = route is Map<String, dynamic> ? route['geometry'] : null;
-      final coordinates = geometry is Map<String, dynamic>
-          ? geometry['coordinates']
-          : null;
-      if (diagnosticData['code'] != 'Ok' ||
-          route is! Map<String, dynamic> ||
-          route['distance'] is! num ||
-          route['duration'] is! num ||
-          coordinates is! List ||
-          coordinates.length < 2) {
-        throw Exception('Контрольный маршрут по графу Шымкента не построен.');
-      }
-
+      // Engine initialization is the readiness boundary. Do not block startup
+      // on a synthetic route: real route requests validate routing on demand.
       await prefs.setString('valhalla_tile_extract_path', archiveFile.path);
       _valhallaExtractPath = archiveFile.path;
       _valhallaReady = true;
